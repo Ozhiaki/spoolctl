@@ -221,7 +221,8 @@ class TestProcessGroupKill(ConcurrencyTestCase):
 
 class TestGuardedRecording(ConcurrencyTestCase):
     def test_displaced_workers_result_is_discarded(self):
-        job_id = self.add("sleep", "2")
+        marker = os.path.join(self.tmp.name, "job-finished")
+        job_id = self.add("sh", "-c", f"sleep 1; touch {marker}")
         victim = self.spawn_worker("displaced")
         self.wait_for_state(job_id, "running", timeout=15)
         # Reassign the row out from under the live worker (what a future
@@ -231,9 +232,13 @@ class TestGuardedRecording(ConcurrencyTestCase):
             "UPDATE jobs SET state='queued', locked_by=NULL, locked_pid=NULL,"
             " heartbeat_at=NULL, next_run_at=9999999999 WHERE id=?", (job_id,))
         conn.close()
-        time.sleep(2.5)  # let the sleep 2 finish and the worker try to record
+        # Wait for the child itself to finish, then give the worker a moment
+        # to attempt recording; a fixed sleep flakes on slow runners.
+        self.wait_for(lambda: os.path.exists(marker), timeout=30,
+                      message="job child to finish")
+        time.sleep(1.0)
         victim.send_signal(signal.SIGTERM)
-        _, err = victim.communicate(timeout=10)
+        _, err = victim.communicate(timeout=30)
         self.assertIn("discarding stale result", err)
         job = self.job(job_id)
         self.assertEqual(job.state, "queued", "stale success must not clobber the row")
