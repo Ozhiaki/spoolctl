@@ -23,6 +23,7 @@ from spoolctl import store
 from spoolctl.models import (
     CONTRACT_VERSION,
     DEFAULT_MAX_RETRIES,
+    DEFAULT_POLL_INTERVAL,
     DEFAULT_TIMEOUT_SECONDS,
     EXIT_ENVIRONMENT,
     EXIT_INPUT,
@@ -327,11 +328,42 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
     )
 
 
+def cmd_work(args: argparse.Namespace) -> VerbResult:
+    if args.poll_interval is not None and args.poll_interval <= 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--poll-interval must be > 0 (got {args.poll_interval})",
+            "try: spoolctl work --poll-interval 1.0",
+        )
+    from spoolctl import worker
+
+    worker_id = args.worker_id or worker.default_worker_id()
+    db_path = store.resolve_db_path(args.db)
+    if args.once:
+        conn = store.connect(db_path)
+        try:
+            summary = worker.process_one(conn, db_path, worker_id)
+        finally:
+            conn.close()
+        if summary is None:
+            return VerbResult(data={"claimed": False}, human="No eligible job")
+        data = {"claimed": True, **summary}
+        human = (
+            f"Job {summary['job_id']} attempt {summary['attempt_no']}"
+            f" {summary['result']} -> {summary['job_state'] or 'discarded'}"
+        )
+        return VerbResult(data=data, human=human)
+    poll = args.poll_interval if args.poll_interval is not None else DEFAULT_POLL_INTERVAL
+    worker.work_loop(db_path, worker_id, poll)
+    return VerbResult(data={"stopped": True}, human="", stdout_silent=True)
+
+
 # --- dispatch -----------------------------------------------------------
 
 # Each handler takes parsed args and returns a VerbResult or raises CliError.
 HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "add": cmd_add,
+    "work": cmd_work,
 }
 
 
@@ -382,6 +414,8 @@ def main(argv: list[str] | None = None) -> int:
         json_mode = getattr(args, "json", json_mode)
         handler = HANDLERS.get(args.verb, _not_implemented)
         result = handler(args)
+        if result.stdout_silent:
+            return EXIT_OK
         if json_mode:
             env = make_envelope(
                 result.data,
@@ -390,7 +424,7 @@ def main(argv: list[str] | None = None) -> int:
                 commands=result.commands,
             )
             print(json.dumps(env, ensure_ascii=False))
-        elif not result.stdout_silent:
+        else:
             if result.human:
                 print(result.human)
             for w in result.warnings:

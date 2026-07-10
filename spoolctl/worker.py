@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -144,12 +145,17 @@ def _kill_group(proc: subprocess.Popen) -> None:
     proc.wait()
 
 
-def execute_attempt(job: Job, attempt: Attempt) -> tuple[str, int | None, str | None]:
+def execute_attempt(
+    job: Job,
+    attempt: Attempt,
+    on_spawn=None,
+) -> tuple[str, int | None, str | None]:
     """Run one claimed attempt to completion or timeout.
 
     Returns (kind, exit_code, error) with kind in
     succeeded | failed | timed_out. Spawn failures are ordinary failures:
-    the worker loop must survive them.
+    the worker loop must survive them. on_spawn (if given) receives the
+    Popen right after spawn, so a signal handler can target the group.
     """
     os.makedirs(os.path.dirname(attempt.stdout_path), exist_ok=True)
     with open(attempt.stdout_path, "wb") as out_f, open(attempt.stderr_path, "wb") as err_f:
@@ -163,6 +169,8 @@ def execute_attempt(job: Job, attempt: Attempt) -> tuple[str, int | None, str | 
             )
         except (OSError, ValueError) as exc:
             return "failed", None, f"spawn failed: {exc}"
+        if on_spawn is not None:
+            on_spawn(proc)
         try:
             exit_code = proc.wait(timeout=job.timeout_seconds)
         except subprocess.TimeoutExpired:
@@ -171,3 +179,95 @@ def execute_attempt(job: Job, attempt: Attempt) -> tuple[str, int | None, str | 
     if exit_code == 0:
         return "succeeded", 0, None
     return "failed", exit_code, f"exit {exit_code}"
+
+
+def default_worker_id() -> str:
+    return f"{socket.gethostname()}-{os.getpid()}"
+
+
+def process_one(
+    conn,
+    db_path: str,
+    worker_id: str,
+    on_spawn=None,
+) -> dict | None:
+    """One claim cycle: reap pass, claim, execute, record.
+
+    Returns a summary dict for the executed job, or None when nothing was
+    eligible. Never holds a DB transaction while the child runs.
+    """
+    reap_pass(conn, reaper_id=worker_id)
+    claimed = store.claim_next(
+        conn, worker_id, os.getpid(), time.time(), store.output_root(db_path)
+    )
+    if claimed is None:
+        return None
+    job, attempt = claimed
+    started = time.monotonic()
+    with Heartbeat(db_path, job.id, worker_id, os.getpid()):
+        kind, exit_code, error = execute_attempt(job, attempt, on_spawn=on_spawn)
+    now = time.time()
+    if kind == "succeeded":
+        new_state = store.record_success(
+            conn, job.id, attempt.id, worker_id, os.getpid(), now)
+    else:
+        new_state = store.record_failure(
+            conn, job.id, attempt.id, worker_id, os.getpid(), kind, exit_code, error, now)
+    if new_state is None:
+        print(
+            f"spoolctl: warning: job {job.id} was reclaimed while running;"
+            f" discarding stale result ({kind})",
+            file=sys.stderr,
+        )
+    elapsed = time.monotonic() - started
+    print(
+        f"spoolctl: job {job.id} attempt {attempt.attempt_no} {kind}"
+        f" ({elapsed:.1f}s) -> {new_state or 'discarded'}",
+        file=sys.stderr,
+    )
+    return {
+        "attempt_no": attempt.attempt_no,
+        "job_id": job.id,
+        "job_state": new_state,
+        "result": kind,
+    }
+
+
+def work_loop(db_path: str, worker_id: str, poll_interval: float) -> int:
+    """Run jobs until SIGINT/SIGTERM. First signal: finish and record the
+    in-flight job, then exit 0. Second signal: SIGKILL the job's process
+    group (recorded as a normal failure), then exit 0. SIGKILL of the worker
+    itself is deliberately unhandled — the reaper is the recovery path."""
+    stop = threading.Event()
+    current: dict = {"proc": None}
+
+    def on_signal(signum, frame):
+        if stop.is_set():
+            proc = current["proc"]
+            if proc is not None and proc.poll() is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        else:
+            stop.set()
+            print("spoolctl: stopping after in-flight job (signal again to kill it)",
+                  file=sys.stderr)
+
+    def on_spawn(proc):
+        current["proc"] = proc
+
+    old_int = signal.signal(signal.SIGINT, on_signal)
+    old_term = signal.signal(signal.SIGTERM, on_signal)
+    conn = store.connect(db_path)
+    try:
+        while not stop.is_set():
+            summary = process_one(conn, db_path, worker_id, on_spawn=on_spawn)
+            current["proc"] = None
+            if summary is None and not stop.is_set():
+                stop.wait(poll_interval)
+    finally:
+        conn.close()
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
+    return 0
