@@ -1,0 +1,22 @@
+{
+  "commands": [],
+  "data": {
+    "attempts": []
+  },
+  "errors": [],
+  "meta": {
+    "contract_version": "1",
+    "data_hash": "sha256:PINNED",
+    "elapsed_ms": 0,
+    "request_id": "req_PINNED",
+    "ts_iso": "PINNED"
+  },
+  "ok": true,
+  "tool_version": "0.1.0",
+  "warnings": [
+    {
+      "code": "NO_ATTEMPTS_YET",
+      "message": "job 1 has not been executed yet"
+    }
+  ]
+}

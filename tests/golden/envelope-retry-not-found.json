@@ -1,0 +1,22 @@
+{
+  "commands": [],
+  "data": null,
+  "errors": [
+    {
+      "code": "NOT_FOUND",
+      "exit_code": 1,
+      "message": "no job with id 42",
+      "remediation": "run: spoolctl status  (to list job ids)"
+    }
+  ],
+  "meta": {
+    "contract_version": "1",
+    "data_hash": "sha256:PINNED",
+    "elapsed_ms": 0,
+    "request_id": "req_PINNED",
+    "ts_iso": "PINNED"
+  },
+  "ok": false,
+  "tool_version": "0.1.0",
+  "warnings": []
+}
