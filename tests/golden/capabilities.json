@@ -131,6 +131,33 @@
       "positionals": [],
       "summary": "this machine-readable contract"
     },
+    "list": {
+      "data_schema": "{count: int, jobs: [{id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, last_exit_code, last_error}]}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": 50,
+          "flag": "--limit",
+          "type": "int"
+        },
+        {
+          "default": null,
+          "flag": "--state",
+          "type": "str"
+        }
+      ],
+      "positionals": [],
+      "summary": "enumerate jobs, newest first, optionally filtered by state"
+    },
     "output": {
       "data_schema": "{attempt_no, attempt_state, attempts_total, job_id, streams: {stdout|stderr: {path, preview, preview_truncated, size_bytes}}} or {attempts: []}",
       "flags": [

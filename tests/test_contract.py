@@ -89,6 +89,11 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assertEqual(code, 0)
         self.assert_golden("status-empty", out)
 
+    def test_list_empty(self):
+        code, out, _ = run_cli("list", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assert_golden("list-empty", out)
+
     def test_retry_unknown_id_error_envelope(self):
         code, out, _ = run_cli("retry", "42", "--db", self.db, "--json")
         self.assertEqual(code, 1)

@@ -566,6 +566,27 @@ def retry_job(conn: sqlite3.Connection, job_id: int, force: bool, now: float) ->
     return "ok", argv
 
 
+def list_jobs(
+    conn: sqlite3.Connection,
+    states: list[str] | None,
+    limit: int,
+) -> list[Job]:
+    """Enumerate jobs newest-first, optionally filtered by state.
+
+    Pure SELECT (WAL reader, never blocks workers). states=None/[] means
+    every state; limit 0 means unlimited."""
+    sql = "SELECT * FROM jobs"
+    params: list = []
+    if states:
+        sql += " WHERE state IN (%s)" % ",".join("?" * len(states))
+        params += list(states)
+    sql += " ORDER BY id DESC"
+    if limit:
+        sql += " LIMIT ?"
+        params.append(limit)
+    return [job_from_row(r) for r in conn.execute(sql, params)]
+
+
 def state_counts(conn: sqlite3.Connection) -> dict[str, int]:
     """Job counts by state, zero-filled for every state, keys sorted."""
     counts = {state: 0 for state in sorted(JOB_STATES)}

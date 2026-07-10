@@ -168,7 +168,7 @@ def make_envelope(
 
 # --- parser -------------------------------------------------------------
 
-VERBS = ("add", "work", "status", "retry", "output", "capabilities")
+VERBS = ("add", "work", "status", "list", "retry", "output", "capabilities")
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -203,6 +203,12 @@ def build_parser() -> _Parser:
     status = sub.add_parser("status", parents=[common], help="queue counts and recent dead jobs")
     status.add_argument("--limit", type=int, default=10, metavar="N")
 
+    list_ = sub.add_parser("list", parents=[common], help="enumerate jobs, newest first")
+    list_.add_argument("--state", default=None, metavar="CSV",
+                       help="comma-separated states to include")
+    list_.add_argument("--limit", type=int, default=50, metavar="N",
+                       help="max jobs (0 = unlimited)")
+
     retry = sub.add_parser("retry", parents=[common], help="requeue a dead or failed job")
     retry.add_argument("id", metavar="ID")
     retry.add_argument("--force", action="store_true", help="also requeue a running job (unsafe)")
@@ -217,8 +223,8 @@ def build_parser() -> _Parser:
 
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
-        {"add": add, "work": work, "status": status, "retry": retry,
-         "output": output, "capabilities": caps}
+        {"add": add, "work": work, "status": status, "list": list_,
+         "retry": retry, "output": output, "capabilities": caps}
     )
     return parser
 
@@ -392,6 +398,68 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
     return VerbResult(
         data={"counts": counts, "recent_dead": dead},
         human="\n".join(lines),
+    )
+
+
+def _parse_states(raw: str | None) -> list[str] | None:
+    if raw is None:
+        return None
+    states = []
+    for tok in raw.split(","):
+        tok = tok.strip()
+        if tok not in JOB_STATES:
+            suggestion = _suggest(tok, list(JOB_STATES))
+            valid = ",".join(sorted(JOB_STATES))
+            raise CliError(
+                "INVALID_INPUT",
+                f"unknown state: {tok!r}",
+                f"try: spoolctl list --state {suggestion}" if suggestion
+                else f"valid states: {valid}",
+                did_you_mean=suggestion,
+            )
+        states.append(tok)
+    return states
+
+
+def cmd_list(args: argparse.Namespace) -> VerbResult:
+    states = _parse_states(args.state)
+    if args.limit < 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--limit must be >= 0 (got {args.limit})",
+            "try: spoolctl list --limit 50  (0 = unlimited)",
+        )
+    conn = _open_db(args)
+    try:
+        jobs = store.list_jobs(conn, states, args.limit)
+    finally:
+        conn.close()
+    rows = [
+        {
+            "argv": j.argv,
+            "attempts": j.attempts,
+            "created_at": j.created_at,
+            "finished_at": j.finished_at,
+            "id": j.id,
+            "last_error": j.last_error,
+            "last_exit_code": j.last_exit_code,
+            "max_retries": j.max_retries,
+            "next_run_at": j.next_run_at,
+            "started_at": j.started_at,
+            "state": j.state,
+            "timeout_seconds": j.timeout_seconds,
+        }
+        for j in jobs
+    ]
+    lines = []
+    for j in jobs:
+        command = " ".join(j.argv)
+        if len(command) > 80:
+            command = command[:77] + "..."
+        lines.append(f"#{j.id}  {j.state}  attempts={j.attempts}  {command}")
+    return VerbResult(
+        data={"count": len(rows), "jobs": rows},
+        human="\n".join(lines) if lines else "No jobs",
     )
 
 
@@ -569,6 +637,12 @@ VERB_SUMMARIES = {
                        " recent_dead: [{id, command, attempts, last_error,"
                        " finished_at, stdout_path, stderr_path}]}",
     },
+    "list": {
+        "summary": "enumerate jobs, newest first, optionally filtered by state",
+        "data_schema": "{count: int, jobs: [{id, argv, state, attempts,"
+                       " max_retries, timeout_seconds, created_at, started_at,"
+                       " finished_at, next_run_at, last_exit_code, last_error}]}",
+    },
     "retry": {
         "summary": "requeue a dead or failed job with a fresh retry budget",
         "data_schema": "{job_id: int, state: 'queued'}",
@@ -664,6 +738,7 @@ def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
 HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "add": cmd_add,
     "capabilities": cmd_capabilities,
+    "list": cmd_list,
     "output": cmd_output,
     "retry": cmd_retry,
     "status": cmd_status,
