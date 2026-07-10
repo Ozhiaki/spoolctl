@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "spoolctl"
+version = "0.1.0"
+description = "A local job queue built for operators that die: retries, backoff, dead-letter, crash recovery. SQLite, no daemon, stdlib only."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "Dave Fobare" }]
+keywords = ["job-queue", "cli", "sqlite", "retry", "agent"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX",
+    "Programming Language :: Python :: 3",
+    "Topic :: System :: Distributed Computing",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/Ozhiaki/spoolctl"
+Repository = "https://github.com/Ozhiaki/spoolctl"
+
+[project.scripts]
+spoolctl = "spoolctl.cli:main"
+
+[tool.setuptools]
+packages = ["spoolctl"]
