@@ -223,7 +223,13 @@ def claim_next(
             conn.execute("COMMIT")
             return None
         job_id = row["id"]
-        attempt_no = row["attempts"] + 1
+        # Monotonic per-job counter, NOT jobs.attempts+1: a manual retry
+        # resets the budget to 0 but history keeps its attempt numbers, so
+        # earlier attempts' output files are never clobbered.
+        attempt_no = conn.execute(
+            "SELECT COALESCE(MAX(attempt_no), 0) + 1 AS n FROM attempts WHERE job_id=?",
+            (job_id,),
+        ).fetchone()["n"]
         attempt_dir = os.path.join(out_root, str(job_id), str(attempt_no))
         stdout_path = os.path.join(attempt_dir, "stdout")
         stderr_path = os.path.join(attempt_dir, "stderr")
@@ -429,6 +435,57 @@ def reap(
 def get_job(conn: sqlite3.Connection, job_id: int) -> Job | None:
     row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
     return job_from_row(row) if row else None
+
+
+def retry_job(conn: sqlite3.Connection, job_id: int, force: bool, now: float) -> tuple[str, list[str] | None]:
+    """Manually requeue a job with a fresh retry budget.
+
+    Returns (outcome, argv) where outcome is one of:
+    ok | not_found | already_queued | done | running_unforced | raced.
+    All checks and writes happen inside one BEGIN IMMEDIATE transaction, so
+    a forced retry that races a state change resolves to 'raced', never to
+    a clobbered row.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT state, argv_json FROM jobs WHERE id=?", (job_id,)
+        ).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            return "not_found", None
+        state = row["state"]
+        argv = json.loads(row["argv_json"])
+        if force:
+            if state != "running":
+                conn.execute("ROLLBACK")
+                return "raced", argv
+            conn.execute(
+                "UPDATE attempts SET state='abandoned', finished_at=?,"
+                " error='force-retried' WHERE job_id=? AND state='running'",
+                (now, job_id),
+            )
+        elif state == "queued":
+            conn.execute("ROLLBACK")
+            return "already_queued", argv
+        elif state == "done":
+            conn.execute("ROLLBACK")
+            return "done", argv
+        elif state == "running":
+            conn.execute("ROLLBACK")
+            return "running_unforced", argv
+        conn.execute(
+            "UPDATE jobs SET state='queued', attempts=0, next_run_at=?,"
+            " locked_by=NULL, locked_pid=NULL, locked_at=NULL, heartbeat_at=NULL,"
+            " finished_at=NULL, last_exit_code=NULL, last_error=NULL WHERE id=?",
+            (now, job_id),
+        )
+        add_event(conn, job_id, now, "retried", None, "forced" if force else None)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return "ok", argv
 
 
 def state_counts(conn: sqlite3.Connection) -> dict[str, int]:
