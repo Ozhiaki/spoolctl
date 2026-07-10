@@ -525,6 +525,13 @@ def recent_dead(conn: sqlite3.Connection, limit: int) -> list[dict]:
     return out
 
 
+def get_attempts(conn: sqlite3.Connection, job_id: int) -> list[Attempt]:
+    rows = conn.execute(
+        "SELECT * FROM attempts WHERE job_id=? ORDER BY attempt_no", (job_id,)
+    ).fetchall()
+    return [attempt_from_row(r) for r in rows]
+
+
 def add_event(
     conn: sqlite3.Connection,
     job_id: int,
