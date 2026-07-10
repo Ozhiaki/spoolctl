@@ -113,6 +113,42 @@ class TestOnce(WorkTestCase):
         self.assertIn("poll-interval", err)
 
 
+class TestDrain(WorkTestCase):
+    def test_drain_once_mutually_exclusive(self):
+        code, out, _ = run_cli("work", "--drain", "--once", "--db", self.db, "--json")
+        self.assertEqual(code, 1)
+        e = json.loads(out)["errors"][0]
+        self.assertEqual(e["code"], "INVALID_INPUT")
+        self.assertIn("mutually exclusive", e["message"])
+
+    def test_drain_empty_queue_exits_immediately(self):
+        code, out, _ = run_cli("work", "--drain", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"], {"drained": True, "executed": 0})
+
+    def test_drain_runs_everything_then_exits(self):
+        for _ in range(3):
+            self.add("sh", "-c", "true")
+        code, out, _ = run_cli("work", "--drain", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"], {"drained": True, "executed": 3})
+
+    def test_drain_waits_out_a_backoff_requeue(self):
+        # Fails on the first execution, succeeds on the second: drain must
+        # wait through the 2s backoff instead of exiting with work left.
+        flaky = os.path.join(self.tmp.name, "flaky-marker")
+        self.add("sh", "-c",
+                 f"if [ -f {flaky} ]; then exit 0; else touch {flaky}; exit 1; fi")
+        code, out, _ = run_cli("work", "--drain", "--db", self.db, "--json",
+                               "--poll-interval", "0.05")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"], {"drained": True, "executed": 2})
+        conn = store.connect(self.db)
+        job = store.get_job(conn, 1)
+        conn.close()
+        self.assertEqual(job.state, "done")
+
+
 class TestLoopMode(WorkTestCase):
     def test_loop_stdout_empty_and_sigterm_exits_zero(self):
         self.add("sh", "-c", "echo hi")

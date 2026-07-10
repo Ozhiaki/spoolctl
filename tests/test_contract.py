@@ -84,6 +84,11 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assertEqual(code, 0)
         self.assert_golden("work-once-empty", out)
 
+    def test_work_drain_empty(self):
+        code, out, _ = run_cli("work", "--drain", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assert_golden("work-drain-empty", out)
+
     def test_status_empty(self):
         code, out, _ = run_cli("status", "--db", self.db, "--json")
         self.assertEqual(code, 0)

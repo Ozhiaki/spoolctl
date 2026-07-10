@@ -269,13 +269,28 @@ def process_one(
     }
 
 
-def work_loop(db_path: str, worker_id: str, poll_interval: float) -> int:
-    """Run jobs until SIGINT/SIGTERM. First signal: finish and record the
-    in-flight job, then exit 0. Second signal: SIGKILL the job's process
-    group (recorded as a normal failure), then exit 0. SIGKILL of the worker
-    itself is deliberately unhandled — the reaper is the recovery path."""
+def work_loop(
+    db_path: str,
+    worker_id: str,
+    poll_interval: float,
+    drain: bool = False,
+) -> dict:
+    """Run jobs until SIGINT/SIGTERM — or, when draining, until the queue
+    settles (zero queued or running rows at a moment nothing was claimable;
+    a job added after that check belongs to the next invocation).
+
+    First signal: finish and record the in-flight job, then exit 0. Second
+    signal: SIGKILL the job's process group (recorded as a normal failure),
+    then exit 0. SIGKILL of the worker itself is deliberately unhandled —
+    the reaper is the recovery path.
+
+    Returns {"drained": bool, "executed": int}: executed counts jobs this
+    process ran; drained is True only when a drain finished because the
+    queue settled, not because a signal stopped it early."""
     stop = threading.Event()
     current: dict = {"proc": None}
+    executed = 0
+    settled = False
 
     def on_signal(signum, frame):
         if stop.is_set():
@@ -300,10 +315,16 @@ def work_loop(db_path: str, worker_id: str, poll_interval: float) -> int:
         while not stop.is_set():
             summary = process_one(conn, db_path, worker_id, on_spawn=on_spawn)
             current["proc"] = None
-            if summary is None and not stop.is_set():
+            if summary is not None:
+                executed += 1
+                continue
+            if drain and store.unsettled_count(conn) == 0:
+                settled = True
+                break
+            if not stop.is_set():
                 stop.wait(poll_interval)
     finally:
         conn.close()
         signal.signal(signal.SIGINT, old_int)
         signal.signal(signal.SIGTERM, old_term)
-    return 0
+    return {"drained": drain and settled, "executed": executed}

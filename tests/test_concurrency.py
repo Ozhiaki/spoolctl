@@ -334,6 +334,42 @@ class TestWaitSurvivesWorkerCrash(ConcurrencyTestCase):
         self.assertIn(len(lines), (1, 2), lines)
 
 
+class TestDrainSettles(ConcurrencyTestCase):
+    def test_drain_waits_out_backoff_and_other_workers_inflight_job(self):
+        # Worker H holds a long job; the drainer must not exit while it runs,
+        # nor while the flaky job sits in its 2s backoff requeue.
+        hold_id = self.add("sleep", "2.5")
+        holder = self.spawn_worker("holder")
+        self.wait_for_state(hold_id, "running", timeout=15)
+
+        flaky = os.path.join(self.tmp.name, "flaky-marker")
+        flaky_id = self.add(
+            "sh", "-c",
+            f"if [ -f {flaky} ]; then exit 0; else touch {flaky}; exit 1; fi")
+        ok_id = self.add("sh", "-c", "true")
+
+        drainer = subprocess.Popen(
+            [sys.executable, "-m", "spoolctl", "work", "--drain",
+             "--db", self.db, "--json", "--poll-interval", "0.05"],
+            cwd=REPO, env=FAST_ENV,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        out, err = drainer.communicate(timeout=60)
+        self.assertEqual(drainer.returncode, 0, err)
+        data = json.loads(out)["data"]
+        self.assertTrue(data["drained"])
+        # The drainer ran the flaky job at least twice minus what the holder
+        # stole after finishing its hold; between the two workers everything
+        # settled and the drainer did real work.
+        self.assertGreaterEqual(data["executed"], 1)
+        for job_id in (hold_id, flaky_id, ok_id):
+            self.assertEqual(self.job(job_id).state, "done", f"job {job_id}")
+        conn = store.connect(self.db)
+        self.assertEqual(store.unsettled_count(conn), 0)
+        conn.close()
+        _ = holder  # stopped by stop_all_workers
+
+
 class TestCancelCompletionRace(ConcurrencyTestCase):
     def test_final_state_exactly_done_or_canceled_and_stable(self):
         n = 12

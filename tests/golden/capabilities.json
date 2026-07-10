@@ -331,12 +331,17 @@
       "summary": "block until every given job settles (done/dead/canceled); exit 0 all done, exit 6 any failed (envelope stays ok:true)"
     },
     "work": {
-      "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?, job_state?}; loop mode writes nothing to stdout",
+      "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?, job_state?}; --drain: {drained: bool, executed: int}; loop mode writes nothing to stdout",
       "flags": [
         {
           "default": null,
           "flag": "--db",
           "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--drain",
+          "type": "bool"
         },
         {
           "default": false,
@@ -360,7 +365,7 @@
         }
       ],
       "positionals": [],
-      "summary": "run jobs until stopped; --once runs at most one"
+      "summary": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles"
     }
   }
 }

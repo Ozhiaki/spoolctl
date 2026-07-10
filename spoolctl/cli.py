@@ -204,6 +204,8 @@ def build_parser() -> _Parser:
 
     work = sub.add_parser("work", parents=[common], help="run jobs until stopped")
     work.add_argument("--once", action="store_true", help="run at most one job, then exit")
+    work.add_argument("--drain", action="store_true",
+                      help="run until the queue settles (no queued or running jobs), then exit")
     work.add_argument("--poll-interval", type=float, default=None, metavar="SECONDS")
     work.add_argument("--worker-id", default=None, metavar="NAME")
 
@@ -373,6 +375,12 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
             f"--poll-interval must be > 0 (got {args.poll_interval})",
             "try: spoolctl work --poll-interval 1.0",
         )
+    if args.drain and args.once:
+        raise CliError(
+            "INVALID_INPUT",
+            "--drain and --once are mutually exclusive",
+            "try: spoolctl work --drain   or: spoolctl work --once",
+        )
     from spoolctl import worker
 
     worker_id = args.worker_id or worker.default_worker_id()
@@ -392,7 +400,17 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
         )
         return VerbResult(data=data, human=human)
     poll = args.poll_interval if args.poll_interval is not None else DEFAULT_POLL_INTERVAL
-    worker.work_loop(db_path, worker_id, poll)
+    outcome = worker.work_loop(db_path, worker_id, poll, drain=args.drain)
+    if args.drain:
+        executed = outcome["executed"]
+        human = (
+            f"Drained: executed {executed} job(s)" if outcome["drained"]
+            else f"Stopped before the queue settled; executed {executed} job(s)"
+        )
+        return VerbResult(
+            data={"drained": outcome["drained"], "executed": executed},
+            human=human,
+        )
     return VerbResult(data={"stopped": True}, human="", stdout_silent=True)
 
 
@@ -850,9 +868,11 @@ VERB_SUMMARIES = {
         "data_schema": "{job_id: int, state: 'queued'}",
     },
     "work": {
-        "summary": "run jobs until stopped; --once runs at most one",
+        "summary": "run jobs until stopped; --once runs at most one;"
+                   " --drain runs until the queue settles",
         "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?,"
-                       " job_state?}; loop mode writes nothing to stdout",
+                       " job_state?}; --drain: {drained: bool, executed: int};"
+                       " loop mode writes nothing to stdout",
     },
     "wait": {
         "summary": "block until every given job settles (done/dead/canceled);"

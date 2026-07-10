@@ -652,6 +652,15 @@ def cancel_job(
         raise
 
 
+def unsettled_count(conn: sqlite3.Connection) -> int:
+    """Jobs still queued or running — drain's settled test. A backoff
+    requeue is queued (next_run_at in the future) and counts; so does
+    another worker's in-flight job."""
+    return conn.execute(
+        "SELECT COUNT(*) AS n FROM jobs WHERE state IN ('queued','running')"
+    ).fetchone()["n"]
+
+
 def state_counts(conn: sqlite3.Connection) -> dict[str, int]:
     """Job counts by state, zero-filled for every state, keys sorted."""
     counts = {state: 0 for state in sorted(JOB_STATES)}
