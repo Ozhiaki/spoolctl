@@ -349,6 +349,83 @@ def record_failure(
     return new_state
 
 
+def update_heartbeat(
+    conn: sqlite3.Connection,
+    job_id: int,
+    worker_id: str,
+    worker_pid: int,
+    now: float,
+) -> None:
+    """Best-effort ownership-guarded heartbeat; lost updates are harmless."""
+    conn.execute(
+        "UPDATE jobs SET heartbeat_at=?" + _OWNERSHIP_GUARD,
+        (now, job_id, worker_id, worker_pid),
+    )
+
+
+def stale_running_candidates(conn: sqlite3.Connection, cutoff: float) -> list[Job]:
+    """Running rows whose heartbeat predates cutoff. Candidates only — the
+    caller must positively confirm the owner is dead before reaping."""
+    rows = conn.execute(
+        "SELECT * FROM jobs WHERE state='running' AND heartbeat_at < ?"
+        " ORDER BY heartbeat_at, id",
+        (cutoff,),
+    ).fetchall()
+    return [job_from_row(r) for r in rows]
+
+
+def reap(
+    conn: sqlite3.Connection,
+    job_id: int,
+    locked_pid: int,
+    cutoff: float,
+    now: float,
+    reaper_id: str,
+) -> str | None:
+    """Reclaim a confirmed-dead worker's job through the normal failure path.
+
+    Re-checks under BEGIN IMMEDIATE that the row is still running, still
+    owned by the confirmed-dead pid, and still stale; returns the new state
+    ('queued' or 'dead'), or None when the re-check failed.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT attempts, max_retries FROM jobs"
+            " WHERE id=? AND state='running' AND locked_pid=? AND heartbeat_at < ?",
+            (job_id, locked_pid, cutoff),
+        ).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            return None
+        new_attempts = row["attempts"] + 1
+        if new_attempts <= row["max_retries"]:
+            new_state = "queued"
+            next_run_at = now + backoff_seconds(new_attempts)
+        else:
+            new_state = "dead"
+            next_run_at = now
+        conn.execute(
+            "UPDATE jobs SET state=?, attempts=?, next_run_at=?, locked_by=NULL,"
+            " locked_pid=NULL, locked_at=NULL, heartbeat_at=NULL, finished_at=?,"
+            " last_exit_code=NULL, last_error='worker died' WHERE id=?",
+            (new_state, new_attempts, next_run_at, now, job_id),
+        )
+        conn.execute(
+            "UPDATE attempts SET state='abandoned', finished_at=?, error='worker died'"
+            " WHERE job_id=? AND state='running'",
+            (now, job_id),
+        )
+        add_event(conn, job_id, now, "reaped", reaper_id, f"dead worker pid {locked_pid}")
+        if new_state == "dead":
+            add_event(conn, job_id, now, "dead", reaper_id)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return new_state
+
+
 def get_job(conn: sqlite3.Connection, job_id: int) -> Job | None:
     row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
     return job_from_row(row) if row else None
