@@ -168,7 +168,7 @@ def make_envelope(
 
 # --- parser -------------------------------------------------------------
 
-VERBS = ("add", "work", "status", "list", "retry", "output", "capabilities")
+VERBS = ("add", "work", "status", "list", "show", "retry", "output", "capabilities")
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -209,6 +209,9 @@ def build_parser() -> _Parser:
     list_.add_argument("--limit", type=int, default=50, metavar="N",
                        help="max jobs (0 = unlimited)")
 
+    show = sub.add_parser("show", parents=[common], help="one job in full detail")
+    show.add_argument("id", metavar="ID")
+
     retry = sub.add_parser("retry", parents=[common], help="requeue a dead or failed job")
     retry.add_argument("id", metavar="ID")
     retry.add_argument("--force", action="store_true", help="also requeue a running job (unsafe)")
@@ -224,7 +227,7 @@ def build_parser() -> _Parser:
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
         {"add": add, "work": work, "status": status, "list": list_,
-         "retry": retry, "output": output, "capabilities": caps}
+         "show": show, "retry": retry, "output": output, "capabilities": caps}
     )
     return parser
 
@@ -474,6 +477,80 @@ def _job_id_arg(raw: str) -> int:
         ) from None
 
 
+def cmd_show(args: argparse.Namespace) -> VerbResult:
+    job_id = _job_id_arg(args.id)
+    conn = _open_db(args)
+    try:
+        job = store.get_job(conn, job_id)
+        if job is None:
+            raise CliError(
+                "NOT_FOUND",
+                f"no job with id {job_id}",
+                "run: spoolctl list  (to see job ids)",
+            )
+        attempts = store.get_attempts(conn, job_id)
+        events = store.get_events(conn, job_id)
+    finally:
+        conn.close()
+    job_data = {
+        "argv": job.argv,
+        "attempts": job.attempts,
+        "created_at": job.created_at,
+        "finished_at": job.finished_at,
+        "heartbeat_at": job.heartbeat_at,
+        "id": job.id,
+        "last_error": job.last_error,
+        "last_exit_code": job.last_exit_code,
+        "locked_at": job.locked_at,
+        "locked_by": job.locked_by,
+        "locked_pid": job.locked_pid,
+        "max_retries": job.max_retries,
+        "next_run_at": job.next_run_at,
+        "started_at": job.started_at,
+        "state": job.state,
+        "timeout_seconds": job.timeout_seconds,
+    }
+    attempt_rows = [
+        {
+            "attempt_no": a.attempt_no,
+            "error": a.error,
+            "exit_code": a.exit_code,
+            "finished_at": a.finished_at,
+            "started_at": a.started_at,
+            "state": a.state,
+            "stderr_path": a.stderr_path,
+            "stdout_path": a.stdout_path,
+            "worker_id": a.worker_id,
+            "worker_pid": a.worker_pid,
+        }
+        for a in attempts
+    ]
+
+    command = " ".join(job.argv)
+    if len(command) > 80:
+        command = command[:77] + "..."
+    lines = [f"#{job.id}  {job.state}  attempts={job.attempts}/{job.max_retries}  {command}"]
+    for a in attempts:
+        exit_part = "-" if a.exit_code is None else str(a.exit_code)
+        line = f"  attempt {a.attempt_no}  {a.state}  exit={exit_part}  worker={a.worker_id}"
+        if a.error:
+            line += f"  error: {a.error}"
+        lines.append(line)
+    if events:
+        lines.append("events:")
+        for e in events:
+            line = f"  {e['event']}"
+            if e["worker_id"]:
+                line += f"  worker={e['worker_id']}"
+            if e["detail"]:
+                line += f"  {e['detail']}"
+            lines.append(line)
+    return VerbResult(
+        data={"attempts": attempt_rows, "events": events, "job": job_data},
+        human="\n".join(lines),
+    )
+
+
 def cmd_retry(args: argparse.Namespace) -> VerbResult:
     job_id = _job_id_arg(args.id)
     conn = _open_db(args)
@@ -643,6 +720,17 @@ VERB_SUMMARIES = {
                        " max_retries, timeout_seconds, created_at, started_at,"
                        " finished_at, next_run_at, last_exit_code, last_error}]}",
     },
+    "show": {
+        "summary": "one job in full detail: row, attempts, event trail",
+        "data_schema": "{job: {id, argv, state, attempts, max_retries,"
+                       " timeout_seconds, created_at, started_at, finished_at,"
+                       " next_run_at, locked_by, locked_pid, locked_at,"
+                       " heartbeat_at, last_exit_code, last_error},"
+                       " attempts: [{attempt_no, state, worker_id, worker_pid,"
+                       " started_at, finished_at, exit_code, error,"
+                       " stdout_path, stderr_path}],"
+                       " events: [{at, event, worker_id, detail}]}",
+    },
     "retry": {
         "summary": "requeue a dead or failed job with a fresh retry budget",
         "data_schema": "{job_id: int, state: 'queued'}",
@@ -741,6 +829,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "list": cmd_list,
     "output": cmd_output,
     "retry": cmd_retry,
+    "show": cmd_show,
     "status": cmd_status,
     "work": cmd_work,
 }

@@ -631,6 +631,20 @@ def get_attempts(conn: sqlite3.Connection, job_id: int) -> list[Attempt]:
     return [attempt_from_row(r) for r in rows]
 
 
+def get_events(conn: sqlite3.Connection, job_id: int) -> list[dict]:
+    """A job's append-only event trail, in insertion order."""
+    rows = conn.execute(
+        "SELECT at, event, worker_id, detail FROM job_events WHERE job_id=?"
+        " ORDER BY id",
+        (job_id,),
+    ).fetchall()
+    return [
+        {"at": r["at"], "detail": r["detail"], "event": r["event"],
+         "worker_id": r["worker_id"]}
+        for r in rows
+    ]
+
+
 def add_event(
     conn: sqlite3.Connection,
     job_id: int,

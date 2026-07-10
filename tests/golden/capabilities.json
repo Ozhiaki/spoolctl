@@ -227,6 +227,28 @@
       ],
       "summary": "requeue a dead or failed job with a fresh retry budget"
     },
+    "show": {
+      "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        }
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "repeatable": false
+        }
+      ],
+      "summary": "one job in full detail: row, attempts, event trail"
+    },
     "status": {
       "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, recent_dead: [{id, command, attempts, last_error, finished_at, stdout_path, stderr_path}]}",
       "flags": [
