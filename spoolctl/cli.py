@@ -361,8 +361,36 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
 # --- dispatch -----------------------------------------------------------
 
 # Each handler takes parsed args and returns a VerbResult or raises CliError.
+def cmd_status(args: argparse.Namespace) -> VerbResult:
+    if args.limit < 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--limit must be >= 0 (got {args.limit})",
+            "try: spoolctl status --limit 10",
+        )
+    conn = _open_db(args)
+    try:
+        counts = store.state_counts(conn)
+        dead = store.recent_dead(conn, args.limit)
+    finally:
+        conn.close()
+    lines = ["  ".join(f"{k} {v}" for k, v in counts.items())]
+    if dead:
+        lines.append("recent dead:")
+        for d in dead:
+            lines.append(
+                f"  #{d['id']} attempts={d['attempts']}"
+                f" error={d['last_error'] or '-'} cmd: {d['command']}"
+            )
+    return VerbResult(
+        data={"counts": counts, "recent_dead": dead},
+        human="\n".join(lines),
+    )
+
+
 HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "add": cmd_add,
+    "status": cmd_status,
     "work": cmd_work,
 }
 

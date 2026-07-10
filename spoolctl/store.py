@@ -431,6 +431,43 @@ def get_job(conn: sqlite3.Connection, job_id: int) -> Job | None:
     return job_from_row(row) if row else None
 
 
+def state_counts(conn: sqlite3.Connection) -> dict[str, int]:
+    """Job counts by state, zero-filled for every state, keys sorted."""
+    counts = {state: 0 for state in sorted(("queued", "running", "done", "failed", "dead"))}
+    for row in conn.execute("SELECT state, COUNT(*) AS n FROM jobs GROUP BY state"):
+        counts[row["state"]] = row["n"]
+    return counts
+
+
+def recent_dead(conn: sqlite3.Connection, limit: int) -> list[dict]:
+    """Most recently finished dead jobs with their latest attempt's paths."""
+    rows = conn.execute(
+        "SELECT j.id, j.argv_json, j.attempts, j.last_error, j.finished_at,"
+        " a.stdout_path, a.stderr_path"
+        " FROM jobs j LEFT JOIN attempts a"
+        "   ON a.job_id = j.id"
+        "   AND a.attempt_no = (SELECT MAX(attempt_no) FROM attempts WHERE job_id = j.id)"
+        " WHERE j.state='dead'"
+        " ORDER BY j.finished_at DESC, j.id DESC LIMIT ?",
+        (limit,),
+    ).fetchall()
+    out = []
+    for r in rows:
+        command = " ".join(json.loads(r["argv_json"]))
+        if len(command) > 80:
+            command = command[:77] + "..."
+        out.append({
+            "attempts": r["attempts"],
+            "command": command,
+            "finished_at": r["finished_at"],
+            "id": r["id"],
+            "last_error": r["last_error"],
+            "stderr_path": r["stderr_path"],
+            "stdout_path": r["stdout_path"],
+        })
+    return out
+
+
 def add_event(
     conn: sqlite3.Connection,
     job_id: int,
