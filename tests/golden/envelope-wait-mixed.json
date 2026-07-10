@@ -1,0 +1,31 @@
+{
+  "commands": [],
+  "data": {
+    "all_succeeded": false,
+    "jobs": {
+      "1": {
+        "attempts": 0,
+        "last_error": null,
+        "last_exit_code": 0,
+        "state": "done"
+      },
+      "2": {
+        "attempts": 1,
+        "last_error": "exit 1",
+        "last_exit_code": 1,
+        "state": "dead"
+      }
+    }
+  },
+  "errors": [],
+  "meta": {
+    "contract_version": "1",
+    "data_hash": "sha256:PINNED",
+    "elapsed_ms": 0,
+    "request_id": "req_PINNED",
+    "ts_iso": "PINNED"
+  },
+  "ok": true,
+  "tool_version": "0.2.0",
+  "warnings": []
+}

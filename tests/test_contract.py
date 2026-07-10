@@ -99,6 +99,15 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assertEqual(code, 1)
         self.assert_golden("show-not-found", out)
 
+    def test_wait_mixed_outcome_exit_6_ok_true(self):
+        run_cli("add", "--db", self.db, "--json", "--", "true")
+        run_cli("add", "--db", self.db, "--json", "--max-retries", "0", "--", "false")
+        run_cli("work", "--once", "--db", self.db, "--json")
+        run_cli("work", "--once", "--db", self.db, "--json")
+        code, out, _ = run_cli("wait", "1", "2", "--db", self.db, "--json")
+        self.assertEqual(code, 6)
+        self.assert_golden("wait-mixed", out)
+
     def test_cancel_queued(self):
         run_cli("add", "--db", self.db, "--json", "--", "sleep", "9")
         code, out, _ = run_cli("cancel", "1", "--db", self.db, "--json")

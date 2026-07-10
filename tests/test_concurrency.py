@@ -309,6 +309,31 @@ class TestCancelKillDelivery(ConcurrencyTestCase):
                       message="force-retried job's old process group to die")
 
 
+class TestWaitSurvivesWorkerCrash(ConcurrencyTestCase):
+    def test_wait_returns_zero_after_reap_and_rerun(self):
+        marker = os.path.join(self.tmp.name, "m")
+        job_id = self.add("sh", "-c", f"sleep 1.5; echo ok >> {marker}")
+        victim = self.spawn_worker("victim")
+        self.wait_for_state(job_id, "running", timeout=15)
+        waiter = subprocess.Popen(
+            [sys.executable, "-m", "spoolctl", "wait", str(job_id),
+             "--db", self.db, "--json", "--poll-interval", "0.1"],
+            cwd=REPO, env=FAST_ENV,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        )
+        victim.kill()  # SIGKILL mid-job: recovery is reap + rerun
+        victim.communicate()
+        self.spawn_worker("rescuer")
+        out, err = waiter.communicate(timeout=60)
+        self.assertEqual(waiter.returncode, 0, err)
+        data = json.loads(out)["data"]
+        self.assertTrue(data["all_succeeded"])
+        self.assertEqual(data["jobs"][str(job_id)]["state"], "done")
+        # At-least-once: the SIGKILLed worker's child may finish too.
+        lines = Path(marker).read_text().splitlines()
+        self.assertIn(len(lines), (1, 2), lines)
+
+
 class TestCancelCompletionRace(ConcurrencyTestCase):
     def test_final_state_exactly_done_or_canceled_and_stable(self):
         n = 12

@@ -31,6 +31,7 @@ from spoolctl.models import (
     EXIT_CONFLICT,
     EXIT_ENVIRONMENT,
     EXIT_INPUT,
+    EXIT_JOB_FAILURE,
     EXIT_OK,
     EXIT_SAFETY,
     EXIT_TRANSIENT,
@@ -78,13 +79,18 @@ class CliError(Exception):
 
 @dataclass
 class VerbResult:
-    """What a verb handler returns; the framework wraps it."""
+    """What a verb handler returns; the framework wraps it.
+
+    exit_code other than EXIT_OK is only for the documented ok:true
+    exception (wait's exit 6): the envelope still reports success with
+    empty errors; the exit code carries job outcome for shell use."""
 
     data: Any
     human: str
     warnings: list[dict[str, str]] = field(default_factory=list)
     commands: list[str] = field(default_factory=list)
     stdout_silent: bool = False  # loop-mode work: nothing on stdout
+    exit_code: int = EXIT_OK
 
 
 class _ParserExit(Exception):
@@ -168,7 +174,8 @@ def make_envelope(
 
 # --- parser -------------------------------------------------------------
 
-VERBS = ("add", "work", "status", "list", "show", "retry", "cancel", "output", "capabilities")
+VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "output",
+         "capabilities")
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -199,6 +206,13 @@ def build_parser() -> _Parser:
     work.add_argument("--once", action="store_true", help="run at most one job, then exit")
     work.add_argument("--poll-interval", type=float, default=None, metavar="SECONDS")
     work.add_argument("--worker-id", default=None, metavar="NAME")
+
+    wait = sub.add_parser("wait", parents=[common],
+                          help="block until jobs settle; exit 6 if any failed")
+    wait.add_argument("ids", nargs="+", metavar="ID")
+    wait.add_argument("--timeout", type=float, default=None, metavar="SECONDS",
+                      help="give up after SECONDS (exit 4); default: wait forever")
+    wait.add_argument("--poll-interval", type=float, default=0.5, metavar="SECONDS")
 
     status = sub.add_parser("status", parents=[common], help="queue counts and recent dead jobs")
     status.add_argument("--limit", type=int, default=10, metavar="N")
@@ -233,7 +247,7 @@ def build_parser() -> _Parser:
 
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
-        {"add": add, "work": work, "status": status, "list": list_,
+        {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
          "show": show, "retry": retry, "cancel": cancel, "output": output,
          "capabilities": caps}
     )
@@ -609,6 +623,70 @@ def cmd_retry(args: argparse.Namespace) -> VerbResult:
     )
 
 
+_WAIT_TERMINAL = ("canceled", "dead", "done")
+
+
+def cmd_wait(args: argparse.Namespace) -> VerbResult:
+    ids = [_job_id_arg(raw) for raw in args.ids]
+    if args.timeout is not None and args.timeout <= 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--timeout must be > 0 (got {args.timeout})",
+            "try: spoolctl wait --timeout 60 <id...>",
+        )
+    if args.poll_interval <= 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--poll-interval must be > 0 (got {args.poll_interval})",
+            "try: spoolctl wait --poll-interval 0.5 <id...>",
+        )
+    id_list = " ".join(str(i) for i in ids)
+    conn = _open_db(args)
+    try:
+        missing = sorted({i for i in ids if store.get_job(conn, i) is None})
+        if missing:
+            raise CliError(
+                "NOT_FOUND",
+                "no job(s) with id(s): " + ", ".join(str(i) for i in missing),
+                "run: spoolctl list  (to see job ids)",
+            )
+        deadline = None if args.timeout is None else time.monotonic() + args.timeout
+        while True:
+            jobs = {i: store.get_job(conn, i) for i in ids}
+            if all(j.state in _WAIT_TERMINAL for j in jobs.values()):
+                break
+            if deadline is not None and time.monotonic() >= deadline:
+                raise CliError(
+                    "TIMEOUT",
+                    f"jobs not settled after {args.timeout}s",
+                    f"retry: spoolctl wait --timeout {args.timeout} {id_list}",
+                    exit_code=EXIT_TRANSIENT,
+                )
+            time.sleep(args.poll_interval)
+    finally:
+        conn.close()
+    all_succeeded = all(j.state == "done" for j in jobs.values())
+    data = {
+        "all_succeeded": all_succeeded,
+        "jobs": {
+            str(i): {
+                "attempts": j.attempts,
+                "last_error": j.last_error,
+                "last_exit_code": j.last_exit_code,
+                "state": j.state,
+            }
+            for i, j in jobs.items()
+        },
+    }
+    lines = [f"#{i}  {j.state}" for i, j in jobs.items()]
+    lines.append("all succeeded" if all_succeeded else "not all succeeded")
+    return VerbResult(
+        data=data,
+        human="\n".join(lines),
+        exit_code=EXIT_OK if all_succeeded else EXIT_JOB_FAILURE,
+    )
+
+
 def cmd_cancel(args: argparse.Namespace) -> VerbResult:
     job_id = _job_id_arg(args.id)
     conn = _open_db(args)
@@ -776,6 +854,12 @@ VERB_SUMMARIES = {
         "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?,"
                        " job_state?}; loop mode writes nothing to stdout",
     },
+    "wait": {
+        "summary": "block until every given job settles (done/dead/canceled);"
+                   " exit 0 all done, exit 6 any failed (envelope stays ok:true)",
+        "data_schema": "{all_succeeded: bool, jobs: {'<id>': {state, attempts,"
+                       " last_exit_code, last_error}}}",
+    },
     "status": {
         "summary": "queue counts and recent dead jobs; always exit 0",
         "data_schema": "{counts: {canceled,dead,done,failed,queued,running},"
@@ -905,6 +989,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "retry": cmd_retry,
     "show": cmd_show,
     "status": cmd_status,
+    "wait": cmd_wait,
     "work": cmd_work,
 }
 
@@ -957,7 +1042,7 @@ def main(argv: list[str] | None = None) -> int:
         handler = HANDLERS.get(args.verb, _not_implemented)
         result = handler(args)
         if result.stdout_silent:
-            return EXIT_OK
+            return result.exit_code
         if json_mode:
             env = make_envelope(
                 result.data,
@@ -971,7 +1056,7 @@ def main(argv: list[str] | None = None) -> int:
                 print(result.human)
             for w in result.warnings:
                 print(f"warning: {w.get('message', w.get('code', ''))}", file=sys.stderr)
-        return EXIT_OK
+        return result.exit_code
     except CliError as err:
         return _emit_failure(err, json_mode, started)
     except store.SchemaTooNewError as exc:
