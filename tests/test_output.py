@@ -42,8 +42,12 @@ class OutputTestCase(unittest.TestCase):
 
 class TestRawFidelity(OutputTestCase):
     def test_raw_round_trips_binary_exactly(self):
-        payload = r"printf '\x00\x01\xff\x7f\x80binary\ndata'"
-        job_id = self.run_job(["sh", "-c", payload])
+        # python -c, not printf: dash's printf (ubuntu sh) lacks \xHH escapes
+        payload = (
+            "import sys; sys.stdout.buffer.write("
+            "b'\\x00\\x01\\xff\\x7f\\x80binary\\ndata')"
+        )
+        job_id = self.run_job([sys.executable, "-c", payload])
         proc = subprocess.run(
             [sys.executable, "-m", "spoolctl", "output", str(job_id),
              "--db", self.db, "--raw", "--stream", "stdout"],
@@ -95,7 +99,9 @@ class TestDefaultAndJson(OutputTestCase):
         self.assertTrue(Path(so["path"]).exists())
 
     def test_json_preview_replaces_undecodable_bytes(self):
-        job_id = self.run_job(["sh", "-c", r"printf '\xff\xfe'"])
+        job_id = self.run_job(
+            [sys.executable, "-c",
+             "import sys; sys.stdout.buffer.write(bytes([255, 254]))"])
         _, out, _ = run_cli("output", str(job_id), "--db", self.db, "--json")
         preview = json.loads(out)["data"]["streams"]["stdout"]["preview"]
         self.assertEqual(preview, "��")

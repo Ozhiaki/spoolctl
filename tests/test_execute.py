@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -35,8 +36,10 @@ class TestCapture(ExecTestCase):
         self.assertEqual(Path(attempt.stderr_path).read_bytes(), b"err-bytes")
 
     def test_binary_output_byte_exact(self):
+        # python -c, not printf: dash's printf (ubuntu sh) lacks \xHH escapes
         job, attempt = self.claim(
-            ["sh", "-c", r"printf '\x00\x01\xff\xfe'"])
+            [sys.executable, "-c",
+             "import sys; sys.stdout.buffer.write(bytes([0, 1, 255, 254]))"])
         worker.execute_attempt(job, attempt)
         self.assertEqual(Path(attempt.stdout_path).read_bytes(), b"\x00\x01\xff\xfe")
 
