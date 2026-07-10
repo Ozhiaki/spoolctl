@@ -1,0 +1,19 @@
+{
+  "commands": [],
+  "data": {
+    "job_id": 1,
+    "state": "canceled",
+    "was_running": false
+  },
+  "errors": [],
+  "meta": {
+    "contract_version": "1",
+    "data_hash": "sha256:PINNED",
+    "elapsed_ms": 0,
+    "request_id": "req_PINNED",
+    "ts_iso": "PINNED"
+  },
+  "ok": true,
+  "tool_version": "0.2.0",
+  "warnings": []
+}

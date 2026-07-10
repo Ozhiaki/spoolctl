@@ -221,28 +221,128 @@ class TestProcessGroupKill(ConcurrencyTestCase):
 
 class TestGuardedRecording(ConcurrencyTestCase):
     def test_displaced_workers_result_is_discarded(self):
+        pid_file = os.path.join(self.tmp.name, "child.pid")
         marker = os.path.join(self.tmp.name, "job-finished")
-        job_id = self.add("sh", "-c", f"sleep 1; touch {marker}")
+        job_id = self.add("sh", "-c", f"echo $$ > {pid_file}; sleep 1; touch {marker}")
         victim = self.spawn_worker("displaced")
         self.wait_for_state(job_id, "running", timeout=15)
-        # Reassign the row out from under the live worker (what a future
-        # `retry --force` does); its recording must then affect zero rows.
+        self.wait_for(
+            lambda: os.path.exists(pid_file) and Path(pid_file).read_text().strip(),
+            timeout=15, message="job child to start")
+        child_pid = int(Path(pid_file).read_text())
+        # Reassign the row out from under the live worker (what `retry
+        # --force` does); its recording must then affect zero rows.
         conn = store.connect(self.db)
         conn.execute(
             "UPDATE jobs SET state='queued', locked_by=NULL, locked_pid=NULL,"
             " heartbeat_at=NULL, next_run_at=9999999999 WHERE id=?", (job_id,))
         conn.close()
-        # Wait for the child itself to finish, then give the worker a moment
-        # to attempt recording; a fixed sleep flakes on slow runners.
-        self.wait_for(lambda: os.path.exists(marker), timeout=30,
-                      message="job child to finish")
-        time.sleep(1.0)
+        # The attempt ends one of two legal ways: normally the owner's next
+        # heartbeat proves lost ownership and kills the child group (v0.2
+        # containment); on a slow runner the child may finish first. Either
+        # way the worker's recording must match zero rows.
+        def attempt_over():
+            if os.path.exists(marker):
+                return True
+            try:
+                os.killpg(child_pid, 0)
+                return False
+            except ProcessLookupError:
+                return True
+        self.wait_for(attempt_over, timeout=30, message="attempt to end")
+        time.sleep(1.0)  # give the worker a moment to attempt recording
         victim.send_signal(signal.SIGTERM)
         _, err = victim.communicate(timeout=30)
         self.assertIn("discarding stale result", err)
         job = self.job(job_id)
-        self.assertEqual(job.state, "queued", "stale success must not clobber the row")
+        self.assertEqual(job.state, "queued", "stale result must not clobber the row")
         self.assertEqual(job.attempts, 0)
+
+
+class TestCancelKillDelivery(ConcurrencyTestCase):
+    def group_dead(self, pgid: int):
+        def check():
+            try:
+                os.killpg(pgid, 0)
+                return False
+            except ProcessLookupError:
+                return True
+        return check
+
+    def child_pid_of(self, pid_file: str) -> int:
+        self.wait_for(
+            lambda: os.path.exists(pid_file) and Path(pid_file).read_text().strip(),
+            timeout=15, message="job child to start")
+        return int(Path(pid_file).read_text())
+
+    def test_forced_cancel_kills_child_group_within_a_heartbeat(self):
+        pid_file = os.path.join(self.tmp.name, "child.pid")
+        job_id = self.add("sh", "-c", f"echo $$ > {pid_file}; sleep 60")
+        self.spawn_worker("owner")
+        child_pid = self.child_pid_of(pid_file)
+
+        out = self.cli("cancel", str(job_id), "--running")
+        env = json.loads(out)
+        self.assertTrue(env["data"]["was_running"])
+        self.assertEqual(env["warnings"][0]["code"], "KILL_ASYNC")
+
+        # start_new_session makes the sh the group leader; the owning worker
+        # notices lost ownership on its next 0.2s heartbeat and group-kills.
+        self.wait_for(self.group_dead(child_pid), timeout=15,
+                      message="canceled job's process group to die")
+        self.assertEqual(self.job(job_id).state, "canceled")
+
+        # The worker survives the discarded result and keeps working.
+        job2 = self.add("sh", "-c", "true")
+        self.wait_for_state(job2, "done", timeout=15)
+
+    def test_force_retry_also_contains_the_old_child(self):
+        # Side benefit of heartbeat-guard delivery: a job force-retried out
+        # from under a live worker gets its old child killed, not orphaned.
+        pid_file = os.path.join(self.tmp.name, "child.pid")
+        job_id = self.add("sh", "-c", f"echo $$ >> {pid_file}; sleep 60")
+        self.spawn_worker("owner")
+        child_pid = self.child_pid_of(pid_file)
+
+        self.cli("retry", str(job_id), "--force")
+        self.wait_for(self.group_dead(child_pid), timeout=15,
+                      message="force-retried job's old process group to die")
+
+
+class TestCancelCompletionRace(ConcurrencyTestCase):
+    def test_final_state_exactly_done_or_canceled_and_stable(self):
+        n = 12
+        ids = [self.add("sh", "-c", "sleep 0.2") for _ in range(n)]
+        for i in range(3):
+            self.spawn_worker(f"racer-{i}")
+
+        # Hammer cancels while the jobs run and complete. Any exit code is
+        # legal here (0 ok, 2 unforced, 5 conflict); the invariant under test
+        # is the final state set, not per-call outcomes.
+        deadline = time.monotonic() + 60
+        def all_terminal():
+            row = self.query(
+                "SELECT COUNT(*) AS n FROM jobs WHERE state IN"
+                " ('done','canceled','dead','failed')")[0]
+            return row["n"] == n
+        while not all_terminal():
+            self.assertLess(time.monotonic(), deadline, "jobs never settled")
+            for job_id in ids:
+                subprocess.run(
+                    [sys.executable, "-m", "spoolctl", "cancel", str(job_id),
+                     "--running", "--db", self.db, "--json"],
+                    cwd=REPO, env=FAST_ENV, capture_output=True)
+
+        snapshot1 = {r["id"]: r["state"]
+                     for r in self.query("SELECT id, state FROM jobs")}
+        for job_id, state in snapshot1.items():
+            self.assertIn(state, ("done", "canceled"),
+                          f"job {job_id} settled as {state}")
+        self.stop_all_workers()
+        snapshot2 = {r["id"]: r["state"]
+                     for r in self.query("SELECT id, state FROM jobs")}
+        self.assertEqual(snapshot1, snapshot2,
+                         "a terminal state changed after settling")
 
 
 if __name__ == "__main__":

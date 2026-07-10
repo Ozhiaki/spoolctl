@@ -168,7 +168,7 @@ def make_envelope(
 
 # --- parser -------------------------------------------------------------
 
-VERBS = ("add", "work", "status", "list", "show", "retry", "output", "capabilities")
+VERBS = ("add", "work", "status", "list", "show", "retry", "cancel", "output", "capabilities")
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -216,6 +216,13 @@ def build_parser() -> _Parser:
     retry.add_argument("id", metavar="ID")
     retry.add_argument("--force", action="store_true", help="also requeue a running job (unsafe)")
 
+    cancel = sub.add_parser("cancel", parents=[common],
+                            help="withdraw a queued job (or stop a running one)")
+    cancel.add_argument("id", metavar="ID")
+    cancel.add_argument("--running", action="store_true",
+                        help="also cancel a running job (its process group is"
+                             " killed by the owning worker within a heartbeat)")
+
     output = sub.add_parser("output", parents=[common], help="show a job's captured output")
     output.add_argument("id", metavar="ID")
     output.add_argument("--stream", choices=["stdout", "stderr", "both"], default="both")
@@ -227,7 +234,8 @@ def build_parser() -> _Parser:
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
         {"add": add, "work": work, "status": status, "list": list_,
-         "show": show, "retry": retry, "output": output, "capabilities": caps}
+         "show": show, "retry": retry, "cancel": cancel, "output": output,
+         "capabilities": caps}
     )
     return parser
 
@@ -601,6 +609,66 @@ def cmd_retry(args: argparse.Namespace) -> VerbResult:
     )
 
 
+def cmd_cancel(args: argparse.Namespace) -> VerbResult:
+    job_id = _job_id_arg(args.id)
+    conn = _open_db(args)
+    try:
+        outcome, state = store.cancel_job(conn, job_id, args.running, time.time())
+    finally:
+        conn.close()
+    if outcome == "ok":
+        return VerbResult(
+            data={"job_id": job_id, "state": "canceled", "was_running": False},
+            human=f"Canceled job {job_id}",
+        )
+    if outcome == "ok_running":
+        return VerbResult(
+            data={"job_id": job_id, "state": "canceled", "was_running": True},
+            human=f"Canceled job {job_id} (was running; the owning worker kills"
+                  " its process group within a heartbeat)",
+            warnings=[{
+                "code": "KILL_ASYNC",
+                "message": "the job's process dies within about one heartbeat"
+                           " interval, not synchronously",
+            }],
+        )
+    if outcome == "not_found":
+        raise CliError(
+            "NOT_FOUND",
+            f"no job with id {job_id}",
+            "run: spoolctl list  (to see job ids)",
+        )
+    if outcome == "running_unforced":
+        raise CliError(
+            "SAFETY_BLOCK",
+            f"job {job_id} is running; canceling it kills its process",
+            "let it finish, or force with:"
+            f" spoolctl cancel --running {job_id}",
+            exit_code=EXIT_SAFETY,
+        )
+    if outcome == "raced":
+        raise CliError(
+            "CONFLICT",
+            f"job {job_id} changed state before --running could cancel it"
+            f" (now {state})",
+            f"re-check with: spoolctl show {job_id}",
+            exit_code=EXIT_CONFLICT,
+        )
+    # terminal: done / dead / canceled (or failed)
+    if state == "dead":
+        remediation = f"to run it again: spoolctl retry {job_id}"
+    elif state == "canceled":
+        remediation = "nothing to do; it is already canceled"
+    else:
+        remediation = f"nothing to cancel; the job already finished ({state})"
+    raise CliError(
+        "CONFLICT",
+        f"job {job_id} is already {state}",
+        remediation,
+        exit_code=EXIT_CONFLICT,
+    )
+
+
 PREVIEW_BYTES = 4096
 
 
@@ -735,6 +803,11 @@ VERB_SUMMARIES = {
         "summary": "requeue a dead or failed job with a fresh retry budget",
         "data_schema": "{job_id: int, state: 'queued'}",
     },
+    "cancel": {
+        "summary": "cancel a queued job; --running also stops a running one"
+                   " (killed by its owning worker within a heartbeat)",
+        "data_schema": "{job_id: int, state: 'canceled', was_running: bool}",
+    },
     "output": {
         "summary": "captured stdout/stderr for any attempt of a job",
         "data_schema": "{attempt_no, attempt_state, attempts_total, job_id,"
@@ -825,6 +898,7 @@ def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
 
 HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "add": cmd_add,
+    "cancel": cmd_cancel,
     "capabilities": cmd_capabilities,
     "list": cmd_list,
     "output": cmd_output,

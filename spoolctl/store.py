@@ -439,12 +439,16 @@ def update_heartbeat(
     worker_id: str,
     worker_pid: int,
     now: float,
-) -> None:
-    """Best-effort ownership-guarded heartbeat; lost updates are harmless."""
-    conn.execute(
+) -> int:
+    """Ownership-guarded heartbeat. Returns the number of rows matched:
+    0 on a *successful* UPDATE is positive proof ownership was lost
+    (canceled, reaped, or force-retried) — the caller kills its own child.
+    Exceptions (e.g. transient busy) are not proof and propagate."""
+    cur = conn.execute(
         "UPDATE jobs SET heartbeat_at=?" + _OWNERSHIP_GUARD,
         (now, job_id, worker_id, worker_pid),
     )
+    return cur.rowcount
 
 
 def stale_running_candidates(conn: sqlite3.Connection, cutoff: float) -> list[Job]:
@@ -585,6 +589,67 @@ def list_jobs(
         sql += " LIMIT ?"
         params.append(limit)
     return [job_from_row(r) for r in conn.execute(sql, params)]
+
+
+def cancel_job(
+    conn: sqlite3.Connection,
+    job_id: int,
+    allow_running: bool,
+    now: float,
+) -> tuple[str, str | None]:
+    """Cancel a queued job, or (allow_running) a running one.
+
+    Returns (outcome, state) with outcome one of:
+    ok | ok_running | not_found | running_unforced | terminal | raced.
+    `state` is the job's state at decision time (for raced: what it became).
+    The row flip is the entire cross-process delivery: the owning worker's
+    next heartbeat matches zero rows and it kills its own child group —
+    no cross-process killpg, no pid-reuse hazard.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT state FROM jobs WHERE id=?", (job_id,)).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            return "not_found", None
+        state = row["state"]
+        if state == "queued":
+            conn.execute(
+                "UPDATE jobs SET state='canceled', finished_at=? WHERE id=?",
+                (now, job_id),
+            )
+            add_event(conn, job_id, now, "canceled")
+            conn.execute("COMMIT")
+            return "ok", "queued"
+        if state == "running":
+            if not allow_running:
+                conn.execute("ROLLBACK")
+                return "running_unforced", state
+            cur = conn.execute(
+                "UPDATE jobs SET state='canceled', locked_by=NULL, locked_pid=NULL,"
+                " locked_at=NULL, heartbeat_at=NULL, finished_at=?"
+                " WHERE id=? AND state='running'",
+                (now, job_id),
+            )
+            if cur.rowcount == 0:
+                new_state = conn.execute(
+                    "SELECT state FROM jobs WHERE id=?", (job_id,)
+                ).fetchone()["state"]
+                conn.execute("ROLLBACK")
+                return "raced", new_state
+            conn.execute(
+                "UPDATE attempts SET state='canceled', finished_at=?, error='canceled'"
+                " WHERE job_id=? AND state='running'",
+                (now, job_id),
+            )
+            add_event(conn, job_id, now, "canceled", None, "forced (was running)")
+            conn.execute("COMMIT")
+            return "ok_running", "running"
+        conn.execute("ROLLBACK")
+        return "terminal", state
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
 
 
 def state_counts(conn: sqlite3.Connection) -> dict[str, int]:

@@ -95,13 +95,27 @@ class Heartbeat:
 
     Uses its own connection (sqlite3 objects are not shared across threads).
     Lost or late updates are harmless: staleness only nominates candidates.
+
+    Cancellation delivery: a *successful* UPDATE that matched zero rows is
+    positive proof this worker no longer owns the row (canceled, reaped, or
+    force-retried) — on_lost fires exactly once and the thread stops.
+    Exceptions (e.g. transient busy) are not proof: swallow and retry,
+    never fire on_lost on an exception.
     """
 
-    def __init__(self, db_path: str, job_id: int, worker_id: str, worker_pid: int):
+    def __init__(
+        self,
+        db_path: str,
+        job_id: int,
+        worker_id: str,
+        worker_pid: int,
+        on_lost=None,
+    ):
         self._db_path = db_path
         self._job_id = job_id
         self._worker_id = worker_id
         self._worker_pid = worker_pid
+        self._on_lost = on_lost
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
 
@@ -110,11 +124,15 @@ class Heartbeat:
         try:
             while not self._stop.wait(heartbeat_interval()):
                 try:
-                    store.update_heartbeat(
+                    matched = store.update_heartbeat(
                         conn, self._job_id, self._worker_id, self._worker_pid, time.time()
                     )
                 except Exception:
-                    pass  # e.g. transient busy; the next beat retries
+                    continue  # e.g. transient busy; the next beat retries
+                if matched == 0:
+                    if self._on_lost is not None:
+                        self._on_lost()
+                    return  # ownership is gone; nothing left to beat for
         finally:
             conn.close()
 
@@ -204,8 +222,26 @@ def process_one(
         return None
     job, attempt = claimed
     started = time.monotonic()
-    with Heartbeat(db_path, job.id, worker_id, os.getpid()):
-        kind, exit_code, error = execute_attempt(job, attempt, on_spawn=on_spawn)
+    current: dict = {"proc": None}
+
+    def _on_spawn(proc):
+        current["proc"] = proc
+        if on_spawn is not None:
+            on_spawn(proc)
+
+    def _on_lost():
+        # The row was canceled, reaped, or force-retried out from under us:
+        # this worker owns the child, so this worker kills it.
+        proc = current["proc"]
+        if proc is not None and proc.poll() is None:
+            print(
+                f"spoolctl: job {job.id} ownership lost; killing its process group",
+                file=sys.stderr,
+            )
+            _kill_group(proc)
+
+    with Heartbeat(db_path, job.id, worker_id, os.getpid(), on_lost=_on_lost):
+        kind, exit_code, error = execute_attempt(job, attempt, on_spawn=_on_spawn)
     now = time.time()
     if kind == "succeeded":
         new_state = store.record_success(

@@ -114,6 +114,33 @@
       ],
       "summary": "enqueue a command (argv form or -c shell string)"
     },
+    "cancel": {
+      "data_schema": "{job_id: int, state: 'canceled', was_running: bool}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "flag": "--running",
+          "type": "bool"
+        }
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "repeatable": false
+        }
+      ],
+      "summary": "cancel a queued job; --running also stops a running one (killed by its owning worker within a heartbeat)"
+    },
     "capabilities": {
       "data_schema": "{attempt_states, contract_policy, contract_version, env, error_codes, events, exit_codes, job_states, verbs}",
       "flags": [
