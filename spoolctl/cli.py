@@ -10,6 +10,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
+import re
 import shlex
 import sqlite3
 import sys
@@ -174,8 +176,8 @@ def make_envelope(
 
 # --- parser -------------------------------------------------------------
 
-VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "output",
-         "capabilities")
+VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
+         "output", "capabilities")
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -239,6 +241,15 @@ def build_parser() -> _Parser:
                         help="also cancel a running job (its process group is"
                              " killed by the owning worker within a heartbeat)")
 
+    prune = sub.add_parser("prune", parents=[common],
+                           help="delete old terminal jobs and their output files")
+    prune.add_argument("--older-than", required=True, metavar="DURATION",
+                       help="age of finished_at to prune, e.g. 30d, 12h, 90 (seconds)")
+    prune.add_argument("--state", default="done", metavar="CSV",
+                       help="terminal states to prune (done, dead, canceled); default done")
+    prune.add_argument("--dry-run", action="store_true",
+                       help="report what would be deleted without deleting")
+
     output = sub.add_parser("output", parents=[common], help="show a job's captured output")
     output.add_argument("id", metavar="ID")
     output.add_argument("--stream", choices=["stdout", "stderr", "both"], default="both")
@@ -250,8 +261,8 @@ def build_parser() -> _Parser:
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
-         "show": show, "retry": retry, "cancel": cancel, "output": output,
-         "capabilities": caps}
+         "show": show, "retry": retry, "cancel": cancel, "prune": prune,
+         "output": output, "capabilities": caps}
     )
     return parser
 
@@ -765,6 +776,109 @@ def cmd_cancel(args: argparse.Namespace) -> VerbResult:
     )
 
 
+_DURATION_UNITS = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}
+PRUNABLE_STATES = ("canceled", "dead", "done")
+
+
+def _parse_duration(raw: str) -> int:
+    """DURATION grammar: integer with optional s|m|h|d suffix; bare means
+    seconds; 0 matches everything."""
+    m = re.fullmatch(r"(\d+)([smhd]?)", raw)
+    if m is None:
+        raise CliError(
+            "INVALID_INPUT",
+            f"bad duration: {raw!r} (integer with optional s/m/h/d suffix)",
+            "try: spoolctl prune --older-than 30d",
+        )
+    return int(m.group(1)) * _DURATION_UNITS[m.group(2)]
+
+
+def _parse_prune_states(raw: str) -> list[str]:
+    states = []
+    for tok in raw.split(","):
+        tok = tok.strip()
+        if tok not in PRUNABLE_STATES:
+            suggestion = _suggest(tok, list(PRUNABLE_STATES))
+            raise CliError(
+                "INVALID_INPUT",
+                f"prune cannot touch state {tok!r}; only terminal states"
+                f" ({', '.join(PRUNABLE_STATES)}) may be pruned",
+                f"try: spoolctl prune --older-than 30d --state {suggestion}"
+                if suggestion else
+                f"valid states: {','.join(PRUNABLE_STATES)}",
+                did_you_mean=suggestion,
+            )
+        states.append(tok)
+    return states
+
+
+def cmd_prune(args: argparse.Namespace) -> VerbResult:
+    seconds = _parse_duration(args.older_than)
+    states = _parse_prune_states(args.state)
+    cutoff = time.time() - seconds
+    conn = _open_db(args)
+    try:
+        matches = store.prune_matches(conn, states, cutoff)
+        if args.dry_run:
+            freed = 0
+            for m in matches:
+                for paths in m["paths"]:
+                    for path in paths:
+                        try:
+                            freed += os.stat(path).st_size
+                        except OSError:
+                            pass
+            data = {
+                "deleted_attempts": sum(m["n_attempts"] for m in matches),
+                "deleted_events": sum(m["n_events"] for m in matches),
+                "deleted_jobs": len(matches),
+                "dry_run": True,
+                "freed_bytes": freed,
+                "matched": len(matches),
+            }
+            return VerbResult(
+                data=data,
+                human=f"would prune {data['deleted_jobs']} job(s),"
+                      f" freeing {freed} bytes (dry run)",
+            )
+        # Files first, rows second: a crash in between leaves rows a re-run
+        # still finds; the reverse order would strand invisible orphan files.
+        freed = 0
+        for m in matches:
+            for stdout_path, stderr_path in m["paths"]:
+                for path in (stdout_path, stderr_path):
+                    try:
+                        freed += os.stat(path).st_size
+                        os.unlink(path)
+                    except OSError:
+                        pass  # already gone; re-runs must not trip here
+                try:
+                    os.rmdir(os.path.dirname(stdout_path))
+                except OSError:
+                    pass
+            if m["paths"]:
+                try:
+                    os.rmdir(os.path.dirname(os.path.dirname(m["paths"][0][0])))
+                except OSError:
+                    pass  # not empty (e.g. a newer attempt's dir) or gone
+        jobs, attempts, events = store.prune_delete(
+            conn, [m["job_id"] for m in matches], states, cutoff)
+    finally:
+        conn.close()
+    data = {
+        "deleted_attempts": attempts,
+        "deleted_events": events,
+        "deleted_jobs": jobs,
+        "dry_run": False,
+        "freed_bytes": freed,
+        "matched": len(matches),
+    }
+    return VerbResult(
+        data=data,
+        human=f"pruned {jobs} job(s), freed {freed} bytes",
+    )
+
+
 PREVIEW_BYTES = 4096
 
 
@@ -912,6 +1026,13 @@ VERB_SUMMARIES = {
                    " (killed by its owning worker within a heartbeat)",
         "data_schema": "{job_id: int, state: 'canceled', was_running: bool}",
     },
+    "prune": {
+        "summary": "delete terminal jobs older than a duration, files first"
+                   " then rows; --dry-run reports without deleting",
+        "data_schema": "{matched: int, deleted_jobs: int, deleted_attempts:"
+                       " int, deleted_events: int, freed_bytes: int,"
+                       " dry_run: bool}",
+    },
     "output": {
         "summary": "captured stdout/stderr for any attempt of a job",
         "data_schema": "{attempt_no, attempt_state, attempts_total, job_id,"
@@ -1006,6 +1127,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "capabilities": cmd_capabilities,
     "list": cmd_list,
     "output": cmd_output,
+    "prune": cmd_prune,
     "retry": cmd_retry,
     "show": cmd_show,
     "status": cmd_status,

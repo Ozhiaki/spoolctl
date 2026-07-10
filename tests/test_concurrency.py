@@ -370,6 +370,51 @@ class TestDrainSettles(ConcurrencyTestCase):
         _ = holder  # stopped by stop_all_workers
 
 
+class TestPruneSafety(ConcurrencyTestCase):
+    def test_prune_never_touches_queued_running_or_live_output(self):
+        # One worker, one long job in front: while it runs, 1 running + 4
+        # queued rows exist and nothing is terminal, so the widest possible
+        # prune (--older-than 0, every terminal state) must delete nothing.
+        hold_id = self.add("sh", "-c", "echo working; sleep 4")
+        quick_ids = [self.add("sh", "-c", "true") for _ in range(4)]
+        all_ids = {hold_id, *quick_ids}
+        self.spawn_worker("solo")
+        self.wait_for_state(hold_id, "running", timeout=15)
+        live_path = self.query(
+            "SELECT stdout_path FROM attempts WHERE job_id=?", hold_id
+        )[0]["stdout_path"]
+
+        # Assert only on prunes that verifiably ran while the job was live:
+        # if the row is still running AFTER the prune finished, it was
+        # running for the prune's whole duration, so nothing was terminal.
+        live_prunes = 0
+        while True:
+            out = self.cli("prune", "--older-than", "0",
+                           "--state", "done,dead,canceled")
+            job = self.job(hold_id)
+            if job is None or job.state != "running":
+                break  # settled (or racing settle); the unit suite covers it
+            self.assertEqual(json.loads(out)["data"]["deleted_jobs"], 0)
+            survivors = {r["id"] for r in self.query("SELECT id FROM jobs")}
+            self.assertEqual(survivors, all_ids,
+                             "prune touched a queued or running row")
+            self.assertTrue(os.path.exists(live_path),
+                            "live attempt output deleted")
+            live_prunes += 1
+        self.assertGreaterEqual(live_prunes, 1,
+                                "no prune completed while the job was live")
+
+        # After everything settles (some rows may already be pruned), the
+        # same prune reclaims whatever is left.
+        self.wait_for(
+            lambda: self.query(
+                "SELECT COUNT(*) AS n FROM jobs WHERE state IN"
+                " ('queued','running')")[0]["n"] == 0,
+            timeout=30, message="queue to settle")
+        self.cli("prune", "--older-than", "0", "--state", "done,dead,canceled")
+        self.assertEqual(self.query("SELECT COUNT(*) AS n FROM jobs")[0]["n"], 0)
+
+
 class TestCancelCompletionRace(ConcurrencyTestCase):
     def test_final_state_exactly_done_or_canceled_and_stable(self):
         n = 12

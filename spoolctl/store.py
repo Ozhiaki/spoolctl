@@ -652,6 +652,74 @@ def cancel_job(
         raise
 
 
+def prune_matches(
+    conn: sqlite3.Connection,
+    states: list[str],
+    cutoff: float,
+) -> list[dict]:
+    """Terminal jobs whose finished_at predates cutoff, with the row counts
+    and output paths a prune would remove. Pure reads."""
+    marks = ",".join("?" * len(states))
+    job_rows = conn.execute(
+        f"SELECT id FROM jobs WHERE state IN ({marks})"
+        " AND finished_at IS NOT NULL AND finished_at < ? ORDER BY id",
+        (*states, cutoff),
+    ).fetchall()
+    out = []
+    for jr in job_rows:
+        job_id = jr["id"]
+        attempts = conn.execute(
+            "SELECT stdout_path, stderr_path FROM attempts WHERE job_id=?"
+            " ORDER BY attempt_no",
+            (job_id,),
+        ).fetchall()
+        n_events = conn.execute(
+            "SELECT COUNT(*) AS n FROM job_events WHERE job_id=?", (job_id,)
+        ).fetchone()["n"]
+        out.append({
+            "job_id": job_id,
+            "n_attempts": len(attempts),
+            "n_events": n_events,
+            "paths": [(a["stdout_path"], a["stderr_path"]) for a in attempts],
+        })
+    return out
+
+
+def prune_delete(
+    conn: sqlite3.Connection,
+    job_ids: list[int],
+    states: list[str],
+    cutoff: float,
+) -> tuple[int, int, int]:
+    """Delete matched jobs' attempts, events, and rows in one transaction.
+
+    Each job is re-checked against state+age inside BEGIN IMMEDIATE — a
+    matched job that was retried meanwhile is skipped (its files are
+    already gone; output degrades gracefully on missing files). Returns
+    (jobs, attempts, events) actually deleted."""
+    deleted_jobs = deleted_attempts = deleted_events = 0
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        for job_id in job_ids:
+            row = conn.execute(
+                "SELECT state, finished_at FROM jobs WHERE id=?", (job_id,)
+            ).fetchone()
+            if (row is None or row["state"] not in states
+                    or row["finished_at"] is None or row["finished_at"] >= cutoff):
+                continue
+            deleted_attempts += conn.execute(
+                "DELETE FROM attempts WHERE job_id=?", (job_id,)).rowcount
+            deleted_events += conn.execute(
+                "DELETE FROM job_events WHERE job_id=?", (job_id,)).rowcount
+            deleted_jobs += conn.execute(
+                "DELETE FROM jobs WHERE id=?", (job_id,)).rowcount
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return deleted_jobs, deleted_attempts, deleted_events
+
+
 def unsettled_count(conn: sqlite3.Connection) -> int:
     """Jobs still queued or running — drain's settled test. A backoff
     requeue is queued (next_run_at in the future) and counts; so does

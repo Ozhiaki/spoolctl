@@ -227,6 +227,38 @@
       ],
       "summary": "captured stdout/stderr for any attempt of a job"
     },
+    "prune": {
+      "data_schema": "{matched: int, deleted_jobs: int, deleted_attempts: int, deleted_events: int, freed_bytes: int, dry_run: bool}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--dry-run",
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": null,
+          "flag": "--older-than",
+          "type": "str"
+        },
+        {
+          "default": "done",
+          "flag": "--state",
+          "type": "str"
+        }
+      ],
+      "positionals": [],
+      "summary": "delete terminal jobs older than a duration, files first then rows; --dry-run reports without deleting"
+    },
     "retry": {
       "data_schema": "{job_id: int, state: 'queued'}",
       "flags": [
