@@ -25,6 +25,8 @@ from spoolctl.models import (
     DEFAULT_MAX_RETRIES,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_TIMEOUT_SECONDS,
+    ERROR_CODES,
+    EXIT_CODES,
     EXIT_CONFLICT,
     EXIT_ENVIRONMENT,
     EXIT_INPUT,
@@ -546,8 +548,106 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
     return VerbResult(data=None, human="\n".join(sections))
 
 
+# One-line data-schema summaries per verb; the flags themselves are always
+# introspected from the live parser, never hand-maintained.
+VERB_SUMMARIES = {
+    "add": {
+        "summary": "enqueue a command (argv form or -c shell string)",
+        "data_schema": "{job_id: int, state: 'queued'}",
+    },
+    "work": {
+        "summary": "run jobs until stopped; --once runs at most one",
+        "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?,"
+                       " job_state?}; loop mode writes nothing to stdout",
+    },
+    "status": {
+        "summary": "queue counts and recent dead jobs; always exit 0",
+        "data_schema": "{counts: {dead,done,failed,queued,running},"
+                       " recent_dead: [{id, command, attempts, last_error,"
+                       " finished_at, stdout_path, stderr_path}]}",
+    },
+    "retry": {
+        "summary": "requeue a dead or failed job with a fresh retry budget",
+        "data_schema": "{job_id: int, state: 'queued'}",
+    },
+    "output": {
+        "summary": "captured stdout/stderr for any attempt of a job",
+        "data_schema": "{attempt_no, attempt_state, attempts_total, job_id,"
+                       " streams: {stdout|stderr: {path, preview,"
+                       " preview_truncated, size_bytes}}} or {attempts: []}",
+    },
+    "capabilities": {
+        "summary": "this machine-readable contract",
+        "data_schema": "{contract_version, env, error_codes, exit_codes, verbs}",
+    },
+}
+
+ENV_DOCS = {
+    "SPOOLCTL_DB": "queue database path (overridden by --db; default"
+                   " ./.spoolctl/queue.db)",
+    "SPOOLCTL_TEST_HEARTBEAT_INTERVAL": "test-only: seconds between worker"
+                                        " heartbeats (default 5)",
+    "SPOOLCTL_TEST_REAP_THRESHOLD": "test-only: seconds of heartbeat staleness"
+                                    " before a running job becomes a reap"
+                                    " candidate (default 30)",
+}
+
+
+def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
+    flags = []
+    positionals = []
+    for action in sub._actions:
+        if isinstance(action, argparse._HelpAction):
+            continue
+        if action.option_strings:
+            flag = max(action.option_strings, key=len)
+            if isinstance(action, argparse._StoreTrueAction):
+                ftype = "bool"
+                default: Any = False
+            else:
+                ftype = action.type.__name__ if callable(action.type) else "str"
+                default = action.default
+            entry: dict[str, Any] = {"default": default, "flag": flag, "type": ftype}
+            if action.choices:
+                entry["choices"] = sorted(action.choices)
+            flags.append(entry)
+        else:
+            positionals.append({
+                "name": action.dest,
+                "repeatable": action.nargs == argparse.REMAINDER,
+            })
+    return {
+        "data_schema": VERB_SUMMARIES[name]["data_schema"],
+        "flags": sorted(flags, key=lambda f: f["flag"]),
+        "positionals": positionals,
+        "summary": VERB_SUMMARIES[name]["summary"],
+    }
+
+
+def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
+    build_parser()  # ensure _SUBPARSERS is populated from the live parser
+    verbs = {name: _describe_verb(name, sub) for name, sub in sorted(_SUBPARSERS.items())}
+    exit_codes = {
+        str(code): {"meaning": info["meaning"], "retryable": info["retryable"]}
+        for code, info in sorted(EXIT_CODES.items())
+    }
+    data = {
+        "contract_version": CONTRACT_VERSION,
+        "env": ENV_DOCS,
+        "error_codes": sorted(ERROR_CODES),
+        "exit_codes": exit_codes,
+        "verbs": verbs,
+    }
+    lines = [f"spoolctl contract v{CONTRACT_VERSION}"]
+    for name, verb in verbs.items():
+        lines.append(f"  {name}: {verb['summary']}")
+    lines.append("run with --json for the full machine-readable contract")
+    return VerbResult(data=data, human="\n".join(lines))
+
+
 HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "add": cmd_add,
+    "capabilities": cmd_capabilities,
     "output": cmd_output,
     "retry": cmd_retry,
     "status": cmd_status,

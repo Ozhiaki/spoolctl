@@ -1,0 +1,225 @@
+{
+  "contract_version": "1",
+  "env": {
+    "SPOOLCTL_DB": "queue database path (overridden by --db; default ./.spoolctl/queue.db)",
+    "SPOOLCTL_TEST_HEARTBEAT_INTERVAL": "test-only: seconds between worker heartbeats (default 5)",
+    "SPOOLCTL_TEST_REAP_THRESHOLD": "test-only: seconds of heartbeat staleness before a running job becomes a reap candidate (default 30)"
+  },
+  "error_codes": [
+    "CONFLICT",
+    "INTERNAL",
+    "INVALID_INPUT",
+    "LOCKED",
+    "MISSING_REQUIRED",
+    "NOT_FOUND",
+    "SAFETY_BLOCK",
+    "TIMEOUT",
+    "UNKNOWN_COMMAND",
+    "UNKNOWN_FLAG"
+  ],
+  "exit_codes": {
+    "0": {
+      "meaning": "success (including empty results)",
+      "retryable": null
+    },
+    "1": {
+      "meaning": "user-input-error",
+      "retryable": false
+    },
+    "2": {
+      "meaning": "safety-block (refused; a --force form may exist)",
+      "retryable": false
+    },
+    "3": {
+      "meaning": "tool-environment-error",
+      "retryable": null
+    },
+    "4": {
+      "meaning": "transient-failure (retry after a short delay)",
+      "retryable": true
+    },
+    "5": {
+      "meaning": "conflict (state changed underneath)",
+      "retryable": false
+    }
+  },
+  "verbs": {
+    "add": {
+      "data_schema": "{job_id: int, state: 'queued'}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": 3,
+          "flag": "--max-retries",
+          "type": "int"
+        },
+        {
+          "default": 300,
+          "flag": "--timeout",
+          "type": "int"
+        },
+        {
+          "default": null,
+          "flag": "-c",
+          "type": "str"
+        }
+      ],
+      "positionals": [
+        {
+          "name": "argv",
+          "repeatable": true
+        }
+      ],
+      "summary": "enqueue a command (argv form or -c shell string)"
+    },
+    "capabilities": {
+      "data_schema": "{contract_version, env, error_codes, exit_codes, verbs}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        }
+      ],
+      "positionals": [],
+      "summary": "this machine-readable contract"
+    },
+    "output": {
+      "data_schema": "{attempt_no, attempt_state, attempts_total, job_id, streams: {stdout|stderr: {path, preview, preview_truncated, size_bytes}}} or {attempts: []}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--attempt",
+          "type": "int"
+        },
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "flag": "--raw",
+          "type": "bool"
+        },
+        {
+          "choices": [
+            "both",
+            "stderr",
+            "stdout"
+          ],
+          "default": "both",
+          "flag": "--stream",
+          "type": "str"
+        }
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "repeatable": false
+        }
+      ],
+      "summary": "captured stdout/stderr for any attempt of a job"
+    },
+    "retry": {
+      "data_schema": "{job_id: int, state: 'queued'}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--force",
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        }
+      ],
+      "positionals": [
+        {
+          "name": "id",
+          "repeatable": false
+        }
+      ],
+      "summary": "requeue a dead or failed job with a fresh retry budget"
+    },
+    "status": {
+      "data_schema": "{counts: {dead,done,failed,queued,running}, recent_dead: [{id, command, attempts, last_error, finished_at, stdout_path, stderr_path}]}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": 10,
+          "flag": "--limit",
+          "type": "int"
+        }
+      ],
+      "positionals": [],
+      "summary": "queue counts and recent dead jobs; always exit 0"
+    },
+    "work": {
+      "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?, job_state?}; loop mode writes nothing to stdout",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": false,
+          "flag": "--once",
+          "type": "bool"
+        },
+        {
+          "default": null,
+          "flag": "--poll-interval",
+          "type": "float"
+        },
+        {
+          "default": null,
+          "flag": "--worker-id",
+          "type": "str"
+        }
+      ],
+      "positionals": [],
+      "summary": "run jobs until stopped; --once runs at most one"
+    }
+  }
+}
