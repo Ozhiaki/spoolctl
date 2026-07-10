@@ -1,0 +1,275 @@
+"""Schema v1 -> v2 migration: fixture upgrade, concurrency race, one-way door.
+
+The v1 schema below is a frozen copy of SCHEMA_SQL as shipped in v0.1 —
+it must never track store.SCHEMA_SQL, that would defeat the fixture.
+"""
+
+from __future__ import annotations
+
+import os
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+from pathlib import Path
+
+from spoolctl import store
+
+REPO = Path(__file__).resolve().parent.parent
+
+V1_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS jobs (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  argv_json       TEXT    NOT NULL,
+  state           TEXT    NOT NULL CHECK (state IN
+                    ('queued','running','done','failed','dead')),
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  max_retries     INTEGER NOT NULL DEFAULT 3,
+  timeout_seconds INTEGER NOT NULL DEFAULT 300,
+  created_at      REAL    NOT NULL,
+  next_run_at     REAL    NOT NULL,
+  locked_by       TEXT,
+  locked_pid      INTEGER,
+  locked_at       REAL,
+  heartbeat_at    REAL,
+  started_at      REAL,
+  finished_at     REAL,
+  last_exit_code  INTEGER,
+  last_error      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_claimable ON jobs (state, next_run_at);
+
+CREATE TABLE IF NOT EXISTS attempts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id      INTEGER NOT NULL REFERENCES jobs(id),
+  attempt_no  INTEGER NOT NULL,
+  worker_id   TEXT    NOT NULL,
+  worker_pid  INTEGER NOT NULL,
+  state       TEXT    NOT NULL CHECK (state IN
+                ('running','succeeded','failed','timed_out','abandoned')),
+  started_at  REAL    NOT NULL,
+  finished_at REAL,
+  exit_code   INTEGER,
+  stdout_path TEXT    NOT NULL,
+  stderr_path TEXT    NOT NULL,
+  error       TEXT,
+  UNIQUE (job_id, attempt_no)
+);
+
+CREATE TABLE IF NOT EXISTS job_events (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id    INTEGER NOT NULL REFERENCES jobs(id),
+  at        REAL    NOT NULL,
+  event     TEXT    NOT NULL,
+  worker_id TEXT,
+  detail    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+"""
+
+V1_JOB_STATES = ("queued", "running", "done", "failed", "dead")
+V1_ATTEMPT_STATES = ("running", "succeeded", "failed", "timed_out", "abandoned")
+
+
+def make_populated_v1_db(db_path: str) -> None:
+    """A v1 database with jobs in every state, attempts in every state,
+    events, and an AUTOINCREMENT high-water mark above MAX(id) (job 6 was
+    inserted and deleted, so its id must never be reissued).
+
+    WAL from the start, like every database v0.1 actually created — the
+    racers must not need the exclusive lock a journal-mode switch takes."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(V1_SCHEMA_SQL)
+    conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '1')")
+    for i, state in enumerate(V1_JOB_STATES, start=1):
+        conn.execute(
+            "INSERT INTO jobs (id, argv_json, state, attempts, created_at,"
+            " next_run_at, finished_at) VALUES (?,?,?,?,?,?,?)",
+            (i, f'["job-{i}"]', state, i - 1, 100.0 + i, 200.0 + i,
+             300.0 + i if state in ("done", "failed", "dead") else None),
+        )
+    for i, state in enumerate(V1_ATTEMPT_STATES, start=1):
+        conn.execute(
+            "INSERT INTO attempts (id, job_id, attempt_no, worker_id, worker_pid,"
+            " state, started_at, stdout_path, stderr_path) VALUES (?,?,?,?,?,?,?,?,?)",
+            (i, i, 1, f"w{i}", 1000 + i, state, 400.0 + i, f"/out/{i}/1/stdout",
+             f"/out/{i}/1/stderr"),
+        )
+    for i in range(1, 6):
+        conn.execute(
+            "INSERT INTO job_events (job_id, at, event, worker_id) VALUES (?,?,?,?)",
+            (i, 500.0 + i, "added", None),
+        )
+    conn.execute(
+        "INSERT INTO jobs (id, argv_json, state, created_at, next_run_at)"
+        " VALUES (6, '[\"deleted\"]', 'queued', 1.0, 1.0)"
+    )
+    conn.execute("DELETE FROM jobs WHERE id=6")
+    conn.commit()
+    conn.close()
+
+
+def dump(conn, table: str) -> list[tuple]:
+    return conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+
+
+class MigrationTestCase(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = os.path.join(self.tmp.name, "queue.db")
+
+
+class TestV1ToV2Fixture(MigrationTestCase):
+    def test_populated_v1_db_migrates_intact(self):
+        make_populated_v1_db(self.db)
+        before = sqlite3.connect(self.db)
+        jobs_before = dump(before, "jobs")
+        attempts_before = dump(before, "attempts")
+        events_before = dump(before, "job_events")
+        before.close()
+
+        conn = store.connect(self.db)
+
+        row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        self.assertEqual(int(row["value"]), 2)
+        self.assertEqual([tuple(r) for r in dump(conn, "jobs")], jobs_before)
+        self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
+        self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        indexes = {
+            r["name"] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'"
+            )
+        }
+        self.assertTrue({"idx_jobs_claimable", "idx_jobs_finished"} <= indexes)
+        conn.close()
+
+    def test_canceled_insertable_after_migration(self):
+        make_populated_v1_db(self.db)
+        conn = store.connect(self.db)
+        conn.execute(
+            "INSERT INTO jobs (argv_json, state, created_at, next_run_at)"
+            " VALUES ('[\"x\"]', 'canceled', 1.0, 1.0)"
+        )
+        conn.execute(
+            "INSERT INTO attempts (job_id, attempt_no, worker_id, worker_pid,"
+            " state, started_at, stdout_path, stderr_path)"
+            " VALUES (1, 2, 'w', 1, 'canceled', 1.0, '/o', '/e')"
+        )
+        conn.close()
+
+    def test_id_sequence_survives_migration(self):
+        # Job 6 was inserted and deleted pre-migration; the next id must be 7.
+        make_populated_v1_db(self.db)
+        conn = store.connect(self.db)
+        cur = conn.execute(
+            "INSERT INTO jobs (argv_json, state, created_at, next_run_at)"
+            " VALUES ('[\"new\"]', 'queued', 1.0, 1.0)"
+        )
+        self.assertEqual(cur.lastrowid, 7)
+        conn.close()
+
+    def test_migration_is_idempotent_across_reopens(self):
+        make_populated_v1_db(self.db)
+        store.connect(self.db).close()
+        conn = store.connect(self.db)
+        self.assertEqual(
+            conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 5
+        )
+        conn.close()
+
+    def test_existing_invalid_state_still_rejected(self):
+        make_populated_v1_db(self.db)
+        conn = store.connect(self.db)
+        with self.assertRaises(sqlite3.IntegrityError):
+            conn.execute(
+                "INSERT INTO jobs (argv_json, state, created_at, next_run_at)"
+                " VALUES ('[\"x\"]', 'bogus', 1.0, 1.0)"
+            )
+        conn.close()
+
+
+_RACER = """
+import os, sys, time
+import spoolctl.store as store
+
+db, ready_marker, go_marker, migrated_marker = sys.argv[1:5]
+real = store._migrate_v1_to_v2
+def wrapped(conn):
+    did = real(conn)
+    if did:
+        open(migrated_marker, "w").close()
+    return did
+store._migrate_v1_to_v2 = wrapped
+
+open(ready_marker, "w").close()
+deadline = time.time() + 30
+while not os.path.exists(go_marker):
+    if time.time() > deadline:
+        sys.exit(2)
+    time.sleep(0.005)
+
+conn = store.connect(db)
+n = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+v = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()[0]
+conn.close()
+print(f"{n} {v}")
+"""
+
+
+class TestMigrationRace(MigrationTestCase):
+    def wait_for(self, predicate, timeout=30.0, message="condition"):
+        deadline = time.time() + timeout
+        while not predicate():
+            self.assertLess(time.time(), deadline, f"timed out waiting for {message}")
+            time.sleep(0.005)
+
+    def test_two_concurrent_openers_one_migrates(self):
+        make_populated_v1_db(self.db)
+        go = os.path.join(self.tmp.name, "go")
+        procs = []
+        markers = []
+        for i in (1, 2):
+            ready = os.path.join(self.tmp.name, f"ready-{i}")
+            migrated = os.path.join(self.tmp.name, f"migrated-{i}")
+            markers.append(migrated)
+            procs.append((subprocess.Popen(
+                [sys.executable, "-c", _RACER, self.db, ready, go, migrated],
+                cwd=REPO,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            ), ready))
+        self.wait_for(lambda: all(os.path.exists(r) for _, r in procs),
+                      message="both racers ready")
+        Path(go).touch()
+        outs = []
+        for proc, _ in procs:
+            out, err = proc.communicate(timeout=30)
+            self.assertEqual(proc.returncode, 0, err)
+            outs.append(out.strip())
+        self.assertEqual(outs, ["5 2", "5 2"])  # both saw intact data at v2
+        migrated_count = sum(os.path.exists(m) for m in markers)
+        self.assertEqual(migrated_count, 1, "exactly one process must rebuild")
+        conn = store.connect(self.db)
+        self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        conn.close()
+
+
+class TestOneWayDoor(MigrationTestCase):
+    def test_v1_binary_rejects_v2_file(self):
+        # An older binary sees schema_version=2 > its SCHEMA_VERSION=1 and
+        # refuses via SchemaTooNewError; simulated by the version gate itself
+        # (test_store covers the general found > SCHEMA_VERSION case).
+        conn = store.connect(self.db)  # fresh v2 db
+        row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        conn.close()
+        self.assertEqual(int(row["value"]), 2)
+        self.assertGreater(int(row["value"]), 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

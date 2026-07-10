@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 TOOL_VERSION = "0.1.0"
 CONTRACT_VERSION = "1"
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Job states
 QUEUED = "queued"
@@ -18,7 +18,8 @@ RUNNING = "running"
 DONE = "done"
 FAILED = "failed"
 DEAD = "dead"
-JOB_STATES = (QUEUED, RUNNING, DONE, FAILED, DEAD)
+CANCELED = "canceled"
+JOB_STATES = (QUEUED, RUNNING, DONE, FAILED, DEAD, CANCELED)
 
 # Attempt states
 ATT_RUNNING = "running"
@@ -26,7 +27,10 @@ ATT_SUCCEEDED = "succeeded"
 ATT_FAILED = "failed"
 ATT_TIMED_OUT = "timed_out"
 ATT_ABANDONED = "abandoned"
-ATTEMPT_STATES = (ATT_RUNNING, ATT_SUCCEEDED, ATT_FAILED, ATT_TIMED_OUT, ATT_ABANDONED)
+ATT_CANCELED = "canceled"
+ATTEMPT_STATES = (
+    ATT_RUNNING, ATT_SUCCEEDED, ATT_FAILED, ATT_TIMED_OUT, ATT_ABANDONED, ATT_CANCELED
+)
 
 # Retry / reaping tunables (constants by ruling A2, not flags)
 BACKOFF_BASE = 2

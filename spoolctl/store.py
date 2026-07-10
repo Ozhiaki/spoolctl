@@ -21,12 +21,13 @@ from spoolctl.models import (
 
 DEFAULT_DB_RELPATH = os.path.join(".spoolctl", "queue.db")
 
-SCHEMA_SQL = """
-CREATE TABLE IF NOT EXISTS jobs (
+# Table bodies are shared between fresh creation (SCHEMA_SQL) and the v1->v2
+# rebuild, which must create identical tables under a temporary name.
+_JOBS_BODY = """(
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   argv_json       TEXT    NOT NULL,
   state           TEXT    NOT NULL CHECK (state IN
-                    ('queued','running','done','failed','dead')),
+                    ('queued','running','done','failed','dead','canceled')),
   attempts        INTEGER NOT NULL DEFAULT 0,
   max_retries     INTEGER NOT NULL DEFAULT 3,
   timeout_seconds INTEGER NOT NULL DEFAULT 300,
@@ -40,17 +41,16 @@ CREATE TABLE IF NOT EXISTS jobs (
   finished_at     REAL,
   last_exit_code  INTEGER,
   last_error      TEXT
-);
-CREATE INDEX IF NOT EXISTS idx_jobs_claimable ON jobs (state, next_run_at);
+)"""
 
-CREATE TABLE IF NOT EXISTS attempts (
+_ATTEMPTS_BODY = """(
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id      INTEGER NOT NULL REFERENCES jobs(id),
   attempt_no  INTEGER NOT NULL,
   worker_id   TEXT    NOT NULL,
   worker_pid  INTEGER NOT NULL,
   state       TEXT    NOT NULL CHECK (state IN
-                ('running','succeeded','failed','timed_out','abandoned')),
+                ('running','succeeded','failed','timed_out','abandoned','canceled')),
   started_at  REAL    NOT NULL,
   finished_at REAL,
   exit_code   INTEGER,
@@ -58,7 +58,14 @@ CREATE TABLE IF NOT EXISTS attempts (
   stderr_path TEXT    NOT NULL,
   error       TEXT,
   UNIQUE (job_id, attempt_no)
-);
+)"""
+
+SCHEMA_SQL = f"""
+CREATE TABLE IF NOT EXISTS jobs {_JOBS_BODY};
+CREATE INDEX IF NOT EXISTS idx_jobs_claimable ON jobs (state, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_finished ON jobs (state, finished_at);
+
+CREATE TABLE IF NOT EXISTS attempts {_ATTEMPTS_BODY};
 
 CREATE TABLE IF NOT EXISTS job_events (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -130,11 +137,81 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
             raise SchemaTooNewError(found)
         if found == SCHEMA_VERSION:
             return
+        _migrate_v1_to_v2(conn)
+        return
     conn.executescript(SCHEMA_SQL)
     conn.execute(
         "INSERT OR REPLACE INTO meta (key, value) VALUES ('schema_version', ?)",
         (str(SCHEMA_VERSION),),
     )
+
+
+def _migrate_v1_to_v2(conn: sqlite3.Connection) -> bool:
+    """Rebuild jobs and attempts to add the 'canceled' state (schema 1 -> 2).
+
+    SQLite cannot alter a CHECK constraint in place, so both tables are
+    rebuilt (create new / INSERT SELECT / drop / rename, ids copied
+    verbatim). BEGIN IMMEDIATE serializes concurrent migrators, and the
+    version is re-read inside the transaction so the race loser no-ops.
+    foreign_keys must be toggled outside the transaction (it is a no-op
+    inside one); foreign_key_check afterwards verifies the rebuild kept
+    every reference intact. Returns True when this connection did the
+    rebuild, False when someone else already had.
+    """
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            found = int(conn.execute(
+                "SELECT value FROM meta WHERE key='schema_version'"
+            ).fetchone()["value"])
+            if found >= 2:
+                conn.execute("COMMIT")
+                return False
+            _rebuild_table(conn, "jobs", _JOBS_BODY)
+            _rebuild_table(conn, "attempts", _ATTEMPTS_BODY)
+            conn.execute("CREATE INDEX idx_jobs_claimable ON jobs (state, next_run_at)")
+            conn.execute("CREATE INDEX idx_jobs_finished ON jobs (state, finished_at)")
+            conn.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
+            conn.execute("COMMIT")
+        except BaseException:
+            conn.execute("ROLLBACK")
+            raise
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+    bad = conn.execute("PRAGMA foreign_key_check").fetchall()
+    if bad:
+        raise sqlite3.IntegrityError(
+            f"foreign_key_check failed after v1->v2 migration: {len(bad)} rows"
+        )
+    return True
+
+
+def _rebuild_table(conn: sqlite3.Connection, name: str, body: str) -> None:
+    """Replace `name` with a fresh table of the same columns built from `body`.
+
+    Copies every row with ids verbatim, then restores the AUTOINCREMENT
+    high-water mark so ids of rows deleted before the rebuild are never
+    reissued.
+    """
+    seq_row = conn.execute(
+        "SELECT seq FROM sqlite_sequence WHERE name=?", (name,)
+    ).fetchone()
+    cols = ", ".join(r[1] for r in conn.execute(f"PRAGMA table_info({name})"))
+    conn.execute(f"CREATE TABLE {name}_new {body}")
+    conn.execute(f"INSERT INTO {name}_new ({cols}) SELECT {cols} FROM {name}")
+    conn.execute(f"DROP TABLE {name}")
+    conn.execute(f"ALTER TABLE {name}_new RENAME TO {name}")
+    if seq_row is not None:
+        cur = conn.execute(
+            "UPDATE sqlite_sequence SET seq=max(seq, ?) WHERE name=?",
+            (seq_row["seq"], name),
+        )
+        if cur.rowcount == 0:
+            conn.execute(
+                "INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)",
+                (name, seq_row["seq"]),
+            )
 
 
 def job_from_row(row: sqlite3.Row) -> Job:
