@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import subprocess
 import sys
 import tempfile
@@ -72,6 +73,24 @@ class TestSingleFileBuild(unittest.TestCase):
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("spoolctl", proc.stdout)
+            # One add/work/wait round-trip through the artifact.
+            db = str(Path(td) / "queue.db")
+            def art(verb, *argv):
+                p = subprocess.run(
+                    [sys.executable, str(artifact), verb, "--db", db, "--json",
+                     *argv],
+                    cwd=td, capture_output=True, text=True,
+                )
+                return p.returncode, p.stdout, p.stderr
+            code, out, err = art("add", "--", "echo", "roundtrip")
+            self.assertEqual(code, 0, err)
+            job_id = json.loads(out)["data"]["job_id"]
+            code, out, err = art("work", "--once")
+            self.assertEqual(code, 0, err)
+            self.assertEqual(json.loads(out)["data"]["result"], "succeeded")
+            code, out, err = art("wait", str(job_id))
+            self.assertEqual(code, 0, err)
+            self.assertTrue(json.loads(out)["data"]["all_succeeded"])
 
 
 if __name__ == "__main__":

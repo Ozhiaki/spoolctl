@@ -163,6 +163,18 @@ class TestCancelTerminalAndMissing(CancelTestCase):
         self.assertIn("already canceled",
                       json.loads(out)["errors"][0]["remediation"])
 
+    def test_raced_force_is_conflict_exit_5(self):
+        # 'raced' is defensively unreachable through the real surface (the
+        # re-check runs inside BEGIN IMMEDIATE), so pin the CLI mapping.
+        job_id = self.add_running()
+        with mock.patch.object(store, "cancel_job", return_value=("raced", "done")):
+            code, out, _ = run_cli("cancel", str(job_id), "--running",
+                                   "--db", self.db, "--json")
+        self.assertEqual(code, 5)
+        e = json.loads(out)["errors"][0]
+        self.assertEqual(e["code"], "CONFLICT")
+        self.assertIn("now done", e["message"])
+
     def test_unknown_id_not_found_exit_1(self):
         code, out, _ = run_cli("cancel", "42", "--db", self.db, "--json")
         self.assertEqual(code, 1)
