@@ -16,6 +16,7 @@ from spoolctl.models import (
     BUSY_TIMEOUT_MS,
     Job,
     SCHEMA_VERSION,
+    backoff_seconds,
 )
 
 DEFAULT_DB_RELPATH = os.path.join(".spoolctl", "queue.db")
@@ -195,6 +196,157 @@ def add_job(
         conn.execute("ROLLBACK")
         raise
     return job_id
+
+
+def claim_next(
+    conn: sqlite3.Connection,
+    worker_id: str,
+    worker_pid: int,
+    now: float,
+    out_root: str,
+) -> tuple[Job, Attempt] | None:
+    """Atomically claim the oldest eligible queued job.
+
+    BEGIN IMMEDIATE takes the write lock before the SELECT, so concurrent
+    claimants serialize; the loser re-reads and finds the row taken. Returns
+    None when nothing is eligible. Never holds the transaction past COMMIT —
+    the child process runs entirely outside it.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE state='queued' AND next_run_at <= ?"
+            " ORDER BY next_run_at, id LIMIT 1",
+            (now,),
+        ).fetchone()
+        if row is None:
+            conn.execute("COMMIT")
+            return None
+        job_id = row["id"]
+        attempt_no = row["attempts"] + 1
+        attempt_dir = os.path.join(out_root, str(job_id), str(attempt_no))
+        stdout_path = os.path.join(attempt_dir, "stdout")
+        stderr_path = os.path.join(attempt_dir, "stderr")
+        conn.execute(
+            "UPDATE jobs SET state='running', locked_by=?, locked_pid=?,"
+            " locked_at=?, heartbeat_at=?, started_at=? WHERE id=?",
+            (worker_id, worker_pid, now, now, now, job_id),
+        )
+        cur = conn.execute(
+            "INSERT INTO attempts (job_id, attempt_no, worker_id, worker_pid,"
+            " state, started_at, stdout_path, stderr_path)"
+            " VALUES (?,?,?,?,'running',?,?,?)",
+            (job_id, attempt_no, worker_id, worker_pid, now, stdout_path, stderr_path),
+        )
+        attempt_id = cur.lastrowid
+        add_event(conn, job_id, now, "claimed", worker_id)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    job = get_job(conn, job_id)
+    attempt_row = conn.execute("SELECT * FROM attempts WHERE id=?", (attempt_id,)).fetchone()
+    return job, attempt_from_row(attempt_row)
+
+
+_OWNERSHIP_GUARD = (
+    " WHERE id=? AND state='running' AND locked_by=? AND locked_pid=?"
+)
+
+
+def record_success(
+    conn: sqlite3.Connection,
+    job_id: int,
+    attempt_id: int,
+    worker_id: str,
+    worker_pid: int,
+    now: float,
+) -> str | None:
+    """Record a successful attempt. Returns 'done', or None when the row was
+    reclaimed out from under this worker (result discarded, DB untouched)."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cur = conn.execute(
+            "UPDATE jobs SET state='done', locked_by=NULL, locked_pid=NULL,"
+            " locked_at=NULL, heartbeat_at=NULL, finished_at=?,"
+            " last_exit_code=0, last_error=NULL" + _OWNERSHIP_GUARD,
+            (now, job_id, worker_id, worker_pid),
+        )
+        if cur.rowcount == 0:
+            conn.execute("ROLLBACK")
+            return None
+        conn.execute(
+            "UPDATE attempts SET state='succeeded', finished_at=?, exit_code=0"
+            " WHERE id=? AND state='running'",
+            (now, attempt_id),
+        )
+        add_event(conn, job_id, now, "succeeded", worker_id)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return "done"
+
+
+_FAILURE_EVENTS = {"failed": "failed", "timed_out": "timed_out", "abandoned": "reaped"}
+
+
+def record_failure(
+    conn: sqlite3.Connection,
+    job_id: int,
+    attempt_id: int,
+    worker_id: str,
+    worker_pid: int,
+    kind: str,
+    exit_code: int | None,
+    error: str,
+    now: float,
+) -> str | None:
+    """Record a failed/timed-out/abandoned attempt and, in the same
+    transaction, either requeue with backoff or dead-letter.
+
+    Returns the job's new state ('queued' or 'dead'), or None when the row
+    was reclaimed out from under this worker (result discarded).
+    """
+    if kind not in _FAILURE_EVENTS:
+        raise ValueError(f"unknown failure kind: {kind}")
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute(
+            "SELECT attempts, max_retries FROM jobs"
+            " WHERE id=? AND state='running' AND locked_by=? AND locked_pid=?",
+            (job_id, worker_id, worker_pid),
+        ).fetchone()
+        if row is None:
+            conn.execute("ROLLBACK")
+            return None
+        new_attempts = row["attempts"] + 1
+        if new_attempts <= row["max_retries"]:
+            new_state = "queued"
+            next_run_at = now + backoff_seconds(new_attempts)
+        else:
+            new_state = "dead"
+            next_run_at = now
+        conn.execute(
+            "UPDATE jobs SET state=?, attempts=?, next_run_at=?, locked_by=NULL,"
+            " locked_pid=NULL, locked_at=NULL, heartbeat_at=NULL, finished_at=?,"
+            " last_exit_code=?, last_error=?" + _OWNERSHIP_GUARD,
+            (new_state, new_attempts, next_run_at, now, exit_code, error,
+             job_id, worker_id, worker_pid),
+        )
+        conn.execute(
+            "UPDATE attempts SET state=?, finished_at=?, exit_code=?, error=?"
+            " WHERE id=? AND state='running'",
+            (kind, now, exit_code, error, attempt_id),
+        )
+        add_event(conn, job_id, now, _FAILURE_EVENTS[kind], worker_id, error)
+        if new_state == "dead":
+            add_event(conn, job_id, now, "dead", worker_id)
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return new_state
 
 
 def get_job(conn: sqlite3.Connection, job_id: int) -> Job | None:
