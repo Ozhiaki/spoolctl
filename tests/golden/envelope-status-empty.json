@@ -2,6 +2,7 @@
   "commands": [],
   "data": {
     "counts": {
+      "canceled": 0,
       "dead": 0,
       "done": 0,
       "failed": 0,
@@ -19,6 +20,6 @@
     "ts_iso": "PINNED"
   },
   "ok": true,
-  "tool_version": "0.1.0",
+  "tool_version": "0.2.0",
   "warnings": []
 }

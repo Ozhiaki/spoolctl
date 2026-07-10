@@ -46,7 +46,8 @@ class TestCounts(StatusTestCase):
         env = json.loads(out)
         self.assertTrue(env["ok"])
         self.assertEqual(env["data"]["counts"],
-                         {"dead": 0, "done": 0, "failed": 0, "queued": 0, "running": 0})
+                         {"canceled": 0, "dead": 0, "done": 0, "failed": 0,
+                          "queued": 0, "running": 0})
         self.assertEqual(env["data"]["recent_dead"], [])
 
     def test_counts_reflect_states(self):
@@ -60,7 +61,7 @@ class TestCounts(StatusTestCase):
         conn.close()
         code, out, _ = run_cli("status", "--db", self.db, "--json")
         counts = json.loads(out)["data"]["counts"]
-        self.assertEqual(counts, {"dead": 0, "done": 1, "failed": 0,
+        self.assertEqual(counts, {"canceled": 0, "dead": 0, "done": 1, "failed": 0,
                                   "queued": 2, "running": 0})
 
 

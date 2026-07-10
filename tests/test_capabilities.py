@@ -56,9 +56,26 @@ class TestParserParity(unittest.TestCase):
 
     def test_exit_codes_cover_dictionary(self):
         data = capabilities_data()
-        self.assertEqual(set(data["exit_codes"]), {"0", "1", "2", "3", "4", "5"})
+        self.assertEqual(set(data["exit_codes"]), {"0", "1", "2", "3", "4", "5", "6"})
         self.assertIs(data["exit_codes"]["4"]["retryable"], True)
         self.assertIs(data["exit_codes"]["1"]["retryable"], False)
+
+    def test_exit_6_documents_the_ok_true_exception(self):
+        info = capabilities_data()["exit_codes"]["6"]
+        self.assertEqual(
+            info["meaning"], "job-outcome-failure (an awaited job ended non-success)"
+        )
+        self.assertIs(info["retryable"], False)
+        self.assertIn("ok:true", info["note"])
+        self.assertIn("data.all_succeeded", info["note"])
+
+    def test_canceled_enumerated_and_policy_stated(self):
+        data = capabilities_data()
+        self.assertIn("canceled", data["job_states"])
+        self.assertIn("canceled", data["attempt_states"])
+        self.assertIn("canceled", data["events"])
+        self.assertIn("additive", data["contract_policy"])
+        self.assertIn("contract_version", data["contract_policy"])
 
     def test_env_vars_documented(self):
         data = capabilities_data()

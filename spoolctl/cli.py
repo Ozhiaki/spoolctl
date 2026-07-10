@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from spoolctl import store
 from spoolctl.models import (
+    ATTEMPT_STATES,
     CONTRACT_VERSION,
     DEFAULT_MAX_RETRIES,
     DEFAULT_POLL_INTERVAL,
@@ -33,6 +34,8 @@ from spoolctl.models import (
     EXIT_OK,
     EXIT_SAFETY,
     EXIT_TRANSIENT,
+    JOB_EVENT_TYPES,
+    JOB_STATES,
     TOOL_VERSION,
 )
 
@@ -562,7 +565,7 @@ VERB_SUMMARIES = {
     },
     "status": {
         "summary": "queue counts and recent dead jobs; always exit 0",
-        "data_schema": "{counts: {dead,done,failed,queued,running},"
+        "data_schema": "{counts: {canceled,dead,done,failed,queued,running},"
                        " recent_dead: [{id, command, attempts, last_error,"
                        " finished_at, stdout_path, stderr_path}]}",
     },
@@ -578,7 +581,8 @@ VERB_SUMMARIES = {
     },
     "capabilities": {
         "summary": "this machine-readable contract",
-        "data_schema": "{contract_version, env, error_codes, exit_codes, verbs}",
+        "data_schema": "{attempt_states, contract_policy, contract_version, env,"
+                       " error_codes, events, exit_codes, job_states, verbs}",
     },
 }
 
@@ -624,18 +628,30 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
     }
 
 
+CONTRACT_POLICY = (
+    "additive under contract_version 1: consumers must tolerate new verbs,"
+    " new enum members (states, events), and new exit codes reachable only"
+    " via new verbs; a breaking change to an existing verb's data shape or"
+    " exit mapping is what bumps contract_version"
+)
+
+
 def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
     build_parser()  # ensure _SUBPARSERS is populated from the live parser
     verbs = {name: _describe_verb(name, sub) for name, sub in sorted(_SUBPARSERS.items())}
     exit_codes = {
-        str(code): {"meaning": info["meaning"], "retryable": info["retryable"]}
+        str(code): dict(sorted(info.items()))
         for code, info in sorted(EXIT_CODES.items())
     }
     data = {
+        "attempt_states": sorted(ATTEMPT_STATES),
+        "contract_policy": CONTRACT_POLICY,
         "contract_version": CONTRACT_VERSION,
         "env": ENV_DOCS,
         "error_codes": sorted(ERROR_CODES),
+        "events": sorted(JOB_EVENT_TYPES),
         "exit_codes": exit_codes,
+        "job_states": sorted(JOB_STATES),
         "verbs": verbs,
     }
     lines = [f"spoolctl contract v{CONTRACT_VERSION}"]

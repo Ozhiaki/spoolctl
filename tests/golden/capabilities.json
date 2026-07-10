@@ -1,4 +1,13 @@
 {
+  "attempt_states": [
+    "abandoned",
+    "canceled",
+    "failed",
+    "running",
+    "succeeded",
+    "timed_out"
+  ],
+  "contract_policy": "additive under contract_version 1: consumers must tolerate new verbs, new enum members (states, events), and new exit codes reachable only via new verbs; a breaking change to an existing verb's data shape or exit mapping is what bumps contract_version",
   "contract_version": "1",
   "env": {
     "SPOOLCTL_DB": "queue database path (overridden by --db; default ./.spoolctl/queue.db)",
@@ -16,6 +25,17 @@
     "TIMEOUT",
     "UNKNOWN_COMMAND",
     "UNKNOWN_FLAG"
+  ],
+  "events": [
+    "added",
+    "canceled",
+    "claimed",
+    "dead",
+    "failed",
+    "reaped",
+    "retried",
+    "succeeded",
+    "timed_out"
   ],
   "exit_codes": {
     "0": {
@@ -41,8 +61,21 @@
     "5": {
       "meaning": "conflict (state changed underneath)",
       "retryable": false
+    },
+    "6": {
+      "meaning": "job-outcome-failure (an awaited job ended non-success)",
+      "note": "pairs with ok:true and empty errors[]; the tool call succeeded and the exit code carries the job outcome for shell use; envelope consumers key off data.all_succeeded, not the exit code",
+      "retryable": false
     }
   },
+  "job_states": [
+    "canceled",
+    "dead",
+    "done",
+    "failed",
+    "queued",
+    "running"
+  ],
   "verbs": {
     "add": {
       "data_schema": "{job_id: int, state: 'queued'}",
@@ -82,7 +115,7 @@
       "summary": "enqueue a command (argv form or -c shell string)"
     },
     "capabilities": {
-      "data_schema": "{contract_version, env, error_codes, exit_codes, verbs}",
+      "data_schema": "{attempt_states, contract_policy, contract_version, env, error_codes, events, exit_codes, job_states, verbs}",
       "flags": [
         {
           "default": null,
@@ -168,7 +201,7 @@
       "summary": "requeue a dead or failed job with a fresh retry budget"
     },
     "status": {
-      "data_schema": "{counts: {dead,done,failed,queued,running}, recent_dead: [{id, command, attempts, last_error, finished_at, stdout_path, stderr_path}]}",
+      "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, recent_dead: [{id, command, attempts, last_error, finished_at, stdout_path, stderr_path}]}",
       "flags": [
         {
           "default": null,

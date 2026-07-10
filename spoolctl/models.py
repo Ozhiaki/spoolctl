@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TOOL_VERSION = "0.1.0"
+TOOL_VERSION = "0.2.0"
 CONTRACT_VERSION = "1"
 SCHEMA_VERSION = 2
 
@@ -32,6 +32,12 @@ ATTEMPT_STATES = (
     ATT_RUNNING, ATT_SUCCEEDED, ATT_FAILED, ATT_TIMED_OUT, ATT_ABANDONED, ATT_CANCELED
 )
 
+# job_events.event values (additive under contract_version 1)
+JOB_EVENT_TYPES = (
+    "added", "claimed", "succeeded", "failed", "timed_out",
+    "reaped", "dead", "retried", "canceled",
+)
+
 # Retry / reaping tunables (constants by ruling A2, not flags)
 BACKOFF_BASE = 2
 BACKOFF_CAP = 60
@@ -50,6 +56,7 @@ EXIT_SAFETY = 2
 EXIT_ENVIRONMENT = 3
 EXIT_TRANSIENT = 4
 EXIT_CONFLICT = 5
+EXIT_JOB_FAILURE = 6
 
 EXIT_CODES = {
     EXIT_OK: {"meaning": "success (including empty results)", "retryable": None},
@@ -58,6 +65,18 @@ EXIT_CODES = {
     EXIT_ENVIRONMENT: {"meaning": "tool-environment-error", "retryable": None},
     EXIT_TRANSIENT: {"meaning": "transient-failure (retry after a short delay)", "retryable": True},
     EXIT_CONFLICT: {"meaning": "conflict (state changed underneath)", "retryable": False},
+    EXIT_JOB_FAILURE: {
+        "meaning": "job-outcome-failure (an awaited job ended non-success)",
+        # The one deliberate exception to "non-zero exit implies errors
+        # populated": exit 6 pairs with ok:true and empty errors[] — the tool
+        # call succeeded; the exit code carries job outcome for shell use.
+        # Envelope consumers key off data.all_succeeded, not the exit code.
+        "note": "pairs with ok:true and empty errors[]; the tool call"
+                " succeeded and the exit code carries the job outcome for"
+                " shell use; envelope consumers key off data.all_succeeded,"
+                " not the exit code",
+        "retryable": False,
+    },
 }
 
 # Error codes (5.3)

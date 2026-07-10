@@ -14,6 +14,7 @@ import sqlite3
 from spoolctl.models import (
     Attempt,
     BUSY_TIMEOUT_MS,
+    JOB_STATES,
     Job,
     SCHEMA_VERSION,
     backoff_seconds,
@@ -567,7 +568,7 @@ def retry_job(conn: sqlite3.Connection, job_id: int, force: bool, now: float) ->
 
 def state_counts(conn: sqlite3.Connection) -> dict[str, int]:
     """Job counts by state, zero-filled for every state, keys sorted."""
-    counts = {state: 0 for state in sorted(("queued", "running", "done", "failed", "dead"))}
+    counts = {state: 0 for state in sorted(JOB_STATES)}
     for row in conn.execute("SELECT state, COUNT(*) AS n FROM jobs GROUP BY state"):
         counts[row["state"]] = row["n"]
     return counts
