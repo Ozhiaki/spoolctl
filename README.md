@@ -5,7 +5,7 @@
 ![Status](https://img.shields.io/badge/status-pre--release-orange)
 ![Python](https://img.shields.io/badge/python-3.10%2B%20·%20stdlib%20only-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
-![License](https://img.shields.io/badge/license-MIT-green)
+![License](https://img.shields.io/badge/license-Apache--2.0-green)
 
 **A local job queue built for operators that die.**
 
@@ -219,4 +219,4 @@ Watch the repo.
 
 ## License
 
-MIT
+Apache 2.0
