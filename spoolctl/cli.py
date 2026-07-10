@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import shlex
 import sqlite3
 import sys
 import time
@@ -21,6 +22,8 @@ from typing import Any, Callable
 from spoolctl import store
 from spoolctl.models import (
     CONTRACT_VERSION,
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_TIMEOUT_SECONDS,
     EXIT_ENVIRONMENT,
     EXIT_INPUT,
     EXIT_OK,
@@ -180,8 +183,8 @@ def build_parser() -> _Parser:
 
     add = sub.add_parser("add", parents=[common], help="enqueue a command")
     add.add_argument("-c", dest="shell_string", metavar="STRING", help="run STRING via sh -c")
-    add.add_argument("--timeout", type=float, default=None, metavar="SECONDS")
-    add.add_argument("--max-retries", type=int, default=None, metavar="N")
+    add.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, metavar="SECONDS")
+    add.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES, metavar="N")
     add.add_argument("argv", nargs=argparse.REMAINDER, metavar="[--] ARGV...")
 
     work = sub.add_parser("work", parents=[common], help="run jobs until stopped")
@@ -270,11 +273,66 @@ def _parser_exit_to_error(exc: _ParserExit, argv: list[str]) -> CliError:
     )
 
 
+# --- verbs --------------------------------------------------------------
+
+BOTH_ADD_FORMS = "try: spoolctl add -- <cmd> [args...]   or: spoolctl add -c '<shell string>'"
+
+
+def _open_db(args: argparse.Namespace) -> "sqlite3.Connection":
+    return store.connect(store.resolve_db_path(args.db))
+
+
+def cmd_add(args: argparse.Namespace) -> VerbResult:
+    argv = list(args.argv)
+    if argv and argv[0] == "--":
+        argv = argv[1:]
+
+    if args.shell_string is not None and argv:
+        joined = shlex.quote(args.shell_string + " " + " ".join(argv))
+        raise CliError(
+            "INVALID_INPUT",
+            "-c takes exactly one string; positional arguments cannot be combined with it",
+            f"try: spoolctl add -c {joined}",
+        )
+    if args.shell_string is not None:
+        if not args.shell_string.strip():
+            raise CliError("MISSING_REQUIRED", "empty -c command string", BOTH_ADD_FORMS)
+        job_argv = ["sh", "-c", args.shell_string]
+    elif argv:
+        job_argv = argv
+    else:
+        raise CliError("MISSING_REQUIRED", "no command given", BOTH_ADD_FORMS)
+
+    if args.timeout <= 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--timeout must be > 0 (got {args.timeout})",
+            "try: spoolctl add --timeout 300 -- <cmd>",
+        )
+    if args.max_retries < 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--max-retries must be >= 0 (got {args.max_retries})",
+            "try: spoolctl add --max-retries 3 -- <cmd>",
+        )
+
+    conn = _open_db(args)
+    try:
+        job_id = store.add_job(conn, job_argv, args.timeout, args.max_retries, time.time())
+    finally:
+        conn.close()
+    return VerbResult(
+        data={"job_id": job_id, "state": "queued"},
+        human=f"Added job {job_id}",
+    )
+
+
 # --- dispatch -----------------------------------------------------------
 
-# Populated by verb implementations; each handler takes parsed args and
-# returns a VerbResult or raises CliError.
-HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {}
+# Each handler takes parsed args and returns a VerbResult or raises CliError.
+HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
+    "add": cmd_add,
+}
 
 
 def _not_implemented(args: argparse.Namespace) -> VerbResult:

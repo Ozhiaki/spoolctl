@@ -174,6 +174,29 @@ def attempt_from_row(row: sqlite3.Row) -> Attempt:
     )
 
 
+def add_job(
+    conn: sqlite3.Connection,
+    argv: list[str],
+    timeout_seconds: int,
+    max_retries: int,
+    now: float,
+) -> int:
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        cur = conn.execute(
+            "INSERT INTO jobs (argv_json, state, max_retries, timeout_seconds,"
+            " created_at, next_run_at) VALUES (?,?,?,?,?,?)",
+            (json.dumps(argv), "queued", max_retries, timeout_seconds, now, now),
+        )
+        job_id = cur.lastrowid
+        add_event(conn, job_id, now, "added")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return job_id
+
+
 def get_job(conn: sqlite3.Connection, job_id: int) -> Job | None:
     row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
     return job_from_row(row) if row else None
