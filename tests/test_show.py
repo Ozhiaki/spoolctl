@@ -50,6 +50,9 @@ class TestShowDetail(ShowTestCase):
         self.assertEqual(data["job"]["state"], "done")
         self.assertEqual(data["job"]["argv"], ["echo", "hi"])
         self.assertIsNone(data["job"]["locked_by"])
+        self.assertIsNone(data["job"]["idempotency_key"])
+        self.assertEqual(data["job"]["tags"], {})
+        self.assertIsNone(data["job"]["note"])
 
         self.assertEqual(
             [(a["attempt_no"], a["state"], a["exit_code"]) for a in data["attempts"]],

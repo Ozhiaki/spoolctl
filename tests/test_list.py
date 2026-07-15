@@ -53,6 +53,9 @@ class TestFilterAndOrder(ListTestCase):
         self.assertEqual(data["count"], 4)
         self.assertEqual([j["id"] for j in data["jobs"]], [4, 3, 2, 1])
         self.assertEqual(data["jobs"][3]["argv"], ["echo", "one"])
+        self.assertEqual(data["jobs"][3]["idempotency_key"], None)
+        self.assertEqual(data["jobs"][3]["tags"], {})
+        self.assertEqual(data["jobs"][3]["note"], None)
 
     def test_single_state_filter(self):
         self.populate()

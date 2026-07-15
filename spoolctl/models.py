@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TOOL_VERSION = "0.2.0"
+TOOL_VERSION = "0.3.0"
 CONTRACT_VERSION = "1"
 SCHEMA_VERSION = 3
 
@@ -117,6 +117,9 @@ class Job:
     finished_at: float | None = None
     last_exit_code: int | None = None
     last_error: str | None = None
+    idempotency_key: str | None = None
+    tags: dict[str, str] | None = None
+    note: str | None = None
 
 
 @dataclass

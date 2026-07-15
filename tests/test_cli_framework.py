@@ -48,10 +48,28 @@ class TestEnvelopeShape(unittest.TestCase):
     def test_envelope_success_shape(self):
         env = cli.make_envelope({"x": 1}, started=0.0)
         self.assertEqual(set(env), ENVELOPE_KEYS)
+        self.assertEqual(set(env["meta"]), META_KEYS)
         self.assertTrue(env["ok"])
         self.assertEqual(env["errors"], [])
         self.assertTrue(env["meta"]["ts_iso"].endswith("Z"))
         self.assertTrue(env["meta"]["request_id"].startswith("req_"))
+
+    def test_envelope_meta_extra_adds_without_overriding_base(self):
+        env = cli.make_envelope(
+            {"x": 1},
+            started=0.0,
+            meta_extra={"pagination": {"cursor": 10}},
+        )
+        self.assertEqual(set(env["meta"]), META_KEYS | {"pagination"})
+        self.assertEqual(env["meta"]["pagination"], {"cursor": 10})
+
+    def test_envelope_meta_extra_cannot_override_base_keys(self):
+        with self.assertRaises(ValueError):
+            cli.make_envelope(
+                {"x": 1},
+                started=0.0,
+                meta_extra={"data_hash": "sha256:bad"},
+            )
 
 
 class TestDidYouMean(unittest.TestCase):

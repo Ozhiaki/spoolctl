@@ -295,6 +295,9 @@ def job_from_row(row: sqlite3.Row) -> Job:
         finished_at=row["finished_at"],
         last_exit_code=row["last_exit_code"],
         last_error=row["last_error"],
+        idempotency_key=row["idempotency_key"],
+        tags=json.loads(row["tags_json"]),
+        note=row["note"],
     )
 
 

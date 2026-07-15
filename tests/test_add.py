@@ -135,8 +135,9 @@ class TestRowAndOutput(AddTestCase):
         code, out, _ = run_cli("add", "--db", self.db, "--json", "--", "true")
         env = json.loads(out)
         self.assertTrue(env["ok"])
-        self.assertEqual(set(env["data"]), {"job_id", "state"})
+        self.assertEqual(set(env["data"]), {"deduplicated", "job_id", "state"})
         self.assertEqual(env["data"]["state"], "queued")
+        self.assertIs(env["data"]["deduplicated"], False)
 
     def test_env_var_db_path(self):
         envdb = os.path.join(self.tmp.name, "env.db")

@@ -91,6 +91,7 @@ class VerbResult:
     human: str
     warnings: list[dict[str, str]] = field(default_factory=list)
     commands: list[str] = field(default_factory=list)
+    meta_extra: dict[str, Any] | None = None
     stdout_silent: bool = False  # loop-mode work: nothing on stdout
     exit_code: int = EXIT_OK
 
@@ -154,20 +155,30 @@ def make_envelope(
     started: float,
     warnings: list[dict[str, str]] | None = None,
     commands: list[str] | None = None,
+    meta_extra: dict[str, Any] | None = None,
     errors: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     now = datetime.now(timezone.utc)
+    meta = {
+        "request_id": "req_" + uuid.uuid4().hex[:12],
+        "ts_iso": now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z",
+        "elapsed_ms": int((time.monotonic() - started) * 1000),
+        "contract_version": CONTRACT_VERSION,
+        "data_hash": canonical_data_hash(data),
+    }
+    if meta_extra:
+        overlap = set(meta) & set(meta_extra)
+        if overlap:
+            raise ValueError(
+                "meta_extra cannot override base meta keys: "
+                + ", ".join(sorted(overlap))
+            )
+        meta.update(meta_extra)
     return {
         "ok": not errors,
         "tool_version": TOOL_VERSION,
         "data": data,
-        "meta": {
-            "request_id": "req_" + uuid.uuid4().hex[:12],
-            "ts_iso": now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z",
-            "elapsed_ms": int((time.monotonic() - started) * 1000),
-            "contract_version": CONTRACT_VERSION,
-            "data_hash": canonical_data_hash(data),
-        },
+        "meta": meta,
         "warnings": warnings or [],
         "commands": commands or [],
         "errors": errors or [],
@@ -374,7 +385,7 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
     finally:
         conn.close()
     return VerbResult(
-        data={"job_id": job_id, "state": "queued"},
+        data={"deduplicated": False, "job_id": job_id, "state": "queued"},
         human=f"Added job {job_id}",
     )
 
@@ -495,12 +506,15 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
             "created_at": j.created_at,
             "finished_at": j.finished_at,
             "id": j.id,
+            "idempotency_key": j.idempotency_key,
             "last_error": j.last_error,
             "last_exit_code": j.last_exit_code,
             "max_retries": j.max_retries,
             "next_run_at": j.next_run_at,
+            "note": j.note,
             "started_at": j.started_at,
             "state": j.state,
+            "tags": j.tags or {},
             "timeout_seconds": j.timeout_seconds,
         }
         for j in jobs
@@ -550,6 +564,7 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
         "finished_at": job.finished_at,
         "heartbeat_at": job.heartbeat_at,
         "id": job.id,
+        "idempotency_key": job.idempotency_key,
         "last_error": job.last_error,
         "last_exit_code": job.last_exit_code,
         "locked_at": job.locked_at,
@@ -557,8 +572,10 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
         "locked_pid": job.locked_pid,
         "max_retries": job.max_retries,
         "next_run_at": job.next_run_at,
+        "note": job.note,
         "started_at": job.started_at,
         "state": job.state,
+        "tags": job.tags or {},
         "timeout_seconds": job.timeout_seconds,
     }
     attempt_rows = [
@@ -581,6 +598,13 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
     if len(command) > 80:
         command = command[:77] + "..."
     lines = [f"#{job.id}  {job.state}  attempts={job.attempts}/{job.max_retries}  {command}"]
+    if job.idempotency_key:
+        lines.append(f"key: {job.idempotency_key}")
+    if job.tags:
+        tag_text = " ".join(f"{k}={v}" for k, v in sorted(job.tags.items()))
+        lines.append(f"tags: {tag_text}")
+    if job.note:
+        lines.append(f"note: {job.note}")
     for a in attempts:
         exit_part = "-" if a.exit_code is None else str(a.exit_code)
         line = f"  attempt {a.attempt_no}  {a.state}  exit={exit_part}  worker={a.worker_id}"
@@ -979,7 +1003,7 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
 VERB_SUMMARIES = {
     "add": {
         "summary": "enqueue a command (argv form or -c shell string)",
-        "data_schema": "{job_id: int, state: 'queued'}",
+        "data_schema": "{job_id: int, state: 'queued', deduplicated: bool}",
     },
     "work": {
         "summary": "run jobs until stopped; --once runs at most one;"
@@ -1004,14 +1028,16 @@ VERB_SUMMARIES = {
         "summary": "enumerate jobs, newest first, optionally filtered by state",
         "data_schema": "{count: int, jobs: [{id, argv, state, attempts,"
                        " max_retries, timeout_seconds, created_at, started_at,"
-                       " finished_at, next_run_at, last_exit_code, last_error}]}",
+                       " finished_at, next_run_at, last_exit_code, last_error,"
+                       " idempotency_key, tags, note}]}",
     },
     "show": {
         "summary": "one job in full detail: row, attempts, event trail",
         "data_schema": "{job: {id, argv, state, attempts, max_retries,"
                        " timeout_seconds, created_at, started_at, finished_at,"
                        " next_run_at, locked_by, locked_pid, locked_at,"
-                       " heartbeat_at, last_exit_code, last_error},"
+                       " heartbeat_at, last_exit_code, last_error,"
+                       " idempotency_key, tags, note},"
                        " attempts: [{attempt_no, state, worker_id, worker_pid,"
                        " started_at, finished_at, exit_code, error,"
                        " stdout_path, stderr_path}],"
@@ -1191,6 +1217,7 @@ def main(argv: list[str] | None = None) -> int:
                 started=started,
                 warnings=result.warnings,
                 commands=result.commands,
+                meta_extra=result.meta_extra,
             )
             print(json.dumps(env, ensure_ascii=False))
         else:
