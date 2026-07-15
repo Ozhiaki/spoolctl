@@ -325,12 +325,34 @@ def add_job(
     max_retries: int,
     now: float,
 ) -> int:
+    job_id, _, _ = add_job_checked(conn, argv, timeout_seconds, max_retries, now)
+    return job_id
+
+
+def add_job_checked(
+    conn: sqlite3.Connection,
+    argv: list[str],
+    timeout_seconds: int,
+    max_retries: int,
+    now: float,
+    idempotency_key: str | None = None,
+) -> tuple[int, str, bool]:
     conn.execute("BEGIN IMMEDIATE")
     try:
+        if idempotency_key is not None:
+            row = conn.execute(
+                "SELECT id, state FROM jobs WHERE idempotency_key=?"
+                " AND state IN ('queued','running') ORDER BY id ASC LIMIT 1",
+                (idempotency_key,),
+            ).fetchone()
+            if row is not None:
+                conn.execute("COMMIT")
+                return row["id"], row["state"], True
         cur = conn.execute(
             "INSERT INTO jobs (argv_json, state, max_retries, timeout_seconds,"
-            " created_at, next_run_at) VALUES (?,?,?,?,?,?)",
-            (json.dumps(argv), "queued", max_retries, timeout_seconds, now, now),
+            " created_at, next_run_at, idempotency_key) VALUES (?,?,?,?,?,?,?)",
+            (json.dumps(argv), "queued", max_retries, timeout_seconds, now, now,
+             idempotency_key),
         )
         job_id = cur.lastrowid
         add_event(conn, job_id, now, "added")
@@ -338,7 +360,7 @@ def add_job(
     except BaseException:
         conn.execute("ROLLBACK")
         raise
-    return job_id
+    return job_id, "queued", False
 
 
 def claim_next(

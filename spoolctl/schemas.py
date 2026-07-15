@@ -139,7 +139,7 @@ VERB_SCHEMAS = {
     "add": obj({
         "deduplicated": {"type": "boolean"},
         "job_id": {"type": "integer"},
-        "state": {"type": "string", "const": "queued"},
+        "state": {"type": "string", "enum": ["queued", "running"]},
     }),
     "work": {
         "oneOf": [

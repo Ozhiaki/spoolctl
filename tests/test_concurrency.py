@@ -451,5 +451,33 @@ class TestCancelCompletionRace(ConcurrencyTestCase):
                          "a terminal state changed after settling")
 
 
+class TestIdempotencyKeyConcurrency(ConcurrencyTestCase):
+    def test_same_key_stampede_returns_one_active_job(self):
+        procs = [
+            subprocess.Popen(
+                [sys.executable, "-m", "spoolctl", "add", "--db", self.db,
+                 "--json", "--key", "stampede", "--", "true"],
+                cwd=REPO, env=FAST_ENV,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+            )
+            for _ in range(16)
+        ]
+        payloads = []
+        for proc in procs:
+            out, err = proc.communicate(timeout=30)
+            self.assertEqual(proc.returncode, 0, err)
+            payloads.append(json.loads(out)["data"])
+
+        self.assertEqual({p["job_id"] for p in payloads}, {1})
+        self.assertEqual({p["state"] for p in payloads}, {"queued"})
+        self.assertEqual(sum(1 for p in payloads if not p["deduplicated"]), 1)
+        rows = self.query(
+            "SELECT id FROM jobs WHERE idempotency_key=?"
+            " AND state IN ('queued','running')",
+            "stampede",
+        )
+        self.assertEqual([r["id"] for r in rows], [1])
+
+
 if __name__ == "__main__":
     unittest.main()

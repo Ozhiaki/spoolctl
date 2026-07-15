@@ -78,7 +78,7 @@
   ],
   "verbs": {
     "add": {
-      "data_schema": "{job_id: int, state: 'queued', deduplicated: bool}",
+      "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool}",
       "flags": [
         {
           "default": null,
@@ -89,6 +89,11 @@
           "default": false,
           "flag": "--json",
           "type": "bool"
+        },
+        {
+          "default": null,
+          "flag": "--key",
+          "type": "str"
         },
         {
           "default": 3,
@@ -112,7 +117,7 @@
           "repeatable": true
         }
       ],
-      "summary": "enqueue a command (argv form or -c shell string)"
+      "summary": "enqueue a command; --key deduplicates active queued/running jobs"
     },
     "cancel": {
       "data_schema": "{job_id: int, state: 'canceled', was_running: bool}",

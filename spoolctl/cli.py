@@ -211,6 +211,8 @@ def build_parser() -> _Parser:
 
     add = sub.add_parser("add", parents=[common], help="enqueue a command")
     add.add_argument("-c", dest="shell_string", metavar="STRING", help="run STRING via sh -c")
+    add.add_argument("--key", default=None, metavar="K",
+                     help="idempotency key for active queued/running jobs")
     add.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, metavar="SECONDS")
     add.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES, metavar="N")
     add.add_argument("argv", nargs=argparse.REMAINDER, metavar="[--] ARGV...")
@@ -345,6 +347,31 @@ def _open_db(args: argparse.Namespace) -> "sqlite3.Connection":
     return store.connect(store.resolve_db_path(args.db))
 
 
+def _normalize_key(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    key = raw.strip()
+    if not key:
+        raise CliError(
+            "INVALID_INPUT",
+            "--key must not be empty after trimming whitespace",
+            "try: spoolctl add --key run-123 -- <cmd>",
+        )
+    if len(key) > 256:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--key must be <= 256 characters after trimming (got {len(key)})",
+            "try a shorter idempotency key",
+        )
+    if not key.isprintable():
+        raise CliError(
+            "INVALID_INPUT",
+            "--key must contain only printable characters",
+            "remove embedded newlines, tabs, or control characters",
+        )
+    return key
+
+
 def cmd_add(args: argparse.Namespace) -> VerbResult:
     argv = list(args.argv)
     if argv and argv[0] == "--":
@@ -378,15 +405,21 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
             f"--max-retries must be >= 0 (got {args.max_retries})",
             "try: spoolctl add --max-retries 3 -- <cmd>",
         )
+    key = _normalize_key(args.key)
 
     conn = _open_db(args)
     try:
-        job_id = store.add_job(conn, job_argv, args.timeout, args.max_retries, time.time())
+        job_id, state, deduplicated = store.add_job_checked(
+            conn, job_argv, args.timeout, args.max_retries, time.time(), key)
     finally:
         conn.close()
+    if deduplicated:
+        human = f"Job {job_id} already active under key '{key}' ({state})"
+    else:
+        human = f"Added job {job_id}"
     return VerbResult(
-        data={"deduplicated": False, "job_id": job_id, "state": "queued"},
-        human=f"Added job {job_id}",
+        data={"deduplicated": deduplicated, "job_id": job_id, "state": state},
+        human=human,
     )
 
 
@@ -1002,8 +1035,8 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
 # introspected from the live parser, never hand-maintained.
 VERB_SUMMARIES = {
     "add": {
-        "summary": "enqueue a command (argv form or -c shell string)",
-        "data_schema": "{job_id: int, state: 'queued', deduplicated: bool}",
+        "summary": "enqueue a command; --key deduplicates active queued/running jobs",
+        "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool}",
     },
     "work": {
         "summary": "run jobs until stopped; --once runs at most one;"

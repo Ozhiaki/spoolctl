@@ -6,6 +6,7 @@ import io
 import json
 import os
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
@@ -152,6 +153,84 @@ class TestRowAndOutput(AddTestCase):
                 os.environ["SPOOLCTL_DB"] = old
         self.assertEqual(code, 0)
         self.assertTrue(os.path.exists(envdb))
+
+
+class TestIdempotencyKey(AddTestCase):
+    def test_key_fresh_insert_then_active_dedup(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "run-1", "--", "true")
+        self.assertEqual(code, 0)
+        first = json.loads(out)["data"]
+        self.assertEqual(first, {"deduplicated": False, "job_id": 1, "state": "queued"})
+
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "run-1", "--", "false")
+        self.assertEqual(code, 0)
+        second = json.loads(out)["data"]
+        self.assertEqual(second, {"deduplicated": True, "job_id": 1, "state": "queued"})
+
+        conn = store.connect(self.db)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 1)
+        events = conn.execute("SELECT event FROM job_events ORDER BY id").fetchall()
+        conn.close()
+        self.assertEqual([e["event"] for e in events], ["added"])
+
+    def test_dedup_returns_running_state(self):
+        run_cli("add", "--db", self.db, "--json", "--key", "run-1", "--", "sleep", "5")
+        conn = store.connect(self.db)
+        store.claim_next(conn, "w", 1, time.time() + 1, store.output_root(self.db))
+        conn.close()
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "run-1", "--", "false")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"],
+                         {"deduplicated": True, "job_id": 1, "state": "running"})
+
+    def test_terminal_key_reuse_inserts_fresh_job(self):
+        run_cli("add", "--db", self.db, "--json", "--max-retries", "0",
+                "--key", "run-1", "--", "false")
+        run_cli("work", "--once", "--db", self.db, "--json")
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "run-1", "--", "true")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"],
+                         {"deduplicated": False, "job_id": 2, "state": "queued"})
+
+    def test_retry_does_not_consult_active_key(self):
+        run_cli("add", "--db", self.db, "--json", "--max-retries", "0",
+                "--key", "run-1", "--", "false")
+        run_cli("work", "--once", "--db", self.db, "--json")  # job 1 dead
+        run_cli("add", "--db", self.db, "--json", "--key", "run-1", "--", "true")
+        code, out, _ = run_cli("retry", "1", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"], {"job_id": 1, "state": "queued"})
+        conn = store.connect(self.db)
+        rows = conn.execute(
+            "SELECT id FROM jobs WHERE idempotency_key='run-1'"
+            " AND state IN ('queued','running') ORDER BY id"
+        ).fetchall()
+        conn.close()
+        self.assertEqual([r["id"] for r in rows], [1, 2])
+
+    def test_key_is_stripped_before_store_and_lookup(self):
+        run_cli("add", "--db", self.db, "--json", "--key", "  K  ", "--", "true")
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "K", "--", "false")
+        self.assertEqual(code, 0)
+        self.assertTrue(json.loads(out)["data"]["deduplicated"])
+        row = self.job_row(1)
+        self.assertEqual(row["idempotency_key"], "K")
+
+    def test_bad_keys_rejected_before_db_creation(self):
+        cases = ["   ", "x" * 257, "line\nbreak", "tab\tkey"]
+        for i, key in enumerate(cases):
+            with self.subTest(key=repr(key)):
+                db = os.path.join(self.tmp.name, f"bad-{i}.db")
+                code, out, _ = run_cli("add", "--db", db, "--json",
+                                       "--key", key, "--", "true")
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+                self.assertFalse(os.path.exists(db))
 
 
 if __name__ == "__main__":
