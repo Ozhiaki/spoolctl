@@ -189,7 +189,7 @@ def make_envelope(
 # --- parser -------------------------------------------------------------
 
 VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
-         "output", "events", "brief", "capabilities")
+         "output", "events", "brief", "schema", "capabilities")
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -294,13 +294,18 @@ def build_parser() -> _Parser:
 
     brief = sub.add_parser("brief", parents=[common], help="compact usage brief")
 
+    schema = sub.add_parser("schema", parents=[common], help="export JSON Schemas")
+    schema.add_argument("--verb", dest="schema_verb", default=None, metavar="NAME",
+                        help="export only one verb data schema")
+
     caps = sub.add_parser("capabilities", parents=[common], help="machine-readable contract")
 
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
          "show": show, "retry": retry, "cancel": cancel, "prune": prune,
-         "output": output, "events": events, "brief": brief, "capabilities": caps}
+         "output": output, "events": events, "brief": brief, "schema": schema,
+         "capabilities": caps}
     )
     return parser
 
@@ -1382,6 +1387,11 @@ VERB_SUMMARIES = {
         "summary": "compact db-free usage brief for agent context injection",
         "data_schema": "{text: str, approx_tokens: int, budget_tokens: 700}",
     },
+    "schema": {
+        "summary": "export JSON Schemas for the envelope, verb data payloads, and streams",
+        "data_schema": "{dialect: str, envelope_schema: object,"
+                       " verbs: {<name>: schema}, streams: {events_follow: schema}}",
+    },
     "capabilities": {
         "summary": "this machine-readable contract",
         "data_schema": "{attempt_states, contract_policy, contract_version, env,"
@@ -1439,7 +1449,7 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
             "when": "--follow --json",
         }
         description["since_cursor_alias"] = "--since-id"
-    if name == "brief":
+    if name in {"brief", "schema"}:
         description["ignores"] = ["--db"]
     return description
 
@@ -1462,6 +1472,34 @@ def cmd_brief(args: argparse.Namespace) -> VerbResult:
         },
         human=text,
     )
+
+
+def cmd_schema(args: argparse.Namespace) -> VerbResult:
+    verb_names = sorted(schemas.VERB_SCHEMAS)
+    if args.schema_verb is None:
+        selected = {name: schemas.VERB_SCHEMAS[name] for name in verb_names}
+    else:
+        if args.schema_verb not in schemas.VERB_SCHEMAS:
+            suggestion = _suggest(args.schema_verb, verb_names)
+            raise CliError(
+                "INVALID_INPUT",
+                f"unknown schema verb: {args.schema_verb!r}",
+                f"valid verbs: {', '.join(verb_names)}",
+                did_you_mean=suggestion,
+            )
+        selected = {args.schema_verb: schemas.VERB_SCHEMAS[args.schema_verb]}
+    data = {
+        "dialect": schemas.DIALECT,
+        "envelope_schema": schemas.ENVELOPE_SCHEMA,
+        "streams": schemas.STREAM_SCHEMAS,
+        "verbs": selected,
+    }
+    lines = [
+        "spoolctl JSON Schemas:",
+        "verbs: " + ", ".join(verb_names),
+        "run with --json for envelope_schema, verbs, and streams",
+    ]
+    return VerbResult(data=data, human="\n".join(lines))
 
 
 def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
@@ -1499,6 +1537,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "output": cmd_output,
     "prune": cmd_prune,
     "retry": cmd_retry,
+    "schema": cmd_schema,
     "show": cmd_show,
     "status": cmd_status,
     "wait": cmd_wait,

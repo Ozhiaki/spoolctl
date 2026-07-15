@@ -221,6 +221,12 @@ VERB_SCHEMAS = {
         "budget_tokens": {"type": "integer", "const": BRIEF_BUDGET_TOKENS},
         "text": {"type": "string"},
     }),
+    "schema": obj({
+        "dialect": {"type": "string", "const": DIALECT},
+        "envelope_schema": {},
+        "streams": {"type": "object", "additionalProperties": {}},
+        "verbs": {"type": "object", "additionalProperties": {}},
+    }),
     "capabilities": obj({
         "attempt_states": array_of({"type": "string"}),
         "contract_policy": {"type": "string"},

@@ -390,6 +390,31 @@
       ],
       "summary": "requeue a dead or failed job with a fresh retry budget"
     },
+    "schema": {
+      "data_schema": "{dialect: str, envelope_schema: object, verbs: {<name>: schema}, streams: {events_follow: schema}}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": null,
+          "flag": "--verb",
+          "type": "str"
+        }
+      ],
+      "ignores": [
+        "--db"
+      ],
+      "positionals": [],
+      "summary": "export JSON Schemas for the envelope, verb data payloads, and streams"
+    },
     "show": {
       "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error, idempotency_key, tags, note}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
       "flags": [

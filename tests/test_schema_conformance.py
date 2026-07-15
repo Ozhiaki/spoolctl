@@ -131,6 +131,7 @@ GOLDEN_VERBS = {
     "envelope-output-no-attempts.json": "output",
     "envelope-events-empty.json": "events",
     "envelope-brief.json": "brief",
+    "envelope-schema.json": "schema",
 }
 
 
@@ -212,6 +213,7 @@ class TestLiveConformance(unittest.TestCase):
         self.assert_verb("output", "output", job_id, "--db", self.db, "--json")
         self.assert_verb("events", "events", "--db", self.db, "--json")
         self.assert_verb("brief", "brief", "--db", self.db, "--json")
+        self.assert_verb("schema", "schema", "--db", self.db, "--json")
         self.assert_verb("status", "status", "--db", self.db, "--json")
         self.assert_verb("prune", "prune", "--older-than", "0", "--db", self.db, "--json")
         self.assert_verb("capabilities", "capabilities", "--json")

@@ -1,0 +1,1164 @@
+{
+  "dialect": "https://json-schema.org/draft/2020-12/schema",
+  "envelope_schema": {
+    "additionalProperties": false,
+    "properties": {
+      "commands": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "data": {},
+      "errors": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "did_you_mean": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "exit_code": {
+              "type": "integer"
+            },
+            "message": {
+              "type": "string"
+            },
+            "remediation": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "remediation",
+            "exit_code"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "meta": {
+        "additionalProperties": false,
+        "properties": {
+          "contract_version": {
+            "type": "string"
+          },
+          "data_hash": {
+            "type": "string"
+          },
+          "elapsed_ms": {
+            "type": "integer"
+          },
+          "pagination": {
+            "additionalProperties": false,
+            "properties": {
+              "cursor": {
+                "type": "integer"
+              },
+              "first_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "cursor",
+              "first_id"
+            ],
+            "type": "object"
+          },
+          "request_id": {
+            "type": "string"
+          },
+          "ts_iso": {
+            "type": "string"
+          },
+          "wait": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "enum": [
+                  "records_available",
+                  "timeout"
+                ],
+                "type": "string"
+              },
+              "waited_ms": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "reason",
+              "waited_ms"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "request_id",
+          "ts_iso",
+          "elapsed_ms",
+          "contract_version",
+          "data_hash"
+        ],
+        "type": "object"
+      },
+      "ok": {
+        "type": "boolean"
+      },
+      "tool_version": {
+        "type": "string"
+      },
+      "warnings": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "commands",
+      "data",
+      "errors",
+      "meta",
+      "ok",
+      "tool_version",
+      "warnings"
+    ],
+    "type": "object"
+  },
+  "streams": {
+    "events_follow": {
+      "additionalProperties": false,
+      "properties": {
+        "at": {
+          "type": "number"
+        },
+        "detail": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "event": {
+          "enum": [
+            "added",
+            "claimed",
+            "succeeded",
+            "failed",
+            "timed_out",
+            "reaped",
+            "dead",
+            "retried",
+            "canceled"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "integer"
+        },
+        "job_id": {
+          "type": "integer"
+        },
+        "worker_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "at",
+        "detail",
+        "event",
+        "id",
+        "job_id",
+        "worker_id"
+      ],
+      "type": "object"
+    }
+  },
+  "verbs": {
+    "add": {
+      "additionalProperties": false,
+      "properties": {
+        "deduplicated": {
+          "type": "boolean"
+        },
+        "job_id": {
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "queued",
+            "running"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "deduplicated",
+        "job_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "brief": {
+      "additionalProperties": false,
+      "properties": {
+        "approx_tokens": {
+          "type": "integer"
+        },
+        "budget_tokens": {
+          "const": 700,
+          "type": "integer"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approx_tokens",
+        "budget_tokens",
+        "text"
+      ],
+      "type": "object"
+    },
+    "cancel": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "type": "integer"
+        },
+        "state": {
+          "const": "canceled",
+          "type": "string"
+        },
+        "was_running": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "job_id",
+        "state",
+        "was_running"
+      ],
+      "type": "object"
+    },
+    "capabilities": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_states": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "contract_policy": {
+          "type": "string"
+        },
+        "contract_version": {
+          "type": "string"
+        },
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "error_codes": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "exit_codes": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "meaning": {
+                "type": "string"
+              },
+              "note": {
+                "type": "string"
+              },
+              "retryable": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "meaning",
+              "retryable"
+            ],
+            "type": "object"
+          },
+          "type": "object"
+        },
+        "job_states": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "verbs": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "attempt_states",
+        "contract_policy",
+        "contract_version",
+        "env",
+        "error_codes",
+        "events",
+        "exit_codes",
+        "job_states",
+        "verbs"
+      ],
+      "type": "object"
+    },
+    "events": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "events": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "type": "number"
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "event": {
+                "enum": [
+                  "added",
+                  "claimed",
+                  "succeeded",
+                  "failed",
+                  "timed_out",
+                  "reaped",
+                  "dead",
+                  "retried",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "integer"
+              },
+              "job_id": {
+                "type": "integer"
+              },
+              "worker_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at",
+              "detail",
+              "event",
+              "id",
+              "job_id",
+              "worker_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "count",
+        "events"
+      ],
+      "type": "object"
+    },
+    "list": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "type": "integer"
+        },
+        "jobs": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "argv": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "attempts": {
+                "type": "integer"
+              },
+              "created_at": {
+                "type": "number"
+              },
+              "finished_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "integer"
+              },
+              "idempotency_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_exit_code": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_retries": {
+                "type": "integer"
+              },
+              "next_run_at": {
+                "type": "number"
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "started_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "done",
+                  "failed",
+                  "dead",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              "tags": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "timeout_seconds": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "argv",
+              "attempts",
+              "created_at",
+              "finished_at",
+              "id",
+              "idempotency_key",
+              "last_error",
+              "last_exit_code",
+              "max_retries",
+              "next_run_at",
+              "note",
+              "started_at",
+              "state",
+              "tags",
+              "timeout_seconds"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "count",
+        "jobs"
+      ],
+      "type": "object"
+    },
+    "output": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "attempts": {
+              "items": {},
+              "type": "array"
+            }
+          },
+          "required": [
+            "attempts"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "attempt_no": {
+              "type": "integer"
+            },
+            "attempt_state": {
+              "enum": [
+                "running",
+                "succeeded",
+                "failed",
+                "timed_out",
+                "abandoned",
+                "canceled"
+              ],
+              "type": "string"
+            },
+            "attempts_total": {
+              "type": "integer"
+            },
+            "job_id": {
+              "type": "integer"
+            },
+            "streams": {
+              "additionalProperties": {
+                "additionalProperties": false,
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "preview": {
+                    "type": "string"
+                  },
+                  "preview_truncated": {
+                    "type": "boolean"
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "path",
+                  "preview",
+                  "preview_truncated",
+                  "size_bytes"
+                ],
+                "type": "object"
+              },
+              "type": "object"
+            }
+          },
+          "required": [
+            "attempt_no",
+            "attempt_state",
+            "attempts_total",
+            "job_id",
+            "streams"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "prune": {
+      "additionalProperties": false,
+      "properties": {
+        "deleted_attempts": {
+          "type": "integer"
+        },
+        "deleted_events": {
+          "type": "integer"
+        },
+        "deleted_jobs": {
+          "type": "integer"
+        },
+        "dry_run": {
+          "type": "boolean"
+        },
+        "freed_bytes": {
+          "type": "integer"
+        },
+        "matched": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "deleted_attempts",
+        "deleted_events",
+        "deleted_jobs",
+        "dry_run",
+        "freed_bytes",
+        "matched"
+      ],
+      "type": "object"
+    },
+    "retry": {
+      "additionalProperties": false,
+      "properties": {
+        "job_id": {
+          "type": "integer"
+        },
+        "state": {
+          "const": "queued",
+          "type": "string"
+        }
+      },
+      "required": [
+        "job_id",
+        "state"
+      ],
+      "type": "object"
+    },
+    "schema": {
+      "additionalProperties": false,
+      "properties": {
+        "dialect": {
+          "const": "https://json-schema.org/draft/2020-12/schema",
+          "type": "string"
+        },
+        "envelope_schema": {},
+        "streams": {
+          "additionalProperties": {},
+          "type": "object"
+        },
+        "verbs": {
+          "additionalProperties": {},
+          "type": "object"
+        }
+      },
+      "required": [
+        "dialect",
+        "envelope_schema",
+        "streams",
+        "verbs"
+      ],
+      "type": "object"
+    },
+    "show": {
+      "additionalProperties": false,
+      "properties": {
+        "attempts": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attempt_no": {
+                "type": "integer"
+              },
+              "error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "exit_code": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "finished_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "started_at": {
+                "type": "number"
+              },
+              "state": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "timed_out",
+                  "abandoned",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              "stderr_path": {
+                "type": "string"
+              },
+              "stdout_path": {
+                "type": "string"
+              },
+              "worker_id": {
+                "type": "string"
+              },
+              "worker_pid": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "attempt_no",
+              "error",
+              "exit_code",
+              "finished_at",
+              "started_at",
+              "state",
+              "stderr_path",
+              "stdout_path",
+              "worker_id",
+              "worker_pid"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "events": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "type": "number"
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "event": {
+                "enum": [
+                  "added",
+                  "claimed",
+                  "succeeded",
+                  "failed",
+                  "timed_out",
+                  "reaped",
+                  "dead",
+                  "retried",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              "worker_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at",
+              "detail",
+              "event",
+              "worker_id"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "job": {
+          "additionalProperties": false,
+          "properties": {
+            "argv": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "attempts": {
+              "type": "integer"
+            },
+            "created_at": {
+              "type": "number"
+            },
+            "finished_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "heartbeat_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "id": {
+              "type": "integer"
+            },
+            "idempotency_key": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_error": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "last_exit_code": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "locked_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "locked_by": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "locked_pid": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "max_retries": {
+              "type": "integer"
+            },
+            "next_run_at": {
+              "type": "number"
+            },
+            "note": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "started_at": {
+              "type": [
+                "number",
+                "null"
+              ]
+            },
+            "state": {
+              "enum": [
+                "queued",
+                "running",
+                "done",
+                "failed",
+                "dead",
+                "canceled"
+              ],
+              "type": "string"
+            },
+            "tags": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "timeout_seconds": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "argv",
+            "attempts",
+            "created_at",
+            "finished_at",
+            "heartbeat_at",
+            "id",
+            "idempotency_key",
+            "last_error",
+            "last_exit_code",
+            "locked_at",
+            "locked_by",
+            "locked_pid",
+            "max_retries",
+            "next_run_at",
+            "note",
+            "started_at",
+            "state",
+            "tags",
+            "timeout_seconds"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "attempts",
+        "events",
+        "job"
+      ],
+      "type": "object"
+    },
+    "status": {
+      "additionalProperties": false,
+      "properties": {
+        "counts": {
+          "additionalProperties": false,
+          "properties": {
+            "canceled": {
+              "type": "integer"
+            },
+            "dead": {
+              "type": "integer"
+            },
+            "done": {
+              "type": "integer"
+            },
+            "failed": {
+              "type": "integer"
+            },
+            "queued": {
+              "type": "integer"
+            },
+            "running": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "canceled",
+            "dead",
+            "done",
+            "failed",
+            "queued",
+            "running"
+          ],
+          "type": "object"
+        },
+        "recent_dead": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "attempts": {
+                "type": "integer"
+              },
+              "command": {
+                "type": "string"
+              },
+              "finished_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "integer"
+              },
+              "last_error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "stderr_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "stdout_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "attempts",
+              "command",
+              "finished_at",
+              "id",
+              "last_error",
+              "stderr_path",
+              "stdout_path"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "counts",
+        "recent_dead"
+      ],
+      "type": "object"
+    },
+    "wait": {
+      "additionalProperties": false,
+      "properties": {
+        "all_succeeded": {
+          "type": "boolean"
+        },
+        "jobs": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "attempts": {
+                "type": "integer"
+              },
+              "last_error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_exit_code": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "done",
+                  "failed",
+                  "dead",
+                  "canceled"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "attempts",
+              "last_error",
+              "last_exit_code",
+              "state"
+            ],
+            "type": "object"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "all_succeeded",
+        "jobs"
+      ],
+      "type": "object"
+    },
+    "work": {
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "claimed": {
+              "const": false,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "claimed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "attempt_no": {
+              "type": "integer"
+            },
+            "claimed": {
+              "const": true,
+              "type": "boolean"
+            },
+            "job_id": {
+              "type": "integer"
+            },
+            "job_state": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "result": {
+              "enum": [
+                "succeeded",
+                "failed",
+                "timed_out"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "attempt_no",
+            "claimed",
+            "job_id",
+            "job_state",
+            "result"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "drained": {
+              "type": "boolean"
+            },
+            "executed": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "drained",
+            "executed"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "stopped": {
+              "const": true,
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "stopped"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  }
+}

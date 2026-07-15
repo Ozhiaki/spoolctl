@@ -145,6 +145,11 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assertEqual(code, 0)
         self.assert_golden("brief", out)
 
+    def test_schema(self):
+        code, out, _ = run_cli("schema", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assert_golden("schema", out)
+
 
 class TestRemainingExitCodePaths(unittest.TestCase):
     def setUp(self):
