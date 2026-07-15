@@ -129,6 +129,26 @@
       ],
       "summary": "enqueue a command; --key deduplicates active queued/running jobs"
     },
+    "brief": {
+      "data_schema": "{text: str, approx_tokens: int, budget_tokens: 700}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        }
+      ],
+      "ignores": [
+        "--db"
+      ],
+      "positionals": [],
+      "summary": "compact db-free usage brief for agent context injection"
+    },
     "cancel": {
       "data_schema": "{job_id: int, state: 'canceled', was_running: bool}",
       "flags": [

@@ -17,7 +17,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 PACKAGE = REPO / "spoolctl"
 
-MODULES = ["__init__", "models", "store", "worker", "cli"]
+MODULES = ["__init__", "models", "schemas", "store", "worker", "cli"]
 
 TEMPLATE = '''\
 #!/usr/bin/env python3

@@ -6,9 +6,13 @@ stays test-only so the CLI keeps zero runtime dependencies.
 
 from __future__ import annotations
 
+import math
+from typing import Any
+
 from spoolctl.models import ATTEMPT_STATES, EXIT_CODES, JOB_EVENT_TYPES, JOB_STATES
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
+BRIEF_BUDGET_TOKENS = 700
 
 NULLABLE_STRING = {"type": ["string", "null"]}
 NULLABLE_INTEGER = {"type": ["integer", "null"]}
@@ -212,6 +216,11 @@ VERB_SCHEMAS = {
         "count": {"type": "integer"},
         "events": array_of(EVENT_RECORD_SCHEMA),
     }),
+    "brief": obj({
+        "approx_tokens": {"type": "integer"},
+        "budget_tokens": {"type": "integer", "const": BRIEF_BUDGET_TOKENS},
+        "text": {"type": "string"},
+    }),
     "capabilities": obj({
         "attempt_states": array_of({"type": "string"}),
         "contract_policy": {"type": "string"},
@@ -235,3 +244,55 @@ VERB_SCHEMAS = {
 STREAM_SCHEMAS = {
     "events_follow": EVENT_RECORD_SCHEMA,
 }
+
+
+def approx_tokens(text: str) -> int:
+    return math.ceil(len(text) / 4)
+
+
+def build_brief(
+    verb_summaries: dict[str, dict[str, str]],
+    exit_codes: dict[int, dict[str, Any]],
+    job_states: set[str],
+    env_docs: dict[str, str],
+) -> tuple[str, int]:
+    verbs = ", ".join(sorted(verb_summaries))
+    states = ", ".join(sorted(job_states))
+    exit_bits = ", ".join(
+        f"{code}={info['meaning']}" for code, info in sorted(exit_codes.items())
+    )
+    lines = [
+        "spoolctl quick brief",
+        f"Verbs: {verbs}.",
+        f"Jobs move through: {states}.",
+        "JSON mode: every normal verb accepts --json and returns"
+        " {ok, tool_version, data, meta, warnings, commands, errors}.",
+        f"SPOOLCTL_DB: {env_docs['SPOOLCTL_DB']}. --db overrides it.",
+        "Typical loop: spoolctl add -- <cmd>; spoolctl work --drain;"
+        " spoolctl wait <ids>; spoolctl output <id> --stream stdout.",
+        "Submit many jobs first, remember their ids, run one worker with"
+        " work --drain, then wait on all ids. wait exits 6 when any awaited"
+        " job ends non-success, but the JSON envelope is still ok:true and"
+        " data.all_succeeded=false.",
+        "add supports --key for active queued/running dedup and repeatable"
+        " --tag KEY=VALUE plus --note for immutable handoff metadata.",
+        "list filters by --state and repeatable --tag; show prints full job,"
+        " attempts, events, key, tags, and note.",
+        "events reads the durable job_events ledger: one-shot and --wait"
+        " return envelopes with meta.pagination.cursor; --follow --json emits"
+        " raw NDJSON event records only, no control frames.",
+        "schema --json exports the envelope, verb data, and raw stream JSON"
+        " Schemas. capabilities --json describes flags, modes, states, events,"
+        " env, and exit codes.",
+        f"Exit codes: {exit_bits}.",
+        "Use retry for dead/failed jobs, cancel for queued/running withdrawal,"
+        " prune for old terminal jobs, status for counts/recent dead jobs.",
+    ]
+    prefix = "\n".join(lines)
+    tokens = approx_tokens(prefix)
+    while True:
+        text = prefix + f"\n~{tokens} tokens (budget {BRIEF_BUDGET_TOKENS})."
+        actual = approx_tokens(text)
+        if actual == tokens:
+            return text, actual
+        tokens = actual

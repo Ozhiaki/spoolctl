@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable
 
-from spoolctl import store
+from spoolctl import schemas, store
 from spoolctl.models import (
     ATTEMPT_STATES,
     CONTRACT_VERSION,
@@ -189,7 +189,7 @@ def make_envelope(
 # --- parser -------------------------------------------------------------
 
 VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
-         "output", "events", "capabilities")
+         "output", "events", "brief", "capabilities")
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -292,13 +292,15 @@ def build_parser() -> _Parser:
     events.add_argument("--poll-interval", type=float, default=0.5, metavar="SECONDS",
                         help="poll rate for --wait/--follow; default 0.5")
 
+    brief = sub.add_parser("brief", parents=[common], help="compact usage brief")
+
     caps = sub.add_parser("capabilities", parents=[common], help="machine-readable contract")
 
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
          "show": show, "retry": retry, "cancel": cancel, "prune": prune,
-         "output": output, "events": events, "capabilities": caps}
+         "output": output, "events": events, "brief": brief, "capabilities": caps}
     )
     return parser
 
@@ -1376,6 +1378,10 @@ VERB_SUMMARIES = {
                        " detail}]}; meta.pagination:{cursor, first_id};"
                        " --wait also adds meta.wait:{reason, waited_ms}",
     },
+    "brief": {
+        "summary": "compact db-free usage brief for agent context injection",
+        "data_schema": "{text: str, approx_tokens: int, budget_tokens: 700}",
+    },
     "capabilities": {
         "summary": "this machine-readable contract",
         "data_schema": "{attempt_states, contract_policy, contract_version, env,"
@@ -1433,6 +1439,8 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
             "when": "--follow --json",
         }
         description["since_cursor_alias"] = "--since-id"
+    if name == "brief":
+        description["ignores"] = ["--db"]
     return description
 
 
@@ -1442,6 +1450,18 @@ CONTRACT_POLICY = (
     " via new verbs; a breaking change to an existing verb's data shape or"
     " exit mapping is what bumps contract_version"
 )
+
+
+def cmd_brief(args: argparse.Namespace) -> VerbResult:
+    text, tokens = schemas.build_brief(VERB_SUMMARIES, EXIT_CODES, JOB_STATES, ENV_DOCS)
+    return VerbResult(
+        data={
+            "approx_tokens": tokens,
+            "budget_tokens": schemas.BRIEF_BUDGET_TOKENS,
+            "text": text,
+        },
+        human=text,
+    )
 
 
 def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
@@ -1471,6 +1491,7 @@ def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
 
 HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "add": cmd_add,
+    "brief": cmd_brief,
     "cancel": cmd_cancel,
     "capabilities": cmd_capabilities,
     "events": cmd_events,

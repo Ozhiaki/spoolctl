@@ -140,6 +140,11 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assertEqual(code, 0)
         self.assert_golden("events-empty", out)
 
+    def test_brief(self):
+        code, out, _ = run_cli("brief", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assert_golden("brief", out)
+
 
 class TestRemainingExitCodePaths(unittest.TestCase):
     def setUp(self):
