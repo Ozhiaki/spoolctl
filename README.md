@@ -14,9 +14,10 @@ No broker. No server. No dependencies.
 
 </div>
 
-> **Status: pre-release.** spoolctl is in the design phase. The design has been through
-> adversarial multi-model spec review; implementation is next. This README documents the
-> committed interface and guarantees. Star/watch to follow.
+> **Status: pre-release.** spoolctl v0.3 is implemented with a local contract,
+> migration, schema, and concurrency test suite. The CLI surface may still move before
+> a public package release, but the documented interface and guarantees are tested in
+> this repository.
 
 ---
 
@@ -60,7 +61,7 @@ arbitrary shell commands, with less infrastructure than either shelf:
 
 ## Interface Preview
 
-*Pre-release: this is the committed CLI design, shown ahead of implementation.*
+*Pre-release: this is the committed v0.3 CLI surface.*
 
 ```console
 $ spoolctl add -- python fetch.py --all
@@ -84,6 +85,10 @@ fetched 3120 records
 
 $ spoolctl retry 7                # requeue a dead job with a fresh retry budget
 Job 7 requeued
+
+$ spoolctl brief                  # compact agent-facing usage reference
+$ spoolctl schema --json          # formal envelope, verb, and stream schemas
+$ spoolctl events --json          # durable event ledger with resume cursor
 ```
 
 ## Design Philosophy
@@ -151,7 +156,8 @@ keep that market. spoolctl exists for the operator who won't be there when the j
 
 ## Installation
 
-Not yet — implementation is in progress. When it ships, in order of intended blessing:
+Packaging is not blessed yet. From a checkout, run `python -m spoolctl`; when packaging
+ships, the intended installation paths are:
 
 ```console
 $ uv tool install spoolctl        # or: pip install spoolctl
@@ -209,9 +215,9 @@ Zero-dependency single-file Python is the most installable software artifact tha
 every macOS and Linux box can run it, and an agent can "install" it by writing a file.
 
 **When can I use it?**
-The spec is complete and reviewed; implementation with a full concurrency/crash test
-suite (including SIGKILL-recovery and no-double-execution tests) is the next milestone.
-Watch the repo.
+From a checkout now, with the usual pre-release caution. v0.3 has a full
+concurrency/crash test suite, JSON contract goldens, schema conformance tests, and
+single-file build coverage.
 
 ## About Contributions
 
