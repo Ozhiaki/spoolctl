@@ -173,6 +173,70 @@
       "positionals": [],
       "summary": "this machine-readable contract"
     },
+    "events": {
+      "data_schema": "{count: int, events: [{id, job_id, at, event, worker_id, detail}]}; meta.pagination:{cursor, first_id}; --wait also adds meta.wait:{reason, waited_ms}",
+      "flags": [
+        {
+          "default": null,
+          "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--follow",
+          "type": "bool"
+        },
+        {
+          "default": null,
+          "flag": "--job",
+          "type": "int"
+        },
+        {
+          "default": false,
+          "flag": "--json",
+          "type": "bool"
+        },
+        {
+          "default": null,
+          "flag": "--limit",
+          "type": "int"
+        },
+        {
+          "default": 0.5,
+          "flag": "--poll-interval",
+          "type": "float"
+        },
+        {
+          "default": null,
+          "flag": "--since-id",
+          "type": "int"
+        },
+        {
+          "default": false,
+          "flag": "--wait",
+          "type": "bool"
+        },
+        {
+          "default": 30.0,
+          "flag": "--wait-timeout",
+          "type": "float"
+        }
+      ],
+      "output_modes": [
+        "envelope",
+        "raw"
+      ],
+      "positionals": [],
+      "raw": {
+        "delivery_class": "best-effort-tail over replayable-from-cursor ledger",
+        "mode": "ndjson",
+        "record": "bare event records only; no control frames",
+        "stream": "events_follow",
+        "when": "--follow --json"
+      },
+      "since_cursor_alias": "--since-id",
+      "summary": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames"
+    },
     "list": {
       "data_schema": "{count: int, jobs: [{id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, last_exit_code, last_error, idempotency_key, tags, note}]}",
       "flags": [

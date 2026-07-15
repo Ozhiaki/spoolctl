@@ -877,6 +877,60 @@ def get_events(conn: sqlite3.Connection, job_id: int) -> list[dict]:
     ]
 
 
+def _event_from_row(row: sqlite3.Row) -> dict:
+    return {
+        "at": row["at"],
+        "detail": row["detail"],
+        "event": row["event"],
+        "id": row["id"],
+        "job_id": row["job_id"],
+        "worker_id": row["worker_id"],
+    }
+
+
+def event_high_water(conn: sqlite3.Connection) -> int:
+    """Highest retained global event id, or 0 when the ledger is empty."""
+    row = conn.execute("SELECT COALESCE(MAX(id), 0) AS id FROM job_events").fetchone()
+    return row["id"]
+
+
+def first_event_id(conn: sqlite3.Connection, job_id: int | None = None) -> int | None:
+    """Lowest retained event id, optionally within one job's stream predicate."""
+    if job_id is None:
+        row = conn.execute("SELECT MIN(id) AS id FROM job_events").fetchone()
+    else:
+        row = conn.execute(
+            "SELECT MIN(id) AS id FROM job_events WHERE job_id=?", (job_id,)
+        ).fetchone()
+    return row["id"]
+
+
+def list_events(
+    conn: sqlite3.Connection,
+    since_id: int,
+    job_id: int | None = None,
+    limit: int = 1000,
+) -> list[dict]:
+    """Global event ledger rows with id > since_id, ascending by id.
+
+    `limit=0` means unlimited. `job_id` is a predicate only; callers must not
+    use this as an existence check.
+    """
+    where = ["id > ?"]
+    params: list[int] = [since_id]
+    if job_id is not None:
+        where.append("job_id = ?")
+        params.append(job_id)
+    sql = (
+        "SELECT id, job_id, at, event, worker_id, detail FROM job_events"
+        f" WHERE {' AND '.join(where)} ORDER BY id ASC"
+    )
+    if limit > 0:
+        sql += " LIMIT ?"
+        params.append(limit)
+    return [_event_from_row(r) for r in conn.execute(sql, tuple(params))]
+
+
 def add_event(
     conn: sqlite3.Connection,
     job_id: int,

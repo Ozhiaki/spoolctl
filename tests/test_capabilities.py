@@ -85,6 +85,13 @@ class TestParserParity(unittest.TestCase):
              "SPOOLCTL_TEST_REAP_THRESHOLD"},
         )
 
+    def test_events_declares_raw_follow_mode(self):
+        events = capabilities_data()["verbs"]["events"]
+        self.assertEqual(events["output_modes"], ["envelope", "raw"])
+        self.assertEqual(events["raw"]["stream"], "events_follow")
+        self.assertIn("no control frames", events["raw"]["record"])
+        self.assertEqual(events["since_cursor_alias"], "--since-id")
+
 
 if __name__ == "__main__":
     unittest.main()

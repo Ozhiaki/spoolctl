@@ -1,0 +1,22 @@
+{
+  "commands": [],
+  "data": {
+    "count": 0,
+    "events": []
+  },
+  "errors": [],
+  "meta": {
+    "contract_version": "1",
+    "data_hash": "sha256:PINNED",
+    "elapsed_ms": 0,
+    "pagination": {
+      "cursor": 0,
+      "first_id": null
+    },
+    "request_id": "req_PINNED",
+    "ts_iso": "PINNED"
+  },
+  "ok": true,
+  "tool_version": "0.3.0",
+  "warnings": []
+}

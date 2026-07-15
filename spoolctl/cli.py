@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import signal
 import shlex
 import sqlite3
 import sys
@@ -188,7 +189,7 @@ def make_envelope(
 # --- parser -------------------------------------------------------------
 
 VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
-         "output", "capabilities")
+         "output", "events", "capabilities")
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -275,13 +276,29 @@ def build_parser() -> _Parser:
     output.add_argument("--raw", action="store_true", help="raw bytes, single stream, no headers")
     output.add_argument("--attempt", type=int, default=None, metavar="N")
 
+    events = sub.add_parser("events", parents=[common],
+                            help="read or follow the global job event stream")
+    events.add_argument("--job", type=int, default=None, metavar="ID",
+                        help="filter to one job id; no existence check is performed")
+    events.add_argument("--since-id", type=int, default=None, metavar="N",
+                        help="return events with id > N")
+    events.add_argument("--limit", type=int, default=None, metavar="N",
+                        help="one-shot max events; default 1000, 0 = unlimited")
+    events.add_argument("--wait", action="store_true",
+                        help="long-poll for the next matching event, then return an envelope")
+    events.add_argument("--wait-timeout", type=float, default=30.0, metavar="SECONDS",
+                        help="budget for --wait; default 30")
+    events.add_argument("--follow", action="store_true", help="tail events until interrupted")
+    events.add_argument("--poll-interval", type=float, default=0.5, metavar="SECONDS",
+                        help="poll rate for --wait/--follow; default 0.5")
+
     caps = sub.add_parser("capabilities", parents=[common], help="machine-readable contract")
 
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
          "show": show, "retry": retry, "cancel": cancel, "prune": prune,
-         "output": output, "capabilities": caps}
+         "output": output, "events": events, "capabilities": caps}
     )
     return parser
 
@@ -1026,6 +1043,170 @@ def cmd_prune(args: argparse.Namespace) -> VerbResult:
     )
 
 
+def _validate_events_args(args: argparse.Namespace) -> None:
+    if args.job is not None and args.job <= 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--job must be a positive integer (got {args.job})",
+            "try: spoolctl events --job 1 --json",
+        )
+    if args.since_id is not None and args.since_id < 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--since-id must be >= 0 (got {args.since_id})",
+            "try: spoolctl events --since-id 0 --json",
+        )
+    if args.limit is not None and args.limit < 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--limit must be >= 0 (got {args.limit})",
+            "try: spoolctl events --limit 1000 --json",
+        )
+    if args.poll_interval <= 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--poll-interval must be > 0 (got {args.poll_interval})",
+            "try: spoolctl events --wait --poll-interval 0.5 --json",
+        )
+    if args.wait_timeout <= 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--wait-timeout must be > 0 (got {args.wait_timeout})",
+            "try: spoolctl events --wait --wait-timeout 30 --json",
+        )
+    if args.follow and args.wait:
+        raise CliError(
+            "INVALID_INPUT",
+            "--wait and --follow are mutually exclusive",
+            "use --wait for one envelope response, or --follow for a stream",
+        )
+    if args.follow and args.limit is not None:
+        raise CliError(
+            "INVALID_INPUT",
+            "--limit cannot be used with --follow",
+            "use --since-id to choose a starting cursor, or omit --follow",
+        )
+
+
+def _event_page(
+    conn: sqlite3.Connection,
+    since_id: int,
+    job_id: int | None,
+    limit: int,
+) -> tuple[list[dict], dict[str, int | None]]:
+    fetch_limit = 0 if limit == 0 else limit + 1
+    rows = store.list_events(conn, since_id, job_id, fetch_limit)
+    truncated = limit > 0 and len(rows) > limit
+    events = rows[:limit] if truncated else rows
+    high_water = store.event_high_water(conn)
+    if truncated:
+        cursor = events[-1]["id"]
+    else:
+        cursor = max(since_id, high_water)
+    return events, {
+        "cursor": cursor,
+        "first_id": store.first_event_id(conn, job_id),
+    }
+
+
+def _format_event_line(event: dict) -> str:
+    ts = datetime.fromtimestamp(event["at"], timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%S.%fZ"
+    )
+    ts = ts[:-4] + "Z"
+    worker_id = event["worker_id"] or "-"
+    detail = event["detail"] or "-"
+    return (
+        f"{event['id']}  {ts} #{event['job_id']} {event['event']}"
+        f"  {worker_id}  {detail}"
+    )
+
+
+def _write_event(event: dict, json_mode: bool) -> None:
+    if json_mode:
+        print(json.dumps(event, ensure_ascii=False), flush=True)
+    else:
+        print(_format_event_line(event), flush=True)
+
+
+def _run_events_follow(args: argparse.Namespace) -> VerbResult:
+    conn = _open_db(args)
+    stop = False
+
+    def on_signal(signum, frame):
+        nonlocal stop
+        stop = True
+
+    old_int = signal.signal(signal.SIGINT, on_signal)
+    old_term = signal.signal(signal.SIGTERM, on_signal)
+    try:
+        cursor = (
+            args.since_id
+            if args.since_id is not None
+            else store.event_high_water(conn)
+        )
+        while not stop:
+            rows = store.list_events(conn, cursor, args.job, 0)
+            if not rows:
+                time.sleep(args.poll_interval)
+                continue
+            for event in rows:
+                if stop:
+                    break
+                _write_event(event, args.json)
+                cursor = event["id"]
+    except BrokenPipeError:
+        try:
+            sys.stdout.close()
+        except OSError:
+            pass
+    finally:
+        signal.signal(signal.SIGINT, old_int)
+        signal.signal(signal.SIGTERM, old_term)
+        conn.close()
+    return VerbResult(data=None, human="", stdout_silent=True)
+
+
+def cmd_events(args: argparse.Namespace) -> VerbResult:
+    _validate_events_args(args)
+    limit = 1000 if args.limit is None else args.limit
+    if args.follow:
+        return _run_events_follow(args)
+
+    since_id = 0 if args.since_id is None else args.since_id
+    conn = _open_db(args)
+    try:
+        waited_start = time.monotonic()
+        wait_reason = None
+        if args.wait:
+            deadline = waited_start + args.wait_timeout
+            while True:
+                probe = store.list_events(conn, since_id, args.job, 1)
+                if probe:
+                    wait_reason = "records_available"
+                    break
+                if time.monotonic() >= deadline:
+                    wait_reason = "timeout"
+                    break
+                time.sleep(args.poll_interval)
+        events, pagination = _event_page(conn, since_id, args.job, limit)
+    finally:
+        conn.close()
+
+    meta_extra: dict[str, Any] = {"pagination": pagination}
+    if args.wait:
+        meta_extra["wait"] = {
+            "reason": wait_reason,
+            "waited_ms": int((time.monotonic() - waited_start) * 1000),
+        }
+    human = "\n".join(_format_event_line(e) for e in events) if events else "No events"
+    return VerbResult(
+        data={"count": len(events), "events": events},
+        human=human,
+        meta_extra=meta_extra,
+    )
+
+
 PREVIEW_BYTES = 4096
 
 
@@ -1188,6 +1369,13 @@ VERB_SUMMARIES = {
                        " streams: {stdout|stderr: {path, preview,"
                        " preview_truncated, size_bytes}}} or {attempts: []}",
     },
+    "events": {
+        "summary": "read the durable event ledger; verify job ids with spoolctl show;"
+                   " --follow --json is raw bare-record NDJSON with no control frames",
+        "data_schema": "{count: int, events: [{id, job_id, at, event, worker_id,"
+                       " detail}]}; meta.pagination:{cursor, first_id};"
+                       " --wait also adds meta.wait:{reason, waited_ms}",
+    },
     "capabilities": {
         "summary": "this machine-readable contract",
         "data_schema": "{attempt_states, contract_policy, contract_version, env,"
@@ -1229,12 +1417,23 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
                 "name": action.dest,
                 "repeatable": action.nargs == argparse.REMAINDER,
             })
-    return {
+    description = {
         "data_schema": VERB_SUMMARIES[name]["data_schema"],
         "flags": sorted(flags, key=lambda f: f["flag"]),
         "positionals": positionals,
         "summary": VERB_SUMMARIES[name]["summary"],
     }
+    if name == "events":
+        description["output_modes"] = ["envelope", "raw"]
+        description["raw"] = {
+            "delivery_class": "best-effort-tail over replayable-from-cursor ledger",
+            "mode": "ndjson",
+            "record": "bare event records only; no control frames",
+            "stream": "events_follow",
+            "when": "--follow --json",
+        }
+        description["since_cursor_alias"] = "--since-id"
+    return description
 
 
 CONTRACT_POLICY = (
@@ -1274,6 +1473,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "add": cmd_add,
     "cancel": cmd_cancel,
     "capabilities": cmd_capabilities,
+    "events": cmd_events,
     "list": cmd_list,
     "output": cmd_output,
     "prune": cmd_prune,

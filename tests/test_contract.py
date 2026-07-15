@@ -135,6 +135,11 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assertEqual(code, 0)
         self.assert_golden("output-no-attempts", out)
 
+    def test_events_empty(self):
+        code, out, _ = run_cli("events", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assert_golden("events-empty", out)
+
 
 class TestRemainingExitCodePaths(unittest.TestCase):
     def setUp(self):

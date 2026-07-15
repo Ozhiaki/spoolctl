@@ -208,6 +208,10 @@ VERB_SCHEMAS = {
             }),
         ]
     },
+    "events": obj({
+        "count": {"type": "integer"},
+        "events": array_of(EVENT_RECORD_SCHEMA),
+    }),
     "capabilities": obj({
         "attempt_states": array_of({"type": "string"}),
         "contract_policy": {"type": "string"},
