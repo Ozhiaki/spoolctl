@@ -45,6 +45,11 @@ class ListTestCase(unittest.TestCase):
         self.assertEqual(code, 0, err)
         return json.loads(out)["data"]
 
+    def add_cli(self, *extra: str):
+        code, out, err = run_cli("add", "--db", self.db, "--json", *extra, "--", "true")
+        self.assertEqual(code, 0, err)
+        return json.loads(out)["data"]["job_id"]
+
 
 class TestFilterAndOrder(ListTestCase):
     def test_no_filter_returns_all_newest_first(self):
@@ -118,6 +123,46 @@ class TestLimitGrammar(ListTestCase):
         code, out, _ = run_cli("list", "--db", self.db, "--json", "--limit", "-1")
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+
+class TestTagFilter(ListTestCase):
+    def test_tag_existence_and_exact_value_filters(self):
+        self.add_cli("--tag", "owner=agent", "--tag", "mode=fast")
+        self.add_cli("--tag", "owner=human")
+        data = self.list_data("--tag", "owner")
+        self.assertEqual([j["id"] for j in data["jobs"]], [2, 1])
+        data = self.list_data("--tag", "owner=agent")
+        self.assertEqual([j["id"] for j in data["jobs"]], [1])
+
+    def test_repeated_tag_filters_are_and_ed_with_state(self):
+        first = self.add_cli("--tag", "owner=agent", "--tag", "mode=fast")
+        self.add_cli("--tag", "owner=agent", "--tag", "mode=slow")
+        run_cli("cancel", str(first), "--db", self.db, "--json")
+        data = self.list_data("--state", "canceled", "--tag", "owner=agent",
+                              "--tag", "mode=fast")
+        self.assertEqual([j["id"] for j in data["jobs"]], [1])
+
+    def test_tag_limit_applies_after_filtering(self):
+        for _ in range(5):
+            self.add_cli()
+        self.add_cli("--tag", "owner=agent")
+        self.add_cli("--tag", "owner=agent")
+        data = self.list_data("--tag", "owner=agent", "--limit", "2")
+        self.assertEqual([j["id"] for j in data["jobs"]], [7, 6])
+
+    def test_tag_keys_with_json_path_characters_filter_correctly(self):
+        self.add_cli("--tag", "a.b=dot", "--tag", "a:b=colon", "--tag", "a-b=dash")
+        for pred in ("a.b=dot", "a:b=colon", "a-b=dash"):
+            data = self.list_data("--tag", pred)
+            self.assertEqual([j["id"] for j in data["jobs"]], [1])
+
+    def test_bad_list_tag_rejected(self):
+        for raw in ("", "bad key", "x" * 129):
+            with self.subTest(raw=raw):
+                code, out, _ = run_cli("list", "--db", self.db, "--json",
+                                       "--tag", raw)
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
 
 
 class TestDeterminism(ListTestCase):

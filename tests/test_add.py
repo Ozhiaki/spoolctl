@@ -233,5 +233,71 @@ class TestIdempotencyKey(AddTestCase):
                 self.assertFalse(os.path.exists(db))
 
 
+class TestTagsAndNotes(AddTestCase):
+    def test_tags_and_note_persist_sorted(self):
+        code, out, _ = run_cli(
+            "add", "--db", self.db, "--json",
+            "--tag", "b=2", "--tag", "a=1", "--note", "handoff",
+            "--", "true",
+        )
+        self.assertEqual(code, 0)
+        job_id = json.loads(out)["data"]["job_id"]
+        row = self.job_row(job_id)
+        self.assertEqual(row["tags_json"], '{"a": "1", "b": "2"}')
+        self.assertEqual(row["note"], "handoff")
+
+    def test_tag_value_may_be_empty(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--tag", "done=", "--", "true")
+        self.assertEqual(code, 0)
+        row = self.job_row(json.loads(out)["data"]["job_id"])
+        self.assertEqual(row["tags_json"], '{"done": ""}')
+
+    def test_bad_tag_and_note_inputs_rejected_before_db_creation(self):
+        cases = [
+            ("--tag", "missing-equals"),
+            ("--tag", "=value"),
+            ("--tag", "bad key=value"),
+            ("--tag", "k" * 129 + "=value"),
+            ("--tag", "k=" + "v" * 1025),
+            ("--note", "n" * 10001),
+        ]
+        for i, (flag, value) in enumerate(cases):
+            with self.subTest(flag=flag, value=value[:20]):
+                db = os.path.join(self.tmp.name, f"bad-tag-{i}.db")
+                code, out, _ = run_cli("add", "--db", db, "--json",
+                                       flag, value, "--", "true")
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+                self.assertFalse(os.path.exists(db))
+
+    def test_duplicate_and_too_many_tags_rejected(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--tag", "a=1", "--tag", "a=2", "--", "true")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+        argv = ["add", "--db", self.db, "--json"]
+        for i in range(17):
+            argv += ["--tag", f"k{i}=v"]
+        argv += ["--", "true"]
+        code, out, _ = run_cli(*argv)
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_retry_preserves_key_tags_and_note(self):
+        run_cli("add", "--db", self.db, "--json", "--max-retries", "0",
+                "--key", "run-1", "--tag", "owner=agent", "--note", "handoff",
+                "--", "false")
+        run_cli("work", "--once", "--db", self.db, "--json")
+        run_cli("retry", "1", "--db", self.db, "--json")
+        code, out, _ = run_cli("show", "1", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        job = json.loads(out)["data"]["job"]
+        self.assertEqual(job["idempotency_key"], "run-1")
+        self.assertEqual(job["tags"], {"owner": "agent"})
+        self.assertEqual(job["note"], "handoff")
+
+
 if __name__ == "__main__":
     unittest.main()

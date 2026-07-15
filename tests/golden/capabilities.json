@@ -101,6 +101,16 @@
           "type": "int"
         },
         {
+          "default": null,
+          "flag": "--note",
+          "type": "str"
+        },
+        {
+          "default": [],
+          "flag": "--tag",
+          "type": "str"
+        },
+        {
           "default": 300,
           "flag": "--timeout",
           "type": "int"
@@ -185,10 +195,15 @@
           "default": null,
           "flag": "--state",
           "type": "str"
+        },
+        {
+          "default": [],
+          "flag": "--tag",
+          "type": "str"
         }
       ],
       "positionals": [],
-      "summary": "enumerate jobs, newest first, optionally filtered by state"
+      "summary": "enumerate jobs, newest first, optionally filtered by state/tag"
     },
     "output": {
       "data_schema": "{attempt_no, attempt_state, attempts_total, job_id, streams: {stdout|stderr: {path, preview, preview_truncated, size_bytes}}} or {attempts: []}",

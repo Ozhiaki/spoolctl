@@ -88,6 +88,26 @@ class TestShowDetail(ShowTestCase):
         self.assertEqual((job["state"], job["locked_by"], job["locked_pid"]),
                          ("running", "w9", 77))
 
+    def test_metadata_printed_in_json_and_human_show(self):
+        code, out, _ = run_cli(
+            "add", "--db", self.db, "--json",
+            "--key", "run-1", "--tag", "owner=agent", "--note", "handoff",
+            "--", "true",
+        )
+        job_id = json.loads(out)["data"]["job_id"]
+        code, out, _ = run_cli("show", str(job_id), "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        job = json.loads(out)["data"]["job"]
+        self.assertEqual(job["idempotency_key"], "run-1")
+        self.assertEqual(job["tags"], {"owner": "agent"})
+        self.assertEqual(job["note"], "handoff")
+
+        code, out, _ = run_cli("show", str(job_id), "--db", self.db)
+        self.assertEqual(code, 0)
+        self.assertIn("key: run-1", out)
+        self.assertIn("tags: owner=agent", out)
+        self.assertIn("note: handoff", out)
+
 
 class TestShowGrammar(ShowTestCase):
     def test_unknown_id_not_found_exit_1(self):

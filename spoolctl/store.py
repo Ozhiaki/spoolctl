@@ -336,6 +336,8 @@ def add_job_checked(
     max_retries: int,
     now: float,
     idempotency_key: str | None = None,
+    tags: dict[str, str] | None = None,
+    note: str | None = None,
 ) -> tuple[int, str, bool]:
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -350,9 +352,10 @@ def add_job_checked(
                 return row["id"], row["state"], True
         cur = conn.execute(
             "INSERT INTO jobs (argv_json, state, max_retries, timeout_seconds,"
-            " created_at, next_run_at, idempotency_key) VALUES (?,?,?,?,?,?,?)",
+            " created_at, next_run_at, idempotency_key, tags_json, note)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
             (json.dumps(argv), "queued", max_retries, timeout_seconds, now, now,
-             idempotency_key),
+             idempotency_key, json.dumps(tags or {}, sort_keys=True), note),
         )
         job_id = cur.lastrowid
         add_event(conn, job_id, now, "added")

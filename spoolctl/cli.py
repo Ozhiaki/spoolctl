@@ -213,6 +213,10 @@ def build_parser() -> _Parser:
     add.add_argument("-c", dest="shell_string", metavar="STRING", help="run STRING via sh -c")
     add.add_argument("--key", default=None, metavar="K",
                      help="idempotency key for active queued/running jobs")
+    add.add_argument("--tag", action="append", default=[], metavar="KEY=VALUE",
+                     help="submit-time metadata tag; repeatable")
+    add.add_argument("--note", default=None, metavar="STRING",
+                     help="submit-time handoff note")
     add.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, metavar="SECONDS")
     add.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES, metavar="N")
     add.add_argument("argv", nargs=argparse.REMAINDER, metavar="[--] ARGV...")
@@ -237,6 +241,8 @@ def build_parser() -> _Parser:
     list_ = sub.add_parser("list", parents=[common], help="enumerate jobs, newest first")
     list_.add_argument("--state", default=None, metavar="CSV",
                        help="comma-separated states to include")
+    list_.add_argument("--tag", action="append", default=[], metavar="KEY[=VALUE]",
+                       help="filter by tag existence or exact value; repeatable")
     list_.add_argument("--limit", type=int, default=50, metavar="N",
                        help="max jobs (0 = unlimited)")
 
@@ -372,6 +378,78 @@ def _normalize_key(raw: str | None) -> str | None:
     return key
 
 
+TAG_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+
+
+def _parse_tag_key(raw: str, *, flag: str) -> str:
+    if not raw or not TAG_KEY_RE.fullmatch(raw):
+        raise CliError(
+            "INVALID_INPUT",
+            f"bad {flag} key: {raw!r}",
+            "tag keys must match [A-Za-z0-9_.:-]+",
+        )
+    if len(raw) > 128:
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} key must be <= 128 characters (got {len(raw)})",
+            "use a shorter tag key",
+        )
+    return raw
+
+
+def _parse_add_tags(raw_tags: list[str]) -> dict[str, str]:
+    tags: dict[str, str] = {}
+    if len(raw_tags) > 16:
+        raise CliError(
+            "INVALID_INPUT",
+            f"at most 16 tags are allowed (got {len(raw_tags)})",
+            "remove extra --tag flags",
+        )
+    for raw in raw_tags:
+        if "=" not in raw:
+            raise CliError(
+                "INVALID_INPUT",
+                f"bad --tag {raw!r}; expected KEY=VALUE",
+                "try: spoolctl add --tag owner=agent -- <cmd>",
+            )
+        key, value = raw.split("=", 1)
+        key = _parse_tag_key(key, flag="--tag")
+        if key in tags:
+            raise CliError(
+                "INVALID_INPUT",
+                f"duplicate --tag key: {key!r}",
+                "provide each tag key at most once",
+            )
+        if len(value) > 1024:
+            raise CliError(
+                "INVALID_INPUT",
+                f"--tag {key!r} value must be <= 1024 characters (got {len(value)})",
+                "use a shorter tag value",
+            )
+        tags[key] = value
+    return tags
+
+
+def _parse_list_tags(raw_tags: list[str]) -> list[tuple[str, str | None]]:
+    predicates = []
+    for raw in raw_tags:
+        if "=" in raw:
+            key, value = raw.split("=", 1)
+        else:
+            key, value = raw, None
+        predicates.append((_parse_tag_key(key, flag="--tag"), value))
+    return predicates
+
+
+def _tags_match(tags: dict[str, str], predicates: list[tuple[str, str | None]]) -> bool:
+    for key, value in predicates:
+        if key not in tags:
+            return False
+        if value is not None and tags[key] != value:
+            return False
+    return True
+
+
 def cmd_add(args: argparse.Namespace) -> VerbResult:
     argv = list(args.argv)
     if argv and argv[0] == "--":
@@ -406,11 +484,19 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
             "try: spoolctl add --max-retries 3 -- <cmd>",
         )
     key = _normalize_key(args.key)
+    tags = _parse_add_tags(args.tag)
+    if args.note is not None and len(args.note) > 10000:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--note must be <= 10000 characters (got {len(args.note)})",
+            "use a shorter note",
+        )
 
     conn = _open_db(args)
     try:
         job_id, state, deduplicated = store.add_job_checked(
-            conn, job_argv, args.timeout, args.max_retries, time.time(), key)
+            conn, job_argv, args.timeout, args.max_retries, time.time(), key,
+            tags, args.note)
     finally:
         conn.close()
     if deduplicated:
@@ -521,6 +607,7 @@ def _parse_states(raw: str | None) -> list[str] | None:
 
 def cmd_list(args: argparse.Namespace) -> VerbResult:
     states = _parse_states(args.state)
+    tag_predicates = _parse_list_tags(args.tag)
     if args.limit < 0:
         raise CliError(
             "INVALID_INPUT",
@@ -529,9 +616,12 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
         )
     conn = _open_db(args)
     try:
-        jobs = store.list_jobs(conn, states, args.limit)
+        jobs = store.list_jobs(conn, states, 0 if tag_predicates else args.limit)
     finally:
         conn.close()
+    if tag_predicates:
+        filtered = [j for j in jobs if _tags_match(j.tags or {}, tag_predicates)]
+        jobs = filtered if args.limit == 0 else filtered[:args.limit]
     rows = [
         {
             "argv": j.argv,
@@ -1058,7 +1148,7 @@ VERB_SUMMARIES = {
                        " finished_at, stdout_path, stderr_path}]}",
     },
     "list": {
-        "summary": "enumerate jobs, newest first, optionally filtered by state",
+        "summary": "enumerate jobs, newest first, optionally filtered by state/tag",
         "data_schema": "{count: int, jobs: [{id, argv, state, attempts,"
                        " max_retries, timeout_seconds, created_at, started_at,"
                        " finished_at, next_run_at, last_exit_code, last_error,"
