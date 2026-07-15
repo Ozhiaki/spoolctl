@@ -1,4 +1,4 @@
-"""Schema v1 -> v2 migration: fixture upgrade, concurrency race, one-way door.
+"""Schema migrations: fixture upgrades, concurrency races, one-way door.
 
 The v1 schema below is a frozen copy of SCHEMA_SQL as shipped in v0.1 —
 it must never track store.SCHEMA_SQL, that would defeat the fixture.
@@ -73,6 +73,63 @@ CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 V1_JOB_STATES = ("queued", "running", "done", "failed", "dead")
 V1_ATTEMPT_STATES = ("running", "succeeded", "failed", "timed_out", "abandoned")
 
+V2_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS jobs (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  argv_json       TEXT    NOT NULL,
+  state           TEXT    NOT NULL CHECK (state IN
+                    ('queued','running','done','failed','dead','canceled')),
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  max_retries     INTEGER NOT NULL DEFAULT 3,
+  timeout_seconds INTEGER NOT NULL DEFAULT 300,
+  created_at      REAL    NOT NULL,
+  next_run_at     REAL    NOT NULL,
+  locked_by       TEXT,
+  locked_pid      INTEGER,
+  locked_at       REAL,
+  heartbeat_at    REAL,
+  started_at      REAL,
+  finished_at     REAL,
+  last_exit_code  INTEGER,
+  last_error      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_claimable ON jobs (state, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_finished ON jobs (state, finished_at);
+
+CREATE TABLE IF NOT EXISTS attempts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id      INTEGER NOT NULL REFERENCES jobs(id),
+  attempt_no  INTEGER NOT NULL,
+  worker_id   TEXT    NOT NULL,
+  worker_pid  INTEGER NOT NULL,
+  state       TEXT    NOT NULL CHECK (state IN
+                ('running','succeeded','failed','timed_out','abandoned','canceled')),
+  started_at  REAL    NOT NULL,
+  finished_at REAL,
+  exit_code   INTEGER,
+  stdout_path TEXT    NOT NULL,
+  stderr_path TEXT    NOT NULL,
+  error       TEXT,
+  UNIQUE (job_id, attempt_no)
+);
+
+CREATE TABLE IF NOT EXISTS job_events (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id    INTEGER NOT NULL REFERENCES jobs(id),
+  at        REAL    NOT NULL,
+  event     TEXT    NOT NULL,
+  worker_id TEXT,
+  detail    TEXT
+);
+
+CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+"""
+
+V2_JOB_STATES = ("queued", "running", "done", "failed", "dead", "canceled")
+V2_ATTEMPT_STATES = (
+    "running", "succeeded", "failed", "timed_out", "abandoned", "canceled"
+)
+
 
 def make_populated_v1_db(db_path: str) -> None:
     """A v1 database with jobs in every state, attempts in every state,
@@ -113,8 +170,60 @@ def make_populated_v1_db(db_path: str) -> None:
     conn.close()
 
 
+def make_populated_v2_db(db_path: str) -> None:
+    """A v2 database with every v2 state and an AUTOINCREMENT high-water mark."""
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.executescript(V2_SCHEMA_SQL)
+    conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '2')")
+    for i, state in enumerate(V2_JOB_STATES, start=1):
+        conn.execute(
+            "INSERT INTO jobs (id, argv_json, state, attempts, created_at,"
+            " next_run_at, finished_at) VALUES (?,?,?,?,?,?,?)",
+            (i, f'["job-{i}"]', state, i - 1, 100.0 + i, 200.0 + i,
+             300.0 + i if state in ("done", "failed", "dead", "canceled") else None),
+        )
+    for i, state in enumerate(V2_ATTEMPT_STATES, start=1):
+        conn.execute(
+            "INSERT INTO attempts (id, job_id, attempt_no, worker_id, worker_pid,"
+            " state, started_at, stdout_path, stderr_path) VALUES (?,?,?,?,?,?,?,?,?)",
+            (i, i, 1, f"w{i}", 1000 + i, state, 400.0 + i, f"/out/{i}/1/stdout",
+             f"/out/{i}/1/stderr"),
+        )
+    for i in range(1, 7):
+        conn.execute(
+            "INSERT INTO job_events (job_id, at, event, worker_id) VALUES (?,?,?,?)",
+            (i, 500.0 + i, "added", None),
+        )
+    conn.execute(
+        "INSERT INTO jobs (id, argv_json, state, created_at, next_run_at)"
+        " VALUES (7, '[\"deleted\"]', 'queued', 1.0, 1.0)"
+    )
+    conn.execute("DELETE FROM jobs WHERE id=7")
+    conn.commit()
+    conn.close()
+
+
 def dump(conn, table: str) -> list[tuple]:
     return conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
+
+
+def with_v3_job_defaults(rows: list[tuple]) -> list[tuple]:
+    return [tuple(r) + (None, "{}", None) for r in rows]
+
+
+def assert_v3_jobs_shape(testcase: unittest.TestCase, conn) -> None:
+    columns = {r["name"]: r for r in conn.execute("PRAGMA table_info(jobs)")}
+    testcase.assertIn("idempotency_key", columns)
+    testcase.assertIn("tags_json", columns)
+    testcase.assertIn("note", columns)
+    testcase.assertEqual(columns["tags_json"]["dflt_value"], "'{}'")
+    indexes = {
+        r["name"] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='index'"
+        )
+    }
+    testcase.assertIn("idx_jobs_key", indexes)
 
 
 class MigrationTestCase(unittest.TestCase):
@@ -124,8 +233,8 @@ class MigrationTestCase(unittest.TestCase):
         self.db = os.path.join(self.tmp.name, "queue.db")
 
 
-class TestV1ToV2Fixture(MigrationTestCase):
-    def test_populated_v1_db_migrates_intact(self):
+class TestMigrationFixtures(MigrationTestCase):
+    def test_populated_v1_db_chains_to_v3_intact(self):
         make_populated_v1_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -136,17 +245,32 @@ class TestV1ToV2Fixture(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 2)
-        self.assertEqual([tuple(r) for r in dump(conn, "jobs")], jobs_before)
+        self.assertEqual(int(row["value"]), 3)
+        self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
+                         with_v3_job_defaults(jobs_before))
         self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
         self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
-        indexes = {
-            r["name"] for r in conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='index'"
-            )
-        }
-        self.assertTrue({"idx_jobs_claimable", "idx_jobs_finished"} <= indexes)
+        assert_v3_jobs_shape(self, conn)
+        conn.close()
+
+    def test_populated_v2_db_migrates_to_v3_intact(self):
+        make_populated_v2_db(self.db)
+        before = sqlite3.connect(self.db)
+        jobs_before = dump(before, "jobs")
+        attempts_before = dump(before, "attempts")
+        events_before = dump(before, "job_events")
+        before.close()
+
+        conn = store.connect(self.db)
+
+        row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        self.assertEqual(int(row["value"]), 3)
+        self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
+                         with_v3_job_defaults(jobs_before))
+        self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
+        self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
+        assert_v3_jobs_shape(self, conn)
         conn.close()
 
     def test_canceled_insertable_after_migration(self):
@@ -174,6 +298,17 @@ class TestV1ToV2Fixture(MigrationTestCase):
         self.assertEqual(cur.lastrowid, 7)
         conn.close()
 
+    def test_v2_id_sequence_survives_migration(self):
+        # Job 7 was inserted and deleted pre-migration; the next id must be 8.
+        make_populated_v2_db(self.db)
+        conn = store.connect(self.db)
+        cur = conn.execute(
+            "INSERT INTO jobs (argv_json, state, created_at, next_run_at)"
+            " VALUES ('[\"new\"]', 'queued', 1.0, 1.0)"
+        )
+        self.assertEqual(cur.lastrowid, 8)
+        conn.close()
+
     def test_migration_is_idempotent_across_reopens(self):
         make_populated_v1_db(self.db)
         store.connect(self.db).close()
@@ -181,6 +316,24 @@ class TestV1ToV2Fixture(MigrationTestCase):
         self.assertEqual(
             conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 5
         )
+        conn.close()
+
+    def test_v2_intermediate_revisited_cleanly(self):
+        make_populated_v1_db(self.db)
+        conn = sqlite3.connect(self.db, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        did = store._migrate_v1_to_v2(conn)
+        self.assertTrue(did)
+        row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        self.assertEqual(int(row["value"]), 2)
+        conn.close()
+
+        conn = store.connect(self.db)
+        row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        self.assertEqual(int(row["value"]), 3)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 5)
+        assert_v3_jobs_shape(self, conn)
         conn.close()
 
     def test_existing_invalid_state_still_rejected(self):
@@ -199,13 +352,13 @@ import os, sys, time
 import spoolctl.store as store
 
 db, ready_marker, go_marker, migrated_marker = sys.argv[1:5]
-real = store._migrate_v1_to_v2
+real = store._migrate_v2_to_v3
 def wrapped(conn):
     did = real(conn)
     if did:
         open(migrated_marker, "w").close()
     return did
-store._migrate_v1_to_v2 = wrapped
+store._migrate_v2_to_v3 = wrapped
 
 open(ready_marker, "w").close()
 deadline = time.time() + 30
@@ -230,7 +383,7 @@ class TestMigrationRace(MigrationTestCase):
             time.sleep(0.005)
 
     def test_two_concurrent_openers_one_migrates(self):
-        make_populated_v1_db(self.db)
+        make_populated_v2_db(self.db)
         go = os.path.join(self.tmp.name, "go")
         procs = []
         markers = []
@@ -251,24 +404,25 @@ class TestMigrationRace(MigrationTestCase):
             out, err = proc.communicate(timeout=30)
             self.assertEqual(proc.returncode, 0, err)
             outs.append(out.strip())
-        self.assertEqual(outs, ["5 2", "5 2"])  # both saw intact data at v2
+        self.assertEqual(outs, ["6 3", "6 3"])  # both saw intact data at v3
         migrated_count = sum(os.path.exists(m) for m in markers)
-        self.assertEqual(migrated_count, 1, "exactly one process must rebuild")
+        self.assertEqual(migrated_count, 1, "exactly one process must migrate")
         conn = store.connect(self.db)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
+        assert_v3_jobs_shape(self, conn)
         conn.close()
 
 
 class TestOneWayDoor(MigrationTestCase):
-    def test_v1_binary_rejects_v2_file(self):
-        # An older binary sees schema_version=2 > its SCHEMA_VERSION=1 and
+    def test_v2_binary_rejects_v3_file(self):
+        # An older binary sees schema_version=3 > its SCHEMA_VERSION=2 and
         # refuses via SchemaTooNewError; simulated by the version gate itself
         # (test_store covers the general found > SCHEMA_VERSION case).
-        conn = store.connect(self.db)  # fresh v2 db
+        conn = store.connect(self.db)  # fresh v3 db
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         conn.close()
-        self.assertEqual(int(row["value"]), 2)
-        self.assertGreater(int(row["value"]), 1)
+        self.assertEqual(int(row["value"]), 3)
+        self.assertGreater(int(row["value"]), 2)
 
 
 if __name__ == "__main__":

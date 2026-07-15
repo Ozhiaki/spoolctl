@@ -41,6 +41,29 @@ _JOBS_BODY = """(
   started_at      REAL,
   finished_at     REAL,
   last_exit_code  INTEGER,
+  last_error      TEXT,
+  idempotency_key TEXT,
+  tags_json       TEXT    NOT NULL DEFAULT '{}',
+  note            TEXT
+)"""
+
+_JOBS_BODY_V2 = """(
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  argv_json       TEXT    NOT NULL,
+  state           TEXT    NOT NULL CHECK (state IN
+                    ('queued','running','done','failed','dead','canceled')),
+  attempts        INTEGER NOT NULL DEFAULT 0,
+  max_retries     INTEGER NOT NULL DEFAULT 3,
+  timeout_seconds INTEGER NOT NULL DEFAULT 300,
+  created_at      REAL    NOT NULL,
+  next_run_at     REAL    NOT NULL,
+  locked_by       TEXT,
+  locked_pid      INTEGER,
+  locked_at       REAL,
+  heartbeat_at    REAL,
+  started_at      REAL,
+  finished_at     REAL,
+  last_exit_code  INTEGER,
   last_error      TEXT
 )"""
 
@@ -65,6 +88,8 @@ SCHEMA_SQL = f"""
 CREATE TABLE IF NOT EXISTS jobs {_JOBS_BODY};
 CREATE INDEX IF NOT EXISTS idx_jobs_claimable ON jobs (state, next_run_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_finished ON jobs (state, finished_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_key ON jobs (idempotency_key)
+  WHERE idempotency_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS attempts {_ATTEMPTS_BODY};
 
@@ -133,12 +158,20 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
     except sqlite3.OperationalError:
         pass  # meta table absent: fresh database
     if row is not None:
-        found = int(row["value"])
-        if found > SCHEMA_VERSION:
-            raise SchemaTooNewError(found)
-        if found == SCHEMA_VERSION:
-            return
-        _migrate_v1_to_v2(conn)
+        while True:
+            found = int(conn.execute(
+                "SELECT value FROM meta WHERE key='schema_version'"
+            ).fetchone()["value"])
+            if found > SCHEMA_VERSION:
+                raise SchemaTooNewError(found)
+            if found == SCHEMA_VERSION:
+                return
+            if found == 1:
+                _migrate_v1_to_v2(conn)
+            elif found == 2:
+                _migrate_v2_to_v3(conn)
+            else:
+                raise sqlite3.DatabaseError(f"unsupported schema version {found}")
         return
     conn.executescript(SCHEMA_SQL)
     conn.execute(
@@ -169,7 +202,7 @@ def _migrate_v1_to_v2(conn: sqlite3.Connection) -> bool:
             if found >= 2:
                 conn.execute("COMMIT")
                 return False
-            _rebuild_table(conn, "jobs", _JOBS_BODY)
+            _rebuild_table(conn, "jobs", _JOBS_BODY_V2)
             _rebuild_table(conn, "attempts", _ATTEMPTS_BODY)
             conn.execute("CREATE INDEX idx_jobs_claimable ON jobs (state, next_run_at)")
             conn.execute("CREATE INDEX idx_jobs_finished ON jobs (state, finished_at)")
@@ -185,6 +218,35 @@ def _migrate_v1_to_v2(conn: sqlite3.Connection) -> bool:
         raise sqlite3.IntegrityError(
             f"foreign_key_check failed after v1->v2 migration: {len(bad)} rows"
         )
+    return True
+
+
+def _migrate_v2_to_v3(conn: sqlite3.Connection) -> bool:
+    """Add submitter metadata columns and the idempotency lookup index.
+
+    BEGIN IMMEDIATE serializes concurrent migrators, and the version is
+    re-read inside the transaction so the race loser no-ops.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        found = int(conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone()["value"])
+        if found >= 3:
+            conn.execute("COMMIT")
+            return False
+        conn.execute("ALTER TABLE jobs ADD COLUMN idempotency_key TEXT")
+        conn.execute("ALTER TABLE jobs ADD COLUMN tags_json TEXT NOT NULL DEFAULT '{}'")
+        conn.execute("ALTER TABLE jobs ADD COLUMN note TEXT")
+        conn.execute(
+            "CREATE INDEX idx_jobs_key ON jobs (idempotency_key)"
+            " WHERE idempotency_key IS NOT NULL"
+        )
+        conn.execute("UPDATE meta SET value='3' WHERE key='schema_version'")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
     return True
 
 

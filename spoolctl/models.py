@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 TOOL_VERSION = "0.2.0"
 CONTRACT_VERSION = "1"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Job states
 QUEUED = "queued"
