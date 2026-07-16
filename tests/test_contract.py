@@ -37,6 +37,8 @@ def normalize_envelope(env: dict, tmp_root: str) -> dict:
     env["meta"]["ts_iso"] = "PINNED"
     env["meta"]["elapsed_ms"] = 0
     env["meta"]["data_hash"] = "sha256:PINNED"
+    if isinstance(env.get("data"), dict) and "next_run_at" in env["data"]:
+        env["data"]["next_run_at"] = 0.0
 
     def walk(node):
         if isinstance(node, str):

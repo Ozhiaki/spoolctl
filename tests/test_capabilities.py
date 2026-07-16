@@ -92,6 +92,20 @@ class TestParserParity(unittest.TestCase):
         self.assertIn("no control frames", events["raw"]["record"])
         self.assertEqual(events["since_cursor_alias"], "--since-id")
 
+    def test_scheduling_contract_documented(self):
+        scheduling = capabilities_data()["scheduling"]
+        self.assertIn("<number>[s|m|h|d]", scheduling["duration_grammar"])
+        self.assertEqual(scheduling["queue"]["default"], "default")
+        self.assertIn("^[A-Za-z0-9]", scheduling["queue"]["grammar"])
+        self.assertEqual(scheduling["priority"]["min"], -2147483648)
+        self.assertEqual(scheduling["priority"]["max"], 2147483647)
+        self.assertTrue(scheduling["slots"]["opt_in"])
+        self.assertTrue(scheduling["slots"]["fleet_global"])
+        self.assertIsNone(scheduling["slots"]["default_ceiling"])
+        self.assertIn("claimed:false", scheduling["slots"]["claimed_false"])
+        self.assertIn("retry/reap backoff rows", scheduling["scheduled"]["includes"])
+        self.assertIn("attempts = 0", scheduling["drain"]["skips"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -76,10 +76,63 @@
     "queued",
     "running"
   ],
+  "scheduling": {
+    "at_timestamp": "epoch seconds or ISO-8601; naive ISO timestamps use the local process timezone",
+    "drain": {
+      "holds_for": [
+        "running rows in the served lane",
+        "due queued rows in the served lane",
+        "future queued retry/reap backoff rows in the served lane (attempts > 0)"
+      ],
+      "scope": "served lane",
+      "skips": "future queued never-run user-delayed rows (attempts = 0)"
+    },
+    "duration_grammar": "<number>[s|m|h|d] or bare seconds; lowercase units only",
+    "finite_numeric_inputs": [
+      "--after",
+      "--at epoch seconds"
+    ],
+    "priority": {
+      "default": 0,
+      "max": 2147483647,
+      "min": -2147483648,
+      "ordering": "higher priority first, then next_run_at ascending, then id ascending"
+    },
+    "queue": {
+      "default": "default",
+      "grammar": "1-64 chars matching ^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "single_lane_worker": true
+    },
+    "scheduled": {
+      "counts_included_in": "counts.queued",
+      "includes": [
+        "user-delayed rows",
+        "retry/reap backoff rows"
+      ],
+      "predicate": "state='queued' AND next_run_at > now"
+    },
+    "slots": {
+      "claimed_false": "work --once --json {claimed:false} means no job runnable by this worker right now, including a full slot ceiling",
+      "default_ceiling": null,
+      "fleet_global": true,
+      "opt_in": true,
+      "scope": "served lane"
+    }
+  },
   "verbs": {
     "add": {
-      "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool}",
+      "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool, next_run_at: float, priority: int, queue: str}",
       "flags": [
+        {
+          "default": null,
+          "flag": "--after",
+          "type": "str"
+        },
+        {
+          "default": null,
+          "flag": "--at",
+          "type": "str"
+        },
         {
           "default": null,
           "flag": "--db",
@@ -103,6 +156,16 @@
         {
           "default": null,
           "flag": "--note",
+          "type": "str"
+        },
+        {
+          "default": "0",
+          "flag": "--priority",
+          "type": "str"
+        },
+        {
+          "default": "default",
+          "flag": "--queue",
           "type": "str"
         },
         {
@@ -177,7 +240,7 @@
       "summary": "cancel a queued job; --running also stops a running one (killed by its owning worker within a heartbeat)"
     },
     "capabilities": {
-      "data_schema": "{attempt_states, contract_policy, contract_version, env, error_codes, events, exit_codes, job_states, verbs}",
+      "data_schema": "{attempt_states, contract_policy, contract_version, env, error_codes, events, exit_codes, job_states, scheduling, verbs}",
       "flags": [
         {
           "default": null,
@@ -258,7 +321,7 @@
       "summary": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames"
     },
     "list": {
-      "data_schema": "{count: int, jobs: [{id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, last_exit_code, last_error, idempotency_key, tags, note}]}",
+      "data_schema": "{count: int, jobs: [{id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, last_exit_code, last_error, idempotency_key, tags, note}]}",
       "flags": [
         {
           "default": null,
@@ -277,6 +340,16 @@
         },
         {
           "default": null,
+          "flag": "--priority-min",
+          "type": "str"
+        },
+        {
+          "default": null,
+          "flag": "--queue",
+          "type": "str"
+        },
+        {
+          "default": null,
           "flag": "--state",
           "type": "str"
         },
@@ -287,7 +360,7 @@
         }
       ],
       "positionals": [],
-      "summary": "enumerate jobs, newest first, optionally filtered by state/tag"
+      "summary": "enumerate jobs, newest first, optionally filtered by state/tag/queue/priority"
     },
     "output": {
       "data_schema": "{attempt_no, attempt_state, attempts_total, job_id, streams: {stdout|stderr: {path, preview, preview_truncated, size_bytes}}} or {attempts: []}",
@@ -416,7 +489,7 @@
       "summary": "export JSON Schemas for the envelope, verb data payloads, and streams"
     },
     "show": {
-      "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error, idempotency_key, tags, note}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
+      "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error, idempotency_key, tags, note}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
       "flags": [
         {
           "default": null,
@@ -438,7 +511,7 @@
       "summary": "one job in full detail: row, attempts, event trail"
     },
     "status": {
-      "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, recent_dead: [{id, command, attempts, last_error, finished_at, stdout_path, stderr_path}]}",
+      "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, scheduled: int, queues: {<queue>: {counts, scheduled}}, recent_dead: [{id, command, attempts, last_error, finished_at, stdout_path, stderr_path}]}",
       "flags": [
         {
           "default": null,
@@ -457,7 +530,7 @@
         }
       ],
       "positionals": [],
-      "summary": "queue counts and recent dead jobs; always exit 0"
+      "summary": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0"
     },
     "wait": {
       "data_schema": "{all_succeeded: bool, jobs: {'<id>': {state, attempts, last_exit_code, last_error}}}",
@@ -492,7 +565,7 @@
       "summary": "block until every given job settles (done/dead/canceled); exit 0 all done, exit 6 any failed (envelope stays ok:true)"
     },
     "work": {
-      "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?, job_state?}; --drain: {drained: bool, executed: int}; loop mode writes nothing to stdout",
+      "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?, job_state?}; --drain: {drained: bool, executed: int}; loop mode writes nothing to stdout; claimed:false means no job runnable by this worker right now, including a full slot ceiling",
       "flags": [
         {
           "default": null,
@@ -520,13 +593,23 @@
           "type": "float"
         },
         {
+          "default": "default",
+          "flag": "--queue",
+          "type": "str"
+        },
+        {
+          "default": null,
+          "flag": "--slots",
+          "type": "int"
+        },
+        {
           "default": null,
           "flag": "--worker-id",
           "type": "str"
         }
       ],
       "positionals": [],
-      "summary": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles"
+      "summary": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane"
     }
   }
 }

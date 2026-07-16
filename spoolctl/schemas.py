@@ -256,6 +256,7 @@ VERB_SCHEMAS = {
             }, required=["meaning", "retryable"]),
         },
         "job_states": array_of({"type": "string"}),
+        "scheduling": {"type": "object", "additionalProperties": {}},
         "verbs": {"type": "object", "additionalProperties": {}},
     }),
 }
@@ -293,10 +294,17 @@ def build_brief(
         " work --drain, then wait on all ids. wait exits 6 when any awaited"
         " job ends non-success, but the JSON envelope is still ok:true and"
         " data.all_succeeded=false.",
-        "add supports --key for active queued/running dedup and repeatable"
-        " --tag KEY=VALUE plus --note for immutable handoff metadata.",
-        "list filters by --state and repeatable --tag; show prints full job,"
-        " attempts, events, key, tags, and note.",
+        "add supports --after/--at, --priority, --queue, --key, repeatable"
+        " --tag KEY=VALUE, and --note; delayed jobs remain queued with future"
+        " next_run_at.",
+        "work serves one lane with --queue (default default); --slots N is an"
+        " opt-in fleet-wide running ceiling for that lane.",
+        "list filters by --state, repeatable --tag, --queue, and --priority-min;"
+        " show prints full job, scheduling fields, attempts, events, key, tags,"
+        " and note.",
+        "status counts queued jobs inclusively and adds scheduled plus per-queue"
+        " counts; scheduled means queued with future next_run_at, including"
+        " retry backoff.",
         "events reads the durable job_events ledger: one-shot and --wait"
         " return envelopes with meta.pagination.cursor; --follow --json emits"
         " raw NDJSON event records only, no control frames.",

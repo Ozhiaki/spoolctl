@@ -208,6 +208,15 @@
         "job_id": {
           "type": "integer"
         },
+        "next_run_at": {
+          "type": "number"
+        },
+        "priority": {
+          "type": "integer"
+        },
+        "queue": {
+          "type": "string"
+        },
         "state": {
           "enum": [
             "queued",
@@ -219,6 +228,9 @@
       "required": [
         "deduplicated",
         "job_id",
+        "next_run_at",
+        "priority",
+        "queue",
         "state"
       ],
       "type": "object"
@@ -329,6 +341,10 @@
           },
           "type": "array"
         },
+        "scheduling": {
+          "additionalProperties": {},
+          "type": "object"
+        },
         "verbs": {
           "additionalProperties": {},
           "type": "object"
@@ -343,6 +359,7 @@
         "events",
         "exit_codes",
         "job_states",
+        "scheduling",
         "verbs"
       ],
       "type": "object"
@@ -473,6 +490,12 @@
                   "null"
                 ]
               },
+              "priority": {
+                "type": "integer"
+              },
+              "queue": {
+                "type": "string"
+              },
               "started_at": {
                 "type": [
                   "number",
@@ -512,6 +535,8 @@
               "max_retries",
               "next_run_at",
               "note",
+              "priority",
+              "queue",
               "started_at",
               "state",
               "tags",
@@ -872,6 +897,12 @@
                 "null"
               ]
             },
+            "priority": {
+              "type": "integer"
+            },
+            "queue": {
+              "type": "string"
+            },
             "started_at": {
               "type": [
                 "number",
@@ -915,6 +946,8 @@
             "max_retries",
             "next_run_at",
             "note",
+            "priority",
+            "queue",
             "started_at",
             "state",
             "tags",
@@ -963,6 +996,54 @@
             "queued",
             "running"
           ],
+          "type": "object"
+        },
+        "queues": {
+          "additionalProperties": {
+            "additionalProperties": false,
+            "properties": {
+              "counts": {
+                "additionalProperties": false,
+                "properties": {
+                  "canceled": {
+                    "type": "integer"
+                  },
+                  "dead": {
+                    "type": "integer"
+                  },
+                  "done": {
+                    "type": "integer"
+                  },
+                  "failed": {
+                    "type": "integer"
+                  },
+                  "queued": {
+                    "type": "integer"
+                  },
+                  "running": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "canceled",
+                  "dead",
+                  "done",
+                  "failed",
+                  "queued",
+                  "running"
+                ],
+                "type": "object"
+              },
+              "scheduled": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "counts",
+              "scheduled"
+            ],
+            "type": "object"
+          },
           "type": "object"
         },
         "recent_dead": {
@@ -1015,11 +1096,16 @@
             "type": "object"
           },
           "type": "array"
+        },
+        "scheduled": {
+          "type": "integer"
         }
       },
       "required": [
         "counts",
-        "recent_dead"
+        "queues",
+        "recent_dead",
+        "scheduled"
       ],
       "type": "object"
     },

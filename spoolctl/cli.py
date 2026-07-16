@@ -1509,24 +1509,26 @@ VERB_SUMMARIES = {
                        " last_exit_code, last_error}}}",
     },
     "status": {
-        "summary": "queue counts and recent dead jobs; always exit 0",
+        "summary": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0",
         "data_schema": "{counts: {canceled,dead,done,failed,queued,running},"
+                       " scheduled: int, queues: {<queue>: {counts, scheduled}},"
                        " recent_dead: [{id, command, attempts, last_error,"
                        " finished_at, stdout_path, stderr_path}]}",
     },
     "list": {
-        "summary": "enumerate jobs, newest first, optionally filtered by state/tag",
+        "summary": "enumerate jobs, newest first, optionally filtered by state/tag/queue/priority",
         "data_schema": "{count: int, jobs: [{id, argv, state, attempts,"
                        " max_retries, timeout_seconds, created_at, started_at,"
-                       " finished_at, next_run_at, last_exit_code, last_error,"
-                       " idempotency_key, tags, note}]}",
+                       " finished_at, next_run_at, priority, queue,"
+                       " last_exit_code, last_error, idempotency_key, tags,"
+                       " note}]}",
     },
     "show": {
         "summary": "one job in full detail: row, attempts, event trail",
         "data_schema": "{job: {id, argv, state, attempts, max_retries,"
                        " timeout_seconds, created_at, started_at, finished_at,"
-                       " next_run_at, locked_by, locked_pid, locked_at,"
-                       " heartbeat_at, last_exit_code, last_error,"
+                       " next_run_at, priority, queue, locked_by, locked_pid,"
+                       " locked_at, heartbeat_at, last_exit_code, last_error,"
                        " idempotency_key, tags, note},"
                        " attempts: [{attempt_no, state, worker_id, worker_pid,"
                        " started_at, finished_at, exit_code, error,"
@@ -1574,7 +1576,8 @@ VERB_SUMMARIES = {
     "capabilities": {
         "summary": "this machine-readable contract",
         "data_schema": "{attempt_states, contract_policy, contract_version, env,"
-                       " error_codes, events, exit_codes, job_states, verbs}",
+                       " error_codes, events, exit_codes, job_states,"
+                       " scheduling, verbs}",
     },
 }
 
@@ -1641,6 +1644,50 @@ CONTRACT_POLICY = (
 )
 
 
+SCHEDULING_CAPABILITIES = {
+    "duration_grammar": "<number>[s|m|h|d] or bare seconds; lowercase units only",
+    "at_timestamp": (
+        "epoch seconds or ISO-8601; naive ISO timestamps use the local process timezone"
+    ),
+    "finite_numeric_inputs": ["--after", "--at epoch seconds"],
+    "priority": {
+        "default": 0,
+        "max": PRIORITY_MAX,
+        "min": PRIORITY_MIN,
+        "ordering": "higher priority first, then next_run_at ascending, then id ascending",
+    },
+    "queue": {
+        "default": "default",
+        "grammar": "1-64 chars matching ^[A-Za-z0-9][A-Za-z0-9._-]*$",
+        "single_lane_worker": True,
+    },
+    "slots": {
+        "claimed_false": (
+            "work --once --json {claimed:false} means no job runnable by this worker"
+            " right now, including a full slot ceiling"
+        ),
+        "default_ceiling": None,
+        "fleet_global": True,
+        "opt_in": True,
+        "scope": "served lane",
+    },
+    "scheduled": {
+        "counts_included_in": "counts.queued",
+        "includes": ["user-delayed rows", "retry/reap backoff rows"],
+        "predicate": "state='queued' AND next_run_at > now",
+    },
+    "drain": {
+        "holds_for": [
+            "running rows in the served lane",
+            "due queued rows in the served lane",
+            "future queued retry/reap backoff rows in the served lane (attempts > 0)",
+        ],
+        "scope": "served lane",
+        "skips": "future queued never-run user-delayed rows (attempts = 0)",
+    },
+}
+
+
 def cmd_brief(args: argparse.Namespace) -> VerbResult:
     text, tokens = schemas.build_brief(VERB_SUMMARIES, EXIT_CODES, JOB_STATES, ENV_DOCS)
     return VerbResult(
@@ -1697,6 +1744,7 @@ def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
         "events": sorted(JOB_EVENT_TYPES),
         "exit_codes": exit_codes,
         "job_states": sorted(JOB_STATES),
+        "scheduling": SCHEDULING_CAPABILITIES,
         "verbs": verbs,
     }
     lines = [f"spoolctl contract v{CONTRACT_VERSION}"]
