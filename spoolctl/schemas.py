@@ -9,7 +9,13 @@ from __future__ import annotations
 import math
 from typing import Any
 
-from spoolctl.models import ATTEMPT_STATES, EXIT_CODES, JOB_EVENT_TYPES, JOB_STATES
+from spoolctl.models import (
+    ATTEMPT_STATES,
+    EXIT_CODES,
+    FAILURE_REASONS,
+    JOB_EVENT_TYPES,
+    JOB_STATES,
+)
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
 BRIEF_BUDGET_TOKENS = 700
@@ -17,6 +23,10 @@ BRIEF_BUDGET_TOKENS = 700
 NULLABLE_STRING = {"type": ["string", "null"]}
 NULLABLE_INTEGER = {"type": ["integer", "null"]}
 NULLABLE_NUMBER = {"type": ["number", "null"]}
+FAILURE_REASON_SCHEMA = {
+    "type": ["string", "null"],
+    "enum": [*FAILURE_REASONS, None],
+}
 
 
 def array_of(item_schema: dict) -> dict:
@@ -106,6 +116,7 @@ SHOW_JOB_SCHEMA = obj({
     "locked_at": NULLABLE_NUMBER,
     "locked_by": NULLABLE_STRING,
     "locked_pid": NULLABLE_INTEGER,
+    "last_failure_reason": FAILURE_REASON_SCHEMA,
     "max_crashes": NULLABLE_INTEGER,
 })
 
@@ -113,6 +124,7 @@ ATTEMPT_SCHEMA = obj({
     "attempt_no": {"type": "integer"},
     "error": NULLABLE_STRING,
     "exit_code": NULLABLE_INTEGER,
+    "failure_reason": FAILURE_REASON_SCHEMA,
     "finished_at": NULLABLE_NUMBER,
     "started_at": {"type": "number"},
     "state": {"type": "string", "enum": list(ATTEMPT_STATES)},
@@ -263,6 +275,7 @@ VERB_SCHEMAS = {
                 "retryable": {"type": ["boolean", "null"]},
             }, required=["meaning", "retryable"]),
         },
+        "failure_reasons": array_of({"type": "string", "enum": list(FAILURE_REASONS)}),
         "job_states": array_of({"type": "string"}),
         "scheduling": {"type": "object", "additionalProperties": {}},
         "verbs": {"type": "object", "additionalProperties": {}},

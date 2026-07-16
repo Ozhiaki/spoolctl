@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TOOL_VERSION = "0.4.1"
+TOOL_VERSION = "0.4.2"
 CONTRACT_VERSION = "1"
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 # Job states
 QUEUED = "queued"
@@ -30,6 +30,22 @@ ATT_ABANDONED = "abandoned"
 ATT_CANCELED = "canceled"
 ATTEMPT_STATES = (
     ATT_RUNNING, ATT_SUCCEEDED, ATT_FAILED, ATT_TIMED_OUT, ATT_ABANDONED, ATT_CANCELED
+)
+
+# Attempt failure reasons
+REASON_PROCESS_EXIT = "process_exit"
+REASON_TIMEOUT = "timeout"
+REASON_SPAWN_FAILED = "spawn_failed"
+REASON_WORKER_CRASH = "worker_crash"
+REASON_CANCELED = "canceled"
+REASON_UNKNOWN = "unknown"
+FAILURE_REASONS = (
+    REASON_PROCESS_EXIT,
+    REASON_TIMEOUT,
+    REASON_SPAWN_FAILED,
+    REASON_WORKER_CRASH,
+    REASON_CANCELED,
+    REASON_UNKNOWN,
 )
 
 # job_events.event values (additive under contract_version 1)
@@ -142,3 +158,4 @@ class Attempt:
     finished_at: float | None = None
     exit_code: int | None = None
     error: str | None = None
+    failure_reason: str | None = None

@@ -18,6 +18,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from spoolctl import cli, store, worker
+from spoolctl.models import REASON_CANCELED
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -72,6 +73,10 @@ class TestCancelQueued(CancelTestCase):
         self.assertEqual(row["state"], "canceled")
         self.assertIsNotNone(row["finished_at"])
         self.assertEqual(self.events(job_id)[-1]["event"], "canceled")
+        _, show_out, _ = run_cli("show", str(job_id), "--db", self.db, "--json")
+        show_data = json.loads(show_out)["data"]
+        self.assertEqual(show_data["attempts"], [])
+        self.assertIsNone(show_data["job"]["last_failure_reason"])
 
     def test_canceled_job_never_claimed(self):
         job_id = self.add_queued()
@@ -111,6 +116,12 @@ class TestCancelRunning(CancelTestCase):
         attempts = store.get_attempts(conn, job_id)
         conn.close()
         self.assertEqual(attempts[-1].state, "canceled")
+        self.assertEqual(attempts[-1].failure_reason, REASON_CANCELED)
+        _, show_out, _ = run_cli("show", str(job_id), "--db", self.db, "--json")
+        self.assertEqual(
+            json.loads(show_out)["data"]["job"]["last_failure_reason"],
+            REASON_CANCELED,
+        )
         self.assertEqual(self.events(job_id)[-1]["detail"], "forced (was running)")
 
     def test_forced_cancel_discards_late_worker_result(self):

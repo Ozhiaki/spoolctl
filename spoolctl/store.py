@@ -15,13 +15,21 @@ import time
 from spoolctl.models import (
     Attempt,
     BUSY_TIMEOUT_MS,
+    FAILURE_REASONS,
     JOB_STATES,
     Job,
+    REASON_CANCELED,
+    REASON_PROCESS_EXIT,
+    REASON_SPAWN_FAILED,
+    REASON_TIMEOUT,
+    REASON_UNKNOWN,
+    REASON_WORKER_CRASH,
     SCHEMA_VERSION,
     backoff_seconds,
 )
 
 DEFAULT_DB_RELPATH = os.path.join(".spoolctl", "queue.db")
+FAILURE_REASON_SQL = ", ".join(f"'{reason}'" for reason in FAILURE_REASONS)
 
 # Table bodies are shared between fresh creation (SCHEMA_SQL) and the v1->v2
 # rebuild, which must create identical tables under a temporary name.
@@ -74,7 +82,7 @@ _JOBS_BODY_V2 = """(
   last_error      TEXT
 )"""
 
-_ATTEMPTS_BODY = """(
+_ATTEMPTS_BODY_V2 = """(
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   job_id      INTEGER NOT NULL REFERENCES jobs(id),
   attempt_no  INTEGER NOT NULL,
@@ -88,6 +96,24 @@ _ATTEMPTS_BODY = """(
   stdout_path TEXT    NOT NULL,
   stderr_path TEXT    NOT NULL,
   error       TEXT,
+  UNIQUE (job_id, attempt_no)
+)"""
+
+_ATTEMPTS_BODY = f"""(
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  job_id      INTEGER NOT NULL REFERENCES jobs(id),
+  attempt_no  INTEGER NOT NULL,
+  worker_id   TEXT    NOT NULL,
+  worker_pid  INTEGER NOT NULL,
+  state       TEXT    NOT NULL CHECK (state IN
+                ('running','succeeded','failed','timed_out','abandoned','canceled')),
+  started_at  REAL    NOT NULL,
+  finished_at REAL,
+  exit_code   INTEGER,
+  stdout_path TEXT    NOT NULL,
+  stderr_path TEXT    NOT NULL,
+  error       TEXT,
+  failure_reason TEXT CHECK (failure_reason IS NULL OR failure_reason IN ({FAILURE_REASON_SQL})),
   UNIQUE (job_id, attempt_no)
 )"""
 
@@ -182,6 +208,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
                 _migrate_v3_to_v4(conn)
             elif found == 4:
                 _migrate_v4_to_v5(conn)
+            elif found == 5:
+                _migrate_v5_to_v6(conn)
             else:
                 raise sqlite3.DatabaseError(f"unsupported schema version {found}")
         return
@@ -215,7 +243,7 @@ def _migrate_v1_to_v2(conn: sqlite3.Connection) -> bool:
                 conn.execute("COMMIT")
                 return False
             _rebuild_table(conn, "jobs", _JOBS_BODY_V2)
-            _rebuild_table(conn, "attempts", _ATTEMPTS_BODY)
+            _rebuild_table(conn, "attempts", _ATTEMPTS_BODY_V2)
             conn.execute("CREATE INDEX idx_jobs_claimable ON jobs (state, next_run_at)")
             conn.execute("CREATE INDEX idx_jobs_finished ON jobs (state, finished_at)")
             conn.execute("UPDATE meta SET value='2' WHERE key='schema_version'")
@@ -325,6 +353,44 @@ def _migrate_v4_to_v5(conn: sqlite3.Connection) -> bool:
     return True
 
 
+def _migrate_v5_to_v6(conn: sqlite3.Connection) -> bool:
+    """Add stable attempt failure reasons and conservatively backfill history."""
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        found = int(conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone()["value"])
+        if found >= 6:
+            conn.execute("COMMIT")
+            return False
+        conn.execute(
+            "ALTER TABLE attempts ADD COLUMN failure_reason TEXT"
+            f" CHECK (failure_reason IS NULL OR failure_reason IN ({FAILURE_REASON_SQL}))"
+        )
+        conn.execute(
+            "UPDATE attempts SET failure_reason=CASE"
+            " WHEN state='timed_out' THEN ?"
+            " WHEN state='abandoned' AND error='worker died' THEN ?"
+            " WHEN state='abandoned' AND error='force-retried' THEN ?"
+            " WHEN state='canceled' THEN ?"
+            " WHEN state='failed' THEN ?"
+            " ELSE NULL END",
+            (
+                REASON_TIMEOUT,
+                REASON_WORKER_CRASH,
+                REASON_CANCELED,
+                REASON_CANCELED,
+                REASON_UNKNOWN,
+            ),
+        )
+        conn.execute("UPDATE meta SET value='6' WHERE key='schema_version'")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return True
+
+
 def _rebuild_table(conn: sqlite3.Connection, name: str, body: str) -> None:
     """Replace `name` with a fresh table of the same columns built from `body`.
 
@@ -396,6 +462,7 @@ def attempt_from_row(row: sqlite3.Row) -> Attempt:
         stdout_path=row["stdout_path"],
         stderr_path=row["stderr_path"],
         error=row["error"],
+        failure_reason=row["failure_reason"],
     )
 
 
@@ -606,6 +673,7 @@ def record_failure(
     exit_code: int | None,
     error: str,
     now: float,
+    failure_reason: str | None = None,
 ) -> str | None:
     """Record a job-owned failed/timed-out attempt and, in the same
     transaction, either requeue with backoff or dead-letter.
@@ -615,6 +683,14 @@ def record_failure(
     """
     if kind not in _FAILURE_EVENTS:
         raise ValueError(f"unknown failure kind: {kind}")
+    if failure_reason is None:
+        if kind == "timed_out":
+            failure_reason = REASON_TIMEOUT
+        elif kind == "failed" and exit_code is not None:
+            failure_reason = REASON_PROCESS_EXIT
+        else:
+            failure_reason = REASON_UNKNOWN
+    _validate_failure_reason(kind, exit_code, failure_reason)
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute(
@@ -641,9 +717,10 @@ def record_failure(
              job_id, worker_id, worker_pid),
         )
         conn.execute(
-            "UPDATE attempts SET state=?, finished_at=?, exit_code=?, error=?"
+            "UPDATE attempts SET state=?, finished_at=?, exit_code=?, error=?,"
+            " failure_reason=?"
             " WHERE id=? AND state='running'",
-            (kind, now, exit_code, error, attempt_id),
+            (kind, now, exit_code, error, failure_reason, attempt_id),
         )
         add_event(conn, job_id, now, _FAILURE_EVENTS[kind], worker_id, error)
         if new_state == "dead":
@@ -653,6 +730,27 @@ def record_failure(
         conn.execute("ROLLBACK")
         raise
     return new_state
+
+
+def _validate_failure_reason(
+    kind: str,
+    exit_code: int | None,
+    failure_reason: str,
+) -> None:
+    if failure_reason not in FAILURE_REASONS:
+        raise ValueError(f"unknown failure reason: {failure_reason}")
+    if kind == "timed_out" and failure_reason != REASON_TIMEOUT:
+        raise ValueError("timed_out attempts must use timeout failure_reason")
+    if kind == "failed" and exit_code is not None and failure_reason != REASON_PROCESS_EXIT:
+        raise ValueError("failed attempts with exit_code must use process_exit failure_reason")
+    if (
+        kind == "failed"
+        and exit_code is None
+        and failure_reason not in {REASON_SPAWN_FAILED, REASON_UNKNOWN}
+    ):
+        raise ValueError(
+            "failed attempts without exit_code must use spawn_failed or unknown failure_reason"
+        )
 
 
 def update_heartbeat(
@@ -723,9 +821,10 @@ def reap(
             (new_state, new_attempts, new_crashes, next_run_at, now, job_id),
         )
         conn.execute(
-            "UPDATE attempts SET state='abandoned', finished_at=?, error='worker died'"
+            "UPDATE attempts SET state='abandoned', finished_at=?, error='worker died',"
+            " failure_reason=?"
             " WHERE job_id=? AND state='running'",
-            (now, job_id),
+            (now, REASON_WORKER_CRASH, job_id),
         )
         add_event(conn, job_id, now, "reaped", reaper_id, f"dead worker pid {locked_pid}")
         if new_state == "dead":
@@ -767,8 +866,9 @@ def retry_job(conn: sqlite3.Connection, job_id: int, force: bool, now: float) ->
                 return "raced", argv
             conn.execute(
                 "UPDATE attempts SET state='abandoned', finished_at=?,"
-                " error='force-retried' WHERE job_id=? AND state='running'",
-                (now, job_id),
+                " error='force-retried', failure_reason=?"
+                " WHERE job_id=? AND state='running'",
+                (now, REASON_CANCELED, job_id),
             )
         elif state == "queued":
             conn.execute("ROLLBACK")
@@ -872,9 +972,10 @@ def cancel_job(
                 conn.execute("ROLLBACK")
                 return "raced", new_state
             conn.execute(
-                "UPDATE attempts SET state='canceled', finished_at=?, error='canceled'"
+                "UPDATE attempts SET state='canceled', finished_at=?, error='canceled',"
+                " failure_reason=?"
                 " WHERE job_id=? AND state='running'",
-                (now, job_id),
+                (now, REASON_CANCELED, job_id),
             )
             add_event(conn, job_id, now, "canceled", None, "forced (was running)")
             conn.execute("COMMIT")

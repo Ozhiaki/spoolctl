@@ -10,6 +10,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
+from spoolctl.models import REASON_CANCELED
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -106,8 +107,12 @@ class TestForce(RetryTestCase):
         job = store.get_job(self.conn, job_id)
         self.assertEqual((job.state, job.attempts), ("queued", 0))
         att = self.conn.execute(
-            "SELECT state, error FROM attempts WHERE id=?", (att_id,)).fetchone()
-        self.assertEqual((att["state"], att["error"]), ("abandoned", "force-retried"))
+            "SELECT state, error, failure_reason FROM attempts WHERE id=?", (att_id,)
+        ).fetchone()
+        self.assertEqual(
+            (att["state"], att["error"], att["failure_reason"]),
+            ("abandoned", "force-retried", REASON_CANCELED),
+        )
         # The displaced worker (w1, pid 4242) now tries to record success:
         state = store.record_success(self.conn, job_id, att_id, "w1", 4242, 30.0)
         self.assertIsNone(state, "displaced recording must affect zero rows")

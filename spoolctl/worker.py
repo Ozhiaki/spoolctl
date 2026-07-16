@@ -22,6 +22,9 @@ from spoolctl.models import (
     Job,
     KILL_GRACE_SECONDS,
     REAP_THRESHOLD,
+    REASON_PROCESS_EXIT,
+    REASON_SPAWN_FAILED,
+    REASON_TIMEOUT,
 )
 
 # A live pid whose command line contains this marker is presumed to be a
@@ -167,10 +170,10 @@ def execute_attempt(
     job: Job,
     attempt: Attempt,
     on_spawn=None,
-) -> tuple[str, int | None, str | None]:
+) -> tuple[str, int | None, str | None, str | None]:
     """Run one claimed attempt to completion or timeout.
 
-    Returns (kind, exit_code, error) with kind in
+    Returns (kind, exit_code, error, failure_reason) with kind in
     succeeded | failed | timed_out. Spawn failures are ordinary failures:
     the worker loop must survive them. on_spawn (if given) receives the
     Popen right after spawn, so a signal handler can target the group.
@@ -189,17 +192,17 @@ def execute_attempt(
                 start_new_session=True,
             )
         except (OSError, ValueError) as exc:
-            return "failed", None, f"spawn failed: {exc}"
+            return "failed", None, f"spawn failed: {exc}", REASON_SPAWN_FAILED
         if on_spawn is not None:
             on_spawn(proc)
         try:
             exit_code = proc.wait(timeout=job.timeout_seconds)
         except subprocess.TimeoutExpired:
             _kill_group(proc)
-            return "timed_out", None, f"timed out after {job.timeout_seconds}s"
+            return "timed_out", None, f"timed out after {job.timeout_seconds}s", REASON_TIMEOUT
     if exit_code == 0:
-        return "succeeded", 0, None
-    return "failed", exit_code, f"exit {exit_code}"
+        return "succeeded", 0, None, None
+    return "failed", exit_code, f"exit {exit_code}", REASON_PROCESS_EXIT
 
 
 def default_worker_id() -> str:
@@ -247,14 +250,15 @@ def process_one(
             _kill_group(proc)
 
     with Heartbeat(db_path, job.id, worker_id, os.getpid(), on_lost=_on_lost):
-        kind, exit_code, error = execute_attempt(job, attempt, on_spawn=_on_spawn)
+        kind, exit_code, error, failure_reason = execute_attempt(job, attempt, on_spawn=_on_spawn)
     now = time.time()
     if kind == "succeeded":
         new_state = store.record_success(
             conn, job.id, attempt.id, worker_id, os.getpid(), now)
     else:
         new_state = store.record_failure(
-            conn, job.id, attempt.id, worker_id, os.getpid(), kind, exit_code, error, now)
+            conn, job.id, attempt.id, worker_id, os.getpid(), kind, exit_code, error,
+            now, failure_reason=failure_reason)
     if new_state is None:
         print(
             f"spoolctl: warning: job {job.id} was reclaimed while running;"

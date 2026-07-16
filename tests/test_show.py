@@ -10,6 +10,12 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
+from spoolctl.models import (
+    REASON_PROCESS_EXIT,
+    REASON_SPAWN_FAILED,
+    REASON_TIMEOUT,
+    REASON_UNKNOWN,
+)
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -48,6 +54,7 @@ class TestShowDetail(ShowTestCase):
 
         self.assertEqual(data["job"]["id"], job_id)
         self.assertEqual(data["job"]["state"], "done")
+        self.assertIsNone(data["job"]["last_failure_reason"])
         self.assertEqual(data["job"]["argv"], ["echo", "hi"])
         self.assertIsNone(data["job"]["locked_by"])
         self.assertIsNone(data["job"]["idempotency_key"])
@@ -61,6 +68,8 @@ class TestShowDetail(ShowTestCase):
             [(1, "failed", 1), (2, "succeeded", 0)],
         )
         self.assertEqual(data["attempts"][0]["error"], "exit 1")
+        self.assertEqual(data["attempts"][0]["failure_reason"], REASON_PROCESS_EXIT)
+        self.assertIsNone(data["attempts"][1]["failure_reason"])
         self.assertTrue(data["attempts"][1]["stdout_path"].endswith("/2/stdout"))
 
         self.assertEqual(
@@ -92,6 +101,59 @@ class TestShowDetail(ShowTestCase):
         job = json.loads(out)["data"]["job"]
         self.assertEqual((job["state"], job["locked_by"], job["locked_pid"]),
                          ("running", "w9", 77))
+        self.assertIsNone(job["last_failure_reason"])
+
+    def test_dead_nonzero_exit_shows_process_exit_reason(self):
+        conn = store.connect(self.db)
+        job_id = store.add_job(conn, ["false"], 300, 0, 10.0)
+        _, attempt = store.claim_next(conn, "w1", 42, 11.0, store.output_root(self.db))
+        store.record_failure(conn, job_id, attempt.id, "w1", 42, "failed", 1, "exit 1", 12.0)
+        conn.close()
+
+        _, out, _ = run_cli("show", str(job_id), "--db", self.db, "--json")
+        data = json.loads(out)["data"]
+        self.assertEqual(data["job"]["last_failure_reason"], REASON_PROCESS_EXIT)
+        self.assertEqual(data["attempts"][0]["failure_reason"], REASON_PROCESS_EXIT)
+
+    def test_dead_timeout_and_spawn_failure_show_specific_reasons(self):
+        code, out, _ = run_cli(
+            "add", "--db", self.db, "--json",
+            "--timeout", "1", "--max-retries", "0", "--", "sleep", "5",
+        )
+        timeout_id = json.loads(out)["data"]["job_id"]
+        run_cli("work", "--once", "--db", self.db, "--json")
+
+        code, out, _ = run_cli(
+            "add", "--db", self.db, "--json",
+            "--max-retries", "0", "--", "/nonexistent/spoolctl-test-binary",
+        )
+        spawn_id = json.loads(out)["data"]["job_id"]
+        run_cli("work", "--once", "--db", self.db, "--json")
+
+        _, out, _ = run_cli("show", str(timeout_id), "--db", self.db, "--json")
+        timeout_data = json.loads(out)["data"]
+        self.assertEqual(timeout_data["job"]["last_failure_reason"], REASON_TIMEOUT)
+        self.assertEqual(timeout_data["attempts"][0]["failure_reason"], REASON_TIMEOUT)
+
+        _, out, _ = run_cli("show", str(spawn_id), "--db", self.db, "--json")
+        spawn_data = json.loads(out)["data"]
+        self.assertEqual(spawn_data["job"]["last_failure_reason"], REASON_SPAWN_FAILED)
+        self.assertEqual(spawn_data["attempts"][0]["failure_reason"], REASON_SPAWN_FAILED)
+
+    def test_unknown_legacy_reason_surfaces_for_current_dead_job(self):
+        conn = store.connect(self.db)
+        job_id = store.add_job(conn, ["x"], 300, 0, 10.0)
+        _, attempt = store.claim_next(conn, "w1", 42, 11.0, store.output_root(self.db))
+        store.record_failure(
+            conn, job_id, attempt.id, "w1", 42, "failed", None, "legacy", 12.0,
+            failure_reason=REASON_UNKNOWN,
+        )
+        conn.close()
+
+        _, out, _ = run_cli("show", str(job_id), "--db", self.db, "--json")
+        data = json.loads(out)["data"]
+        self.assertEqual(data["job"]["last_failure_reason"], REASON_UNKNOWN)
+        self.assertEqual(data["attempts"][0]["failure_reason"], REASON_UNKNOWN)
 
     def test_metadata_printed_in_json_and_human_show(self):
         code, out, _ = run_cli(

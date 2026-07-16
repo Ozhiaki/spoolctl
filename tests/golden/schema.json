@@ -353,6 +353,20 @@
           },
           "type": "object"
         },
+        "failure_reasons": {
+          "items": {
+            "enum": [
+              "process_exit",
+              "timeout",
+              "spawn_failed",
+              "worker_crash",
+              "canceled",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
         "job_states": {
           "items": {
             "type": "string"
@@ -377,6 +391,7 @@
         "events",
         "execution",
         "exit_codes",
+        "failure_reasons",
         "job_states",
         "scheduling",
         "verbs"
@@ -756,6 +771,21 @@
                   "null"
                 ]
               },
+              "failure_reason": {
+                "enum": [
+                  "process_exit",
+                  "timeout",
+                  "spawn_failed",
+                  "worker_crash",
+                  "canceled",
+                  "unknown",
+                  null
+                ],
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "finished_at": {
                 "type": [
                   "number",
@@ -793,6 +823,7 @@
               "attempt_no",
               "error",
               "exit_code",
+              "failure_reason",
               "finished_at",
               "started_at",
               "state",
@@ -912,6 +943,21 @@
                 "null"
               ]
             },
+            "last_failure_reason": {
+              "enum": [
+                "process_exit",
+                "timeout",
+                "spawn_failed",
+                "worker_crash",
+                "canceled",
+                "unknown",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            },
             "locked_at": {
               "type": [
                 "number",
@@ -994,6 +1040,7 @@
             "idempotency_key",
             "last_error",
             "last_exit_code",
+            "last_failure_reason",
             "locked_at",
             "locked_by",
             "locked_pid",

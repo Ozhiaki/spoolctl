@@ -41,6 +41,7 @@ from spoolctl.models import (
     EXIT_TRANSIENT,
     JOB_EVENT_TYPES,
     JOB_STATES,
+    FAILURE_REASONS,
     TOOL_VERSION,
 )
 
@@ -930,6 +931,15 @@ def _job_id_arg(raw: str) -> int:
         ) from None
 
 
+def current_job_failure_reason(job: store.Job, attempts: list[store.Attempt]) -> str | None:
+    if job.state in {"done", "queued", "running"}:
+        return None
+    for attempt in sorted(attempts, key=lambda a: a.attempt_no, reverse=True):
+        if attempt.state != "succeeded" and attempt.failure_reason is not None:
+            return attempt.failure_reason
+    return None
+
+
 def cmd_show(args: argparse.Namespace) -> VerbResult:
     job_id = _job_id_arg(args.id)
     conn = _open_db(args)
@@ -955,6 +965,7 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
         "idempotency_key": job.idempotency_key,
         "last_error": job.last_error,
         "last_exit_code": job.last_exit_code,
+        "last_failure_reason": current_job_failure_reason(job, attempts),
         "locked_at": job.locked_at,
         "locked_by": job.locked_by,
         "locked_pid": job.locked_pid,
@@ -977,6 +988,7 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
             "attempt_no": a.attempt_no,
             "error": a.error,
             "exit_code": a.exit_code,
+            "failure_reason": a.failure_reason,
             "finished_at": a.finished_at,
             "started_at": a.started_at,
             "state": a.state,
@@ -1619,9 +1631,11 @@ VERB_SUMMARIES = {
                        " next_run_at, priority, queue, cwd, env, crashes,"
                        " max_crashes, locked_by, locked_pid,"
                        " locked_at, heartbeat_at, last_exit_code, last_error,"
+                       " last_failure_reason,"
                        " idempotency_key, tags, note},"
                        " attempts: [{attempt_no, state, worker_id, worker_pid,"
                        " started_at, finished_at, exit_code, error,"
+                       " failure_reason,"
                        " stdout_path, stderr_path}],"
                        " events: [{at, event, worker_id, detail}]}",
     },
@@ -1666,7 +1680,7 @@ VERB_SUMMARIES = {
     "capabilities": {
         "summary": "this machine-readable contract",
         "data_schema": "{attempt_states, contract_policy, contract_version, env,"
-                       " error_codes, events, exit_codes, job_states,"
+                       " error_codes, events, exit_codes, failure_reasons, job_states,"
                        " scheduling, verbs}",
     },
 }
@@ -1867,6 +1881,7 @@ def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
         "events": sorted(JOB_EVENT_TYPES),
         "execution": EXECUTION_CAPABILITIES,
         "exit_codes": exit_codes,
+        "failure_reasons": list(FAILURE_REASONS),
         "job_states": sorted(JOB_STATES),
         "scheduling": SCHEDULING_CAPABILITIES,
         "verbs": verbs,

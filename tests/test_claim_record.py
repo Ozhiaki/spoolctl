@@ -8,6 +8,13 @@ import threading
 import unittest
 
 from spoolctl import store
+from spoolctl.models import (
+    REASON_PROCESS_EXIT,
+    REASON_SPAWN_FAILED,
+    REASON_TIMEOUT,
+    REASON_UNKNOWN,
+    REASON_WORKER_CRASH,
+)
 
 
 class ClaimTestCase(unittest.TestCase):
@@ -230,11 +237,49 @@ class TestRecordFailure(ClaimTestCase):
         )
         self.assertEqual(state, "queued")
         row = self.conn.execute(
-            "SELECT state FROM attempts WHERE id=?", (attempt.id,)).fetchone()
+            "SELECT state, failure_reason FROM attempts WHERE id=?", (attempt.id,)).fetchone()
         self.assertEqual(row["state"], "timed_out")
+        self.assertEqual(row["failure_reason"], REASON_TIMEOUT)
         events = {r["event"] for r in self.conn.execute(
             "SELECT event FROM job_events WHERE job_id=?", (job_id,))}
         self.assertIn("timed_out", events)
+
+    def test_failure_reason_pairings_validated(self):
+        job_id = self.add()
+        _, attempt = store.claim_next(self.conn, "w1", 111, 100.0, self.out_root)
+        with self.assertRaises(ValueError):
+            store.record_failure(
+                self.conn, job_id, attempt.id, "w1", 111, "timed_out", None,
+                "timeout", 101.0, failure_reason=REASON_PROCESS_EXIT,
+            )
+        with self.assertRaises(ValueError):
+            store.record_failure(
+                self.conn, job_id, attempt.id, "w1", 111, "failed", 7,
+                "exit 7", 101.0, failure_reason=REASON_SPAWN_FAILED,
+            )
+        with self.assertRaises(ValueError):
+            store.record_failure(
+                self.conn, job_id, attempt.id, "w1", 111, "failed", None,
+                "spawn failed", 101.0, failure_reason=REASON_TIMEOUT,
+            )
+        with self.assertRaises(ValueError):
+            store.record_failure(
+                self.conn, job_id, attempt.id, "w1", 111, "failed", None,
+                "spawn failed", 101.0, failure_reason="bogus",
+            )
+
+    def test_unknown_remains_defensive_failed_without_exit_reason(self):
+        job_id = self.add(max_retries=0)
+        _, attempt = store.claim_next(self.conn, "w1", 111, 100.0, self.out_root)
+        state = store.record_failure(
+            self.conn, job_id, attempt.id, "w1", 111, "failed", None,
+            "unclassified", 101.0, failure_reason=REASON_UNKNOWN,
+        )
+        self.assertEqual(state, "dead")
+        row = self.conn.execute(
+            "SELECT failure_reason FROM attempts WHERE id=?", (attempt.id,)
+        ).fetchone()
+        self.assertEqual(row["failure_reason"], REASON_UNKNOWN)
 
     def test_abandoned_kind_rejected(self):
         job_id = self.add()
@@ -277,6 +322,8 @@ class TestCrashAccounting(ClaimTestCase):
         self.assertEqual(state, "dead")
         job = store.get_job(self.conn, job_id)
         self.assertEqual((job.attempts, job.crashes), (1, 1))
+        attempt = store.get_attempts(self.conn, job_id)[-1]
+        self.assertEqual(attempt.failure_reason, REASON_WORKER_CRASH)
 
     def test_max_crashes_one_dead_on_second_crash(self):
         job_id = self.add(max_crashes=1)

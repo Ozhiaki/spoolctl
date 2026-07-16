@@ -159,6 +159,10 @@ keep that market. spoolctl exists for the operator who won't be there when the j
   pid-reuse protection) — inconclusive always means "leave it alone."
 - **Failure handling**: nonzero exit, timeout, or a reaped crash all feed the same path:
   exponential backoff and requeue until the retry budget is spent, then `dead`.
+  `show --json` exposes per-attempt `failure_reason` values for unsuccessful terminal
+  attempts (`process_exit`, `timeout`, `spawn_failed`, `worker_crash`, `canceled`,
+  `unknown`) plus `job.last_failure_reason` as the current terminal failure summary.
+  `capabilities --json` publishes the stable `failure_reasons` registry.
 - **Output** from every attempt is captured and kept — retries don't clobber the
   evidence of what went wrong before.
 

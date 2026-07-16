@@ -99,6 +99,14 @@
       "retryable": false
     }
   },
+  "failure_reasons": [
+    "process_exit",
+    "timeout",
+    "spawn_failed",
+    "worker_crash",
+    "canceled",
+    "unknown"
+  ],
   "job_states": [
     "canceled",
     "dead",
@@ -286,7 +294,7 @@
       "summary": "cancel a queued job; --running also stops a running one (killed by its owning worker within a heartbeat)"
     },
     "capabilities": {
-      "data_schema": "{attempt_states, contract_policy, contract_version, env, error_codes, events, exit_codes, job_states, scheduling, verbs}",
+      "data_schema": "{attempt_states, contract_policy, contract_version, env, error_codes, events, exit_codes, failure_reasons, job_states, scheduling, verbs}",
       "flags": [
         {
           "default": null,
@@ -535,7 +543,7 @@
       "summary": "export JSON Schemas for the envelope, verb data payloads, and streams"
     },
     "show": {
-      "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, cwd, env, crashes, max_crashes, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error, idempotency_key, tags, note}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
+      "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, cwd, env, crashes, max_crashes, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error, last_failure_reason, idempotency_key, tags, note}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, failure_reason, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
       "flags": [
         {
           "default": null,

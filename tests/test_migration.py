@@ -17,6 +17,12 @@ import unittest
 from pathlib import Path
 
 from spoolctl import store
+from spoolctl.models import (
+    REASON_CANCELED,
+    REASON_TIMEOUT,
+    REASON_UNKNOWN,
+    REASON_WORKER_CRASH,
+)
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -213,6 +219,26 @@ def with_v5_migration_job_defaults(rows: list[tuple]) -> list[tuple]:
     return [tuple(r) + (None, "{}", None, 0, "default", None, "{}", 0, None) for r in rows]
 
 
+def legacy_failure_reason(row: tuple) -> str | None:
+    state = row[5]
+    error = row[11]
+    if state == "timed_out":
+        return REASON_TIMEOUT
+    if state == "abandoned" and error == "worker died":
+        return REASON_WORKER_CRASH
+    if state == "abandoned" and error == "force-retried":
+        return REASON_CANCELED
+    if state == "canceled":
+        return REASON_CANCELED
+    if state == "failed":
+        return REASON_UNKNOWN
+    return None
+
+
+def with_v6_migration_attempt_defaults(rows: list[tuple]) -> list[tuple]:
+    return [tuple(r) + (legacy_failure_reason(tuple(r)),) for r in rows]
+
+
 def assert_v5_jobs_shape(testcase: unittest.TestCase, conn) -> None:
     columns = {r["name"]: r for r in conn.execute("PRAGMA table_info(jobs)")}
     testcase.assertIn("idempotency_key", columns)
@@ -246,6 +272,18 @@ def assert_v5_jobs_shape(testcase: unittest.TestCase, conn) -> None:
     )
 
 
+def assert_v6_attempts_shape(testcase: unittest.TestCase, conn) -> None:
+    columns = {r["name"]: r for r in conn.execute("PRAGMA table_info(attempts)")}
+    testcase.assertIn("failure_reason", columns)
+    testcase.assertIsNone(columns["failure_reason"]["dflt_value"])
+    with testcase.assertRaises(sqlite3.IntegrityError):
+        conn.execute(
+            "INSERT INTO attempts (job_id, attempt_no, worker_id, worker_pid,"
+            " state, started_at, stdout_path, stderr_path, failure_reason)"
+            " VALUES (1, 99, 'w', 1, 'failed', 1.0, '/o', '/e', 'bogus')"
+        )
+
+
 class MigrationTestCase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -254,7 +292,7 @@ class MigrationTestCase(unittest.TestCase):
 
 
 class TestMigrationFixtures(MigrationTestCase):
-    def test_populated_v1_db_chains_to_v5_intact(self):
+    def test_populated_v1_db_chains_to_v6_intact(self):
         make_populated_v1_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -265,16 +303,18 @@ class TestMigrationFixtures(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 5)
+        self.assertEqual(int(row["value"]), 6)
         self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
                          with_v5_migration_job_defaults(jobs_before))
-        self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
+        self.assertEqual([tuple(r) for r in dump(conn, "attempts")],
+                         with_v6_migration_attempt_defaults(attempts_before))
         self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
         assert_v5_jobs_shape(self, conn)
+        assert_v6_attempts_shape(self, conn)
         conn.close()
 
-    def test_populated_v2_db_migrates_to_v5_intact(self):
+    def test_populated_v2_db_migrates_to_v6_intact(self):
         make_populated_v2_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -285,12 +325,14 @@ class TestMigrationFixtures(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 5)
+        self.assertEqual(int(row["value"]), 6)
         self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
                          with_v5_migration_job_defaults(jobs_before))
-        self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
+        self.assertEqual([tuple(r) for r in dump(conn, "attempts")],
+                         with_v6_migration_attempt_defaults(attempts_before))
         self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
         assert_v5_jobs_shape(self, conn)
+        assert_v6_attempts_shape(self, conn)
         conn.close()
 
     def test_canceled_insertable_after_migration(self):
@@ -351,9 +393,10 @@ class TestMigrationFixtures(MigrationTestCase):
 
         conn = store.connect(self.db)
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 5)
+        self.assertEqual(int(row["value"]), 6)
         self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 5)
         assert_v5_jobs_shape(self, conn)
+        assert_v6_attempts_shape(self, conn)
         conn.close()
 
     def test_existing_invalid_state_still_rejected(self):
@@ -393,12 +436,12 @@ class TestMigrationFixtures(MigrationTestCase):
         migrated = store.connect(self.db)
         try:
             row = migrated.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            self.assertEqual(int(row["value"]), 5)
+            self.assertEqual(int(row["value"]), 6)
             self.assertEqual(store.get_job(migrated, 1).state, "done")
         finally:
             migrated.close()
 
-    def test_v4_to_v5_backfills_crashes_from_worker_died_only(self):
+    def test_v4_to_v6_backfills_crashes_and_failure_reasons(self):
         conn = sqlite3.connect(self.db, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
@@ -432,6 +475,11 @@ class TestMigrationFixtures(MigrationTestCase):
         try:
             self.assertEqual(store.get_job(migrated, 1).crashes, 1)
             self.assertEqual(store.get_job(migrated, 2).crashes, 0)
+            reasons = [
+                r["failure_reason"]
+                for r in migrated.execute("SELECT failure_reason FROM attempts ORDER BY job_id")
+            ]
+            self.assertEqual(reasons, [REASON_WORKER_CRASH, REASON_CANCELED])
         finally:
             migrated.close()
 
@@ -493,25 +541,26 @@ class TestMigrationRace(MigrationTestCase):
             out, err = proc.communicate(timeout=30)
             self.assertEqual(proc.returncode, 0, err)
             outs.append(out.strip())
-        self.assertEqual(outs, ["6 5", "6 5"])  # both saw intact data at v5
+        self.assertEqual(outs, ["6 6", "6 6"])  # both saw intact data at v6
         migrated_count = sum(os.path.exists(m) for m in markers)
         self.assertEqual(migrated_count, 1, "exactly one process must migrate")
         conn = store.connect(self.db)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
         assert_v5_jobs_shape(self, conn)
+        assert_v6_attempts_shape(self, conn)
         conn.close()
 
 
 class TestOneWayDoor(MigrationTestCase):
-    def test_v4_binary_rejects_v5_file(self):
-        # An older binary sees schema_version=5 > its SCHEMA_VERSION=4 and
+    def test_v5_binary_rejects_v6_file(self):
+        # An older binary sees schema_version=6 > its SCHEMA_VERSION=5 and
         # refuses via SchemaTooNewError; simulated by the version gate itself
         # (test_store covers the general found > SCHEMA_VERSION case).
-        conn = store.connect(self.db)  # fresh v5 db
+        conn = store.connect(self.db)  # fresh v6 db
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         conn.close()
-        self.assertEqual(int(row["value"]), 5)
-        self.assertGreater(int(row["value"]), 4)
+        self.assertEqual(int(row["value"]), 6)
+        self.assertGreater(int(row["value"]), 5)
 
 
 if __name__ == "__main__":

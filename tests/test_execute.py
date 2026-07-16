@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 from spoolctl import store, worker
+from spoolctl.models import REASON_PROCESS_EXIT, REASON_SPAWN_FAILED, REASON_TIMEOUT
 
 
 class ExecTestCase(unittest.TestCase):
@@ -30,8 +31,8 @@ class TestCapture(ExecTestCase):
     def test_stdout_and_stderr_captured_exactly(self):
         job, attempt = self.claim(
             ["sh", "-c", "printf 'out-bytes'; printf 'err-bytes' 1>&2"])
-        kind, code, err = worker.execute_attempt(job, attempt)
-        self.assertEqual((kind, code, err), ("succeeded", 0, None))
+        kind, code, err, reason = worker.execute_attempt(job, attempt)
+        self.assertEqual((kind, code, err, reason), ("succeeded", 0, None, None))
         self.assertEqual(Path(attempt.stdout_path).read_bytes(), b"out-bytes")
         self.assertEqual(Path(attempt.stderr_path).read_bytes(), b"err-bytes")
 
@@ -45,10 +46,10 @@ class TestCapture(ExecTestCase):
 
     def test_retry_attempts_get_separate_files(self):
         job, a1 = self.claim(["sh", "-c", "printf first; exit 1"])
-        kind, code, err = worker.execute_attempt(job, a1)
+        kind, code, err, reason = worker.execute_attempt(job, a1)
         self.assertEqual(kind, "failed")
         store.record_failure(self.conn, job.id, a1.id, "w1", os.getpid(),
-                             kind, code, err, time.time())
+                             kind, code, err, time.time(), failure_reason=reason)
         self.conn.execute("UPDATE jobs SET next_run_at=0, argv_json=?"
                           " WHERE id=?", ('["sh","-c","printf second"]', job.id))
         job2, a2 = store.claim_next(self.conn, "w1", os.getpid(), time.time(), self.out_root)
@@ -65,8 +66,8 @@ class TestCapture(ExecTestCase):
             cwd=cwd,
             env={"FOO": "bar"},
         )
-        kind, code, err = worker.execute_attempt(job, attempt)
-        self.assertEqual((kind, code, err), ("succeeded", 0, None))
+        kind, code, err, reason = worker.execute_attempt(job, attempt)
+        self.assertEqual((kind, code, err, reason), ("succeeded", 0, None, None))
         lines = Path(attempt.stdout_path).read_text().splitlines()
         self.assertEqual(os.path.realpath(lines[0]), os.path.realpath(cwd))
         self.assertEqual(lines[1], "bar")
@@ -76,16 +77,18 @@ class TestCapture(ExecTestCase):
 class TestFailureAndTimeout(ExecTestCase):
     def test_nonzero_exit_is_failed(self):
         job, attempt = self.claim(["sh", "-c", "exit 7"])
-        kind, code, err = worker.execute_attempt(job, attempt)
+        kind, code, err, reason = worker.execute_attempt(job, attempt)
         self.assertEqual((kind, code), ("failed", 7))
+        self.assertEqual(reason, REASON_PROCESS_EXIT)
         self.assertIn("exit 7", err)
 
     def test_timeout_kills_within_margin(self):
         job, attempt = self.claim(["sleep", "5"], timeout=1)
         t0 = time.monotonic()
-        kind, code, err = worker.execute_attempt(job, attempt)
+        kind, code, err, reason = worker.execute_attempt(job, attempt)
         elapsed = time.monotonic() - t0
         self.assertEqual(kind, "timed_out")
+        self.assertEqual(reason, REASON_TIMEOUT)
         self.assertIn("timed out after 1s", err)
         self.assertLess(elapsed, 3.5, "kill must land shortly after the deadline")
 
@@ -93,8 +96,9 @@ class TestFailureAndTimeout(ExecTestCase):
         pid_file = os.path.join(self.tmp.name, "grandchild.pid")
         job, attempt = self.claim(
             ["sh", "-c", f"sleep 100 & echo $! > {pid_file}; wait"], timeout=1)
-        kind, _, _ = worker.execute_attempt(job, attempt)
+        kind, _, _, reason = worker.execute_attempt(job, attempt)
         self.assertEqual(kind, "timed_out")
+        self.assertEqual(reason, REASON_TIMEOUT)
         grandchild = int(Path(pid_file).read_text().strip())
         deadline = time.monotonic() + 3
         alive = True
@@ -109,25 +113,29 @@ class TestFailureAndTimeout(ExecTestCase):
 
     def test_spawn_failure_is_normal_failed_attempt(self):
         job, attempt = self.claim(["/nonexistent/binary/xyz"])
-        kind, code, err = worker.execute_attempt(job, attempt)
+        kind, code, err, reason = worker.execute_attempt(job, attempt)
         self.assertEqual(kind, "failed")
         self.assertIsNone(code)
+        self.assertEqual(reason, REASON_SPAWN_FAILED)
         self.assertIn("spawn failed", err)
         # and the normal retry path accepts it
         state = store.record_failure(self.conn, job.id, attempt.id, "w1",
-                                     os.getpid(), kind, code, err, time.time())
+                                     os.getpid(), kind, code, err, time.time(),
+                                     failure_reason=reason)
         self.assertEqual(state, "queued")
 
     def test_missing_cwd_is_job_failure_governed_by_retries(self):
         missing = os.path.join(self.tmp.name, "missing-cwd")
         job, attempt = self.claim(["true"], max_retries=0, cwd=missing)
-        kind, code, err = worker.execute_attempt(job, attempt)
+        kind, code, err, reason = worker.execute_attempt(job, attempt)
         self.assertEqual(kind, "failed")
         self.assertIsNone(code)
+        self.assertEqual(reason, REASON_SPAWN_FAILED)
         self.assertIn("spawn failed", err)
 
         state = store.record_failure(self.conn, job.id, attempt.id, "w1",
-                                     os.getpid(), kind, code, err, time.time())
+                                     os.getpid(), kind, code, err, time.time(),
+                                     failure_reason=reason)
         self.assertEqual(state, "dead")
         stored = store.get_job(self.conn, job.id)
         self.assertEqual(stored.state, "dead")
