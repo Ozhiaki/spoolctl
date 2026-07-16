@@ -1,7 +1,9 @@
 {
   "commands": [],
   "data": {
+    "cwd": null,
     "deduplicated": false,
+    "env_keys": [],
     "job_id": 1,
     "next_run_at": 0.0,
     "priority": 0,
@@ -17,6 +19,6 @@
     "ts_iso": "PINNED"
   },
   "ok": true,
-  "tool_version": "0.4.0",
+  "tool_version": "0.4.1",
   "warnings": []
 }

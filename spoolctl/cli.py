@@ -229,6 +229,11 @@ def build_parser() -> _Parser:
                      help="lane name, default 'default'")
     add.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, metavar="SECONDS")
     add.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES, metavar="N")
+    add.add_argument("--max-crashes", type=int, default=None, metavar="N")
+    add.add_argument("--cwd", default=None, metavar="DIR",
+                     help="working directory for the job, resolved to absolute at submit")
+    add.add_argument("--env", action="append", default=[], metavar="K=V",
+                     help="environment override for the job; repeatable")
     add.add_argument("argv", nargs=argparse.REMAINDER, metavar="[--] ARGV...")
 
     work = sub.add_parser("work", parents=[common], help="run jobs until stopped")
@@ -476,6 +481,53 @@ def _parse_add_tags(raw_tags: list[str]) -> dict[str, str]:
     return tags
 
 
+def _parse_job_env(raw_env: list[str]) -> dict[str, str]:
+    env: dict[str, str] = {}
+    for raw in raw_env:
+        if "=" not in raw:
+            raise CliError(
+                "INVALID_INPUT",
+                f"bad --env {raw!r}; expected K=V",
+                "try: spoolctl add --env FOO=bar -- <cmd>",
+                did_you_mean="K=V",
+            )
+        key, value = raw.split("=", 1)
+        if not key:
+            raise CliError(
+                "INVALID_INPUT",
+                "bad --env key: key must not be empty",
+                "try: spoolctl add --env FOO=bar -- <cmd>",
+                did_you_mean="K=V",
+            )
+        if "\x00" in key or "\x00" in value:
+            raise CliError(
+                "INVALID_INPUT",
+                "bad --env value: NUL bytes are not allowed",
+                "remove embedded NUL bytes from --env K=V",
+                did_you_mean="K=V",
+            )
+        env[key] = value
+    return env
+
+
+def _parse_job_cwd(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    if raw == "":
+        raise CliError(
+            "INVALID_INPUT",
+            "--cwd must not be empty",
+            "try: spoolctl add --cwd . -- <cmd>",
+        )
+    if "\x00" in raw:
+        raise CliError(
+            "INVALID_INPUT",
+            "--cwd must not contain NUL bytes",
+            "remove embedded NUL bytes from --cwd",
+        )
+    return os.path.abspath(raw)
+
+
 def _parse_list_tags(raw_tags: list[str]) -> list[tuple[str, str | None]]:
     predicates = []
     for raw in raw_tags:
@@ -621,6 +673,12 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
             f"--max-retries must be >= 0 (got {args.max_retries})",
             "try: spoolctl add --max-retries 3 -- <cmd>",
         )
+    if args.max_crashes is not None and args.max_crashes < 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--max-crashes must be >= 0 (got {args.max_crashes})",
+            "try: spoolctl add --max-crashes 3 -- <cmd>",
+        )
     if args.after is not None and args.at is not None:
         raise CliError(
             "INVALID_INPUT",
@@ -631,6 +689,8 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
     queue = _parse_queue(args.queue)
     key = _normalize_key(args.key)
     tags = _parse_add_tags(args.tag)
+    cwd = _parse_job_cwd(args.cwd)
+    env = _parse_job_env(args.env)
     if args.note is not None and len(args.note) > 10000:
         raise CliError(
             "INVALID_INPUT",
@@ -649,7 +709,8 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
     try:
         job_id, state, deduplicated = store.add_job_checked(
             conn, job_argv, args.timeout, args.max_retries, now, key,
-            tags, args.note, priority=priority, queue=queue, next_run_at=next_run_at)
+            tags, args.note, priority=priority, queue=queue, next_run_at=next_run_at,
+            cwd=cwd, env=env, max_crashes=args.max_crashes)
         job = store.get_job(conn, job_id)
     finally:
         conn.close()
@@ -660,6 +721,8 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
     return VerbResult(
         data={
             "deduplicated": deduplicated,
+            "cwd": job.cwd,
+            "env_keys": sorted((job.env or {}).keys()),
             "job_id": job_id,
             "next_run_at": job.next_run_at,
             "priority": job.priority,
@@ -755,9 +818,10 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
     if dead:
         lines.append("recent dead:")
         for d in dead:
+            crash_text = f" crashes={d['crashes']}" if d.get("crashes") else ""
             lines.append(
                 f"  #{d['id']} attempts={d['attempts']}"
-                f" error={d['last_error'] or '-'} cmd: {d['command']}"
+                f"{crash_text} error={d['last_error'] or '-'} cmd: {d['command']}"
             )
     return VerbResult(
         data={"counts": counts, "scheduled": scheduled, "queues": queues,
@@ -822,6 +886,8 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
             "last_error": j.last_error,
             "last_exit_code": j.last_exit_code,
             "max_retries": j.max_retries,
+            "crashes": j.crashes,
+            "cwd": j.cwd,
             "next_run_at": j.next_run_at,
             "note": j.note,
             "priority": j.priority,
@@ -838,9 +904,14 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
         command = " ".join(j.argv)
         if len(command) > 80:
             command = command[:77] + "..."
+        extra = ""
+        if j.crashes:
+            extra += f"  crashes={j.crashes}"
+        if j.cwd:
+            extra += f"  cwd={j.cwd}"
         lines.append(
             f"#{j.id}  {j.state}  queue={j.queue}  priority={j.priority}"
-            f"  next_run_at={j.next_run_at:g}  attempts={j.attempts}  {command}"
+            f"  next_run_at={j.next_run_at:g}  attempts={j.attempts}{extra}  {command}"
         )
     return VerbResult(
         data={"count": len(rows), "jobs": rows},
@@ -888,6 +959,10 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
         "locked_by": job.locked_by,
         "locked_pid": job.locked_pid,
         "max_retries": job.max_retries,
+        "crashes": job.crashes,
+        "cwd": job.cwd,
+        "env": job.env or {},
+        "max_crashes": job.max_crashes,
         "next_run_at": job.next_run_at,
         "note": job.note,
         "priority": job.priority,
@@ -916,10 +991,22 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
     command = " ".join(job.argv)
     if len(command) > 80:
         command = command[:77] + "..."
-    lines = [f"#{job.id}  {job.state}  attempts={job.attempts}/{job.max_retries}  {command}"]
+    failure_retries_used = job.attempts - job.crashes
+    max_crashes = (
+        "unbounded" if job.max_crashes is None else str(job.max_crashes)
+    )
+    lines = [
+        f"#{job.id}  {job.state}  failure retries used: "
+        f"{failure_retries_used}/{job.max_retries}  worker crashes: "
+        f"{job.crashes} (tolerated before dead: {max_crashes})  {command}"
+    ]
     lines.append(f"queue: {job.queue}")
     lines.append(f"priority: {job.priority}")
     lines.append(f"next_run_at: {job.next_run_at:g}")
+    lines.append(f"cwd: {job.cwd or 'inherit'}")
+    if job.env:
+        env_text = " ".join(f"{k}={v}" for k, v in sorted(job.env.items()))
+        lines.append(f"env: {env_text}")
     if job.idempotency_key:
         lines.append(f"key: {job.idempotency_key}")
     if job.tags:
@@ -1034,7 +1121,7 @@ def cmd_wait(args: argparse.Namespace) -> VerbResult:
                 raise CliError(
                     "TIMEOUT",
                     f"jobs not settled after {args.timeout}s",
-                    f"retry: spoolctl wait --timeout {args.timeout} {id_list}",
+                    f"inspect crash counts with: spoolctl list --json  or: spoolctl show {ids[0]} --json; retry: spoolctl wait --timeout {args.timeout} {id_list}",
                     exit_code=EXIT_TRANSIENT,
                 )
             time.sleep(args.poll_interval)
@@ -1490,7 +1577,8 @@ VERB_SUMMARIES = {
     "add": {
         "summary": "enqueue a command; --key deduplicates active queued/running jobs",
         "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool,"
-                       " next_run_at: float, priority: int, queue: str}",
+                       " next_run_at: float, priority: int, queue: str,"
+                       " cwd: str|null, env_keys: [str]}",
     },
     "work": {
         "summary": "run jobs until stopped; --once runs at most one;"
@@ -1512,14 +1600,15 @@ VERB_SUMMARIES = {
         "summary": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0",
         "data_schema": "{counts: {canceled,dead,done,failed,queued,running},"
                        " scheduled: int, queues: {<queue>: {counts, scheduled}},"
-                       " recent_dead: [{id, command, attempts, last_error,"
+                       " recent_dead: [{id, command, attempts, crashes, last_error,"
                        " finished_at, stdout_path, stderr_path}]}",
     },
     "list": {
         "summary": "enumerate jobs, newest first, optionally filtered by state/tag/queue/priority",
         "data_schema": "{count: int, jobs: [{id, argv, state, attempts,"
-                       " max_retries, timeout_seconds, created_at, started_at,"
-                       " finished_at, next_run_at, priority, queue,"
+                       " crashes, max_retries, timeout_seconds, created_at,"
+                       " started_at, finished_at, next_run_at, priority, queue,"
+                       " cwd,"
                        " last_exit_code, last_error, idempotency_key, tags,"
                        " note}]}",
     },
@@ -1527,7 +1616,8 @@ VERB_SUMMARIES = {
         "summary": "one job in full detail: row, attempts, event trail",
         "data_schema": "{job: {id, argv, state, attempts, max_retries,"
                        " timeout_seconds, created_at, started_at, finished_at,"
-                       " next_run_at, priority, queue, locked_by, locked_pid,"
+                       " next_run_at, priority, queue, cwd, env, crashes,"
+                       " max_crashes, locked_by, locked_pid,"
                        " locked_at, heartbeat_at, last_exit_code, last_error,"
                        " idempotency_key, tags, note},"
                        " attempts: [{attempt_no, state, worker_id, worker_pid,"
@@ -1688,6 +1778,39 @@ SCHEDULING_CAPABILITIES = {
 }
 
 
+EXECUTION_CAPABILITIES = {
+    "cwd": {
+        "flag": "--cwd DIR",
+        "default": None,
+        "resolution": "resolved to os.path.abspath at submit time; symlinks are not realpath-collapsed",
+        "runtime_failure": "missing or non-directory cwd is a job-owned spawn failure governed by --max-retries",
+    },
+    "env_overrides": {
+        "flag": "--env K=V",
+        "repeatable": True,
+        "semantics": "augment worker environment; overrides are layered over os.environ at run time",
+        "values_stored_plaintext": True,
+        "values_in_add_or_list": False,
+        "values_in_show": True,
+        "grammar": "split on first '='; key non-empty; NUL rejected in key and value; repeated keys last-win",
+    },
+    "retry_model": {
+        "attempts": "recorded unsuccessful executions: job-owned failures plus worker crashes",
+        "job_owned_failures": "nonzero exit, timeout, or spawn failure; count is attempts - crashes",
+        "worker_crashes": "confirmed-dead worker reaps; count stored in crashes",
+        "max_retries": "bounds job-owned failure requeues only",
+        "max_crashes": {
+            "default": None,
+            "meaning": "worker crashes tolerated before dead-lettering; null is unbounded",
+            "zero": "first crash dead-letters",
+            "one": "first crash requeues, second crash dead-letters",
+        },
+        "backoff": "job-owned failures and crash redeliveries both use backoff_seconds(attempts)",
+        "wait_drain": "with unbounded crashes, a deterministically crashing job can keep wait blocking and work --drain unsettled until canceled or bounded",
+    },
+}
+
+
 def cmd_brief(args: argparse.Namespace) -> VerbResult:
     text, tokens = schemas.build_brief(VERB_SUMMARIES, EXIT_CODES, JOB_STATES, ENV_DOCS)
     return VerbResult(
@@ -1742,6 +1865,7 @@ def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
         "env": ENV_DOCS,
         "error_codes": sorted(ERROR_CODES),
         "events": sorted(JOB_EVENT_TYPES),
+        "execution": EXECUTION_CAPABILITIES,
         "exit_codes": exit_codes,
         "job_states": sorted(JOB_STATES),
         "scheduling": SCHEDULING_CAPABILITIES,

@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TOOL_VERSION = "0.4.0"
+TOOL_VERSION = "0.4.1"
 CONTRACT_VERSION = "1"
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 # Job states
 QUEUED = "queued"
@@ -122,6 +122,10 @@ class Job:
     idempotency_key: str | None = None
     tags: dict[str, str] | None = None
     note: str | None = None
+    cwd: str | None = None
+    env: dict[str, str] | None = None
+    crashes: int = 0
+    max_crashes: int | None = None
 
 
 @dataclass

@@ -106,6 +106,17 @@ class TestParserParity(unittest.TestCase):
         self.assertIn("retry/reap backoff rows", scheduling["scheduled"]["includes"])
         self.assertIn("attempts = 0", scheduling["drain"]["skips"])
 
+    def test_execution_contract_documented(self):
+        execution = capabilities_data()["execution"]
+        self.assertEqual(execution["cwd"]["flag"], "--cwd DIR")
+        self.assertIn("abspath", execution["cwd"]["resolution"])
+        self.assertEqual(execution["env_overrides"]["flag"], "--env K=V")
+        self.assertFalse(execution["env_overrides"]["values_in_add_or_list"])
+        self.assertTrue(execution["env_overrides"]["values_in_show"])
+        retry = execution["retry_model"]
+        self.assertIn("attempts - crashes", retry["job_owned_failures"])
+        self.assertEqual(retry["max_crashes"]["zero"], "first crash dead-letters")
+
 
 if __name__ == "__main__":
     unittest.main()

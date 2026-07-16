@@ -202,8 +202,20 @@
     "add": {
       "additionalProperties": false,
       "properties": {
+        "cwd": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "deduplicated": {
           "type": "boolean"
+        },
+        "env_keys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
         },
         "job_id": {
           "type": "integer"
@@ -226,7 +238,9 @@
         }
       },
       "required": [
+        "cwd",
         "deduplicated",
+        "env_keys",
         "job_id",
         "next_run_at",
         "priority",
@@ -310,6 +324,10 @@
           },
           "type": "array"
         },
+        "execution": {
+          "additionalProperties": {},
+          "type": "object"
+        },
         "exit_codes": {
           "additionalProperties": {
             "additionalProperties": false,
@@ -357,6 +375,7 @@
         "env",
         "error_codes",
         "events",
+        "execution",
         "exit_codes",
         "job_states",
         "scheduling",
@@ -448,8 +467,17 @@
               "attempts": {
                 "type": "integer"
               },
+              "crashes": {
+                "type": "integer"
+              },
               "created_at": {
                 "type": "number"
+              },
+              "cwd": {
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "finished_at": {
                 "type": [
@@ -526,7 +554,9 @@
             "required": [
               "argv",
               "attempts",
+              "crashes",
               "created_at",
+              "cwd",
               "finished_at",
               "id",
               "idempotency_key",
@@ -831,8 +861,23 @@
             "attempts": {
               "type": "integer"
             },
+            "crashes": {
+              "type": "integer"
+            },
             "created_at": {
               "type": "number"
+            },
+            "cwd": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "env": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
             },
             "finished_at": {
               "type": [
@@ -880,6 +925,12 @@
               ]
             },
             "locked_pid": {
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "max_crashes": {
               "type": [
                 "integer",
                 "null"
@@ -933,7 +984,10 @@
           "required": [
             "argv",
             "attempts",
+            "crashes",
             "created_at",
+            "cwd",
+            "env",
             "finished_at",
             "heartbeat_at",
             "id",
@@ -943,6 +997,7 @@
             "locked_at",
             "locked_by",
             "locked_pid",
+            "max_crashes",
             "max_retries",
             "next_run_at",
             "note",
@@ -1056,6 +1111,9 @@
               "command": {
                 "type": "string"
               },
+              "crashes": {
+                "type": "integer"
+              },
               "finished_at": {
                 "type": [
                   "number",
@@ -1087,6 +1145,7 @@
             "required": [
               "attempts",
               "command",
+              "crashes",
               "finished_at",
               "id",
               "last_error",

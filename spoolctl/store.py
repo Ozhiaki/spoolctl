@@ -47,7 +47,11 @@ _JOBS_BODY = """(
   last_error      TEXT,
   idempotency_key TEXT,
   tags_json       TEXT    NOT NULL DEFAULT '{}',
-  note            TEXT
+  note            TEXT,
+  cwd             TEXT,
+  env_json        TEXT    NOT NULL DEFAULT '{}',
+  crashes         INTEGER NOT NULL DEFAULT 0,
+  max_crashes     INTEGER
 )"""
 
 _JOBS_BODY_V2 = """(
@@ -176,6 +180,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
                 _migrate_v2_to_v3(conn)
             elif found == 3:
                 _migrate_v3_to_v4(conn)
+            elif found == 4:
+                _migrate_v4_to_v5(conn)
             else:
                 raise sqlite3.DatabaseError(f"unsupported schema version {found}")
         return
@@ -285,6 +291,40 @@ def _migrate_v3_to_v4(conn: sqlite3.Connection) -> bool:
     return True
 
 
+def _migrate_v4_to_v5(conn: sqlite3.Connection) -> bool:
+    """Add execution-fidelity columns and backfill worker-crash counts.
+
+    BEGIN IMMEDIATE serializes concurrent migrators, and the version is
+    re-read inside the transaction so the race loser no-ops.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        found = int(conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone()["value"])
+        if found >= 5:
+            conn.execute("COMMIT")
+            return False
+        conn.execute("ALTER TABLE jobs ADD COLUMN cwd TEXT")
+        conn.execute("ALTER TABLE jobs ADD COLUMN env_json TEXT NOT NULL DEFAULT '{}'")
+        conn.execute("ALTER TABLE jobs ADD COLUMN crashes INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE jobs ADD COLUMN max_crashes INTEGER")
+        conn.execute(
+            "UPDATE jobs SET crashes = ("
+            " SELECT COUNT(*) FROM attempts a"
+            " WHERE a.job_id = jobs.id"
+            " AND a.state='abandoned'"
+            " AND a.error='worker died'"
+            ")"
+        )
+        conn.execute("UPDATE meta SET value='5' WHERE key='schema_version'")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return True
+
+
 def _rebuild_table(conn: sqlite3.Connection, name: str, body: str) -> None:
     """Replace `name` with a fresh table of the same columns built from `body`.
 
@@ -335,6 +375,10 @@ def job_from_row(row: sqlite3.Row) -> Job:
         idempotency_key=row["idempotency_key"],
         tags=json.loads(row["tags_json"]),
         note=row["note"],
+        cwd=row["cwd"],
+        env=json.loads(row["env_json"]),
+        crashes=row["crashes"],
+        max_crashes=row["max_crashes"],
     )
 
 
@@ -365,12 +409,34 @@ def add_job(
     priority: int = 0,
     queue: str = "default",
     next_run_at: float | None = None,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
+    max_crashes: int | None = None,
 ) -> int:
     job_id, _, _ = add_job_checked(
         conn, argv, timeout_seconds, max_retries, now,
         priority=priority, queue=queue, next_run_at=next_run_at,
+        cwd=cwd, env=env, max_crashes=max_crashes,
     )
     return job_id
+
+
+def _validate_execution_payload(
+    cwd: str | None,
+    env: dict[str, str] | None,
+    max_crashes: int | None,
+) -> None:
+    if cwd is not None and not isinstance(cwd, str):
+        raise ValueError("cwd must be None or str")
+    if env is not None:
+        if not isinstance(env, dict):
+            raise ValueError("env must be None or dict[str, str]")
+        for key, value in env.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise ValueError("env must be dict[str, str]")
+    if max_crashes is not None:
+        if not isinstance(max_crashes, int) or max_crashes < 0:
+            raise ValueError("max_crashes must be None or int >= 0")
 
 
 def add_job_checked(
@@ -385,7 +451,11 @@ def add_job_checked(
     priority: int = 0,
     queue: str = "default",
     next_run_at: float | None = None,
+    cwd: str | None = None,
+    env: dict[str, str] | None = None,
+    max_crashes: int | None = None,
 ) -> tuple[int, str, bool]:
+    _validate_execution_payload(cwd, env, max_crashes)
     conn.execute("BEGIN IMMEDIATE")
     try:
         if idempotency_key is not None:
@@ -400,11 +470,12 @@ def add_job_checked(
         cur = conn.execute(
             "INSERT INTO jobs (argv_json, state, max_retries, timeout_seconds,"
             " created_at, next_run_at, priority, queue, idempotency_key,"
-            " tags_json, note)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            " tags_json, note, cwd, env_json, max_crashes)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (json.dumps(argv), "queued", max_retries, timeout_seconds, now,
              now if next_run_at is None else next_run_at, priority, queue,
-             idempotency_key, json.dumps(tags or {}, sort_keys=True), note),
+             idempotency_key, json.dumps(tags or {}, sort_keys=True), note, cwd,
+             json.dumps(env or {}, sort_keys=True), max_crashes),
         )
         job_id = cur.lastrowid
         add_event(conn, job_id, now, "added")
@@ -522,7 +593,7 @@ def record_success(
     return "done"
 
 
-_FAILURE_EVENTS = {"failed": "failed", "timed_out": "timed_out", "abandoned": "reaped"}
+_FAILURE_EVENTS = {"failed": "failed", "timed_out": "timed_out"}
 
 
 def record_failure(
@@ -536,7 +607,7 @@ def record_failure(
     error: str,
     now: float,
 ) -> str | None:
-    """Record a failed/timed-out/abandoned attempt and, in the same
+    """Record a job-owned failed/timed-out attempt and, in the same
     transaction, either requeue with backoff or dead-letter.
 
     Returns the job's new state ('queued' or 'dead'), or None when the row
@@ -547,7 +618,7 @@ def record_failure(
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute(
-            "SELECT attempts, max_retries FROM jobs"
+            "SELECT attempts, crashes, max_retries FROM jobs"
             " WHERE id=? AND state='running' AND locked_by=? AND locked_pid=?",
             (job_id, worker_id, worker_pid),
         ).fetchone()
@@ -555,7 +626,8 @@ def record_failure(
             conn.execute("ROLLBACK")
             return None
         new_attempts = row["attempts"] + 1
-        if new_attempts <= row["max_retries"]:
+        job_failures = new_attempts - row["crashes"]
+        if job_failures <= row["max_retries"]:
             new_state = "queued"
             next_run_at = now + backoff_seconds(new_attempts)
         else:
@@ -629,7 +701,7 @@ def reap(
     conn.execute("BEGIN IMMEDIATE")
     try:
         row = conn.execute(
-            "SELECT attempts, max_retries FROM jobs"
+            "SELECT attempts, crashes, max_crashes FROM jobs"
             " WHERE id=? AND state='running' AND locked_pid=? AND heartbeat_at < ?",
             (job_id, locked_pid, cutoff),
         ).fetchone()
@@ -637,17 +709,18 @@ def reap(
             conn.execute("ROLLBACK")
             return None
         new_attempts = row["attempts"] + 1
-        if new_attempts <= row["max_retries"]:
+        new_crashes = row["crashes"] + 1
+        if row["max_crashes"] is None or new_crashes <= row["max_crashes"]:
             new_state = "queued"
             next_run_at = now + backoff_seconds(new_attempts)
         else:
             new_state = "dead"
             next_run_at = now
         conn.execute(
-            "UPDATE jobs SET state=?, attempts=?, next_run_at=?, locked_by=NULL,"
+            "UPDATE jobs SET state=?, attempts=?, crashes=?, next_run_at=?, locked_by=NULL,"
             " locked_pid=NULL, locked_at=NULL, heartbeat_at=NULL, finished_at=?,"
             " last_exit_code=NULL, last_error='worker died' WHERE id=?",
-            (new_state, new_attempts, next_run_at, now, job_id),
+            (new_state, new_attempts, new_crashes, next_run_at, now, job_id),
         )
         conn.execute(
             "UPDATE attempts SET state='abandoned', finished_at=?, error='worker died'"
@@ -707,7 +780,7 @@ def retry_job(conn: sqlite3.Connection, job_id: int, force: bool, now: float) ->
             conn.execute("ROLLBACK")
             return "running_unforced", argv
         conn.execute(
-            "UPDATE jobs SET state='queued', attempts=0, next_run_at=?,"
+            "UPDATE jobs SET state='queued', attempts=0, crashes=0, next_run_at=?,"
             " locked_by=NULL, locked_pid=NULL, locked_at=NULL, heartbeat_at=NULL,"
             " finished_at=NULL, last_exit_code=NULL, last_error=NULL WHERE id=?",
             (now, job_id),
@@ -938,7 +1011,7 @@ def status_counts(conn: sqlite3.Connection, now: float) -> tuple[dict[str, int],
 def recent_dead(conn: sqlite3.Connection, limit: int) -> list[dict]:
     """Most recently finished dead jobs with their latest attempt's paths."""
     rows = conn.execute(
-        "SELECT j.id, j.argv_json, j.attempts, j.last_error, j.finished_at,"
+        "SELECT j.id, j.argv_json, j.attempts, j.crashes, j.last_error, j.finished_at,"
         " a.stdout_path, a.stderr_path"
         " FROM jobs j LEFT JOIN attempts a"
         "   ON a.job_id = j.id"
@@ -955,6 +1028,7 @@ def recent_dead(conn: sqlite3.Connection, limit: int) -> list[dict]:
         out.append({
             "attempts": r["attempts"],
             "command": command,
+            "crashes": r["crashes"],
             "finished_at": r["finished_at"],
             "id": r["id"],
             "last_error": r["last_error"],

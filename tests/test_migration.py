@@ -209,20 +209,26 @@ def dump(conn, table: str) -> list[tuple]:
     return conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
 
 
-def with_v4_migration_job_defaults(rows: list[tuple]) -> list[tuple]:
-    return [tuple(r) + (None, "{}", None, 0, "default") for r in rows]
+def with_v5_migration_job_defaults(rows: list[tuple]) -> list[tuple]:
+    return [tuple(r) + (None, "{}", None, 0, "default", None, "{}", 0, None) for r in rows]
 
 
-def assert_v4_jobs_shape(testcase: unittest.TestCase, conn) -> None:
+def assert_v5_jobs_shape(testcase: unittest.TestCase, conn) -> None:
     columns = {r["name"]: r for r in conn.execute("PRAGMA table_info(jobs)")}
     testcase.assertIn("idempotency_key", columns)
     testcase.assertIn("tags_json", columns)
     testcase.assertIn("note", columns)
     testcase.assertIn("priority", columns)
     testcase.assertIn("queue", columns)
+    testcase.assertIn("cwd", columns)
+    testcase.assertIn("env_json", columns)
+    testcase.assertIn("crashes", columns)
+    testcase.assertIn("max_crashes", columns)
     testcase.assertEqual(columns["tags_json"]["dflt_value"], "'{}'")
     testcase.assertEqual(columns["priority"]["dflt_value"], "0")
     testcase.assertEqual(columns["queue"]["dflt_value"], "'default'")
+    testcase.assertEqual(columns["env_json"]["dflt_value"], "'{}'")
+    testcase.assertEqual(columns["crashes"]["dflt_value"], "0")
     indexes = {
         r["name"] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='index'"
@@ -248,7 +254,7 @@ class MigrationTestCase(unittest.TestCase):
 
 
 class TestMigrationFixtures(MigrationTestCase):
-    def test_populated_v1_db_chains_to_v4_intact(self):
+    def test_populated_v1_db_chains_to_v5_intact(self):
         make_populated_v1_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -259,16 +265,16 @@ class TestMigrationFixtures(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 4)
+        self.assertEqual(int(row["value"]), 5)
         self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
-                         with_v4_migration_job_defaults(jobs_before))
+                         with_v5_migration_job_defaults(jobs_before))
         self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
         self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
-        assert_v4_jobs_shape(self, conn)
+        assert_v5_jobs_shape(self, conn)
         conn.close()
 
-    def test_populated_v2_db_migrates_to_v4_intact(self):
+    def test_populated_v2_db_migrates_to_v5_intact(self):
         make_populated_v2_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -279,12 +285,12 @@ class TestMigrationFixtures(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 4)
+        self.assertEqual(int(row["value"]), 5)
         self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
-                         with_v4_migration_job_defaults(jobs_before))
+                         with_v5_migration_job_defaults(jobs_before))
         self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
         self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
-        assert_v4_jobs_shape(self, conn)
+        assert_v5_jobs_shape(self, conn)
         conn.close()
 
     def test_canceled_insertable_after_migration(self):
@@ -345,9 +351,9 @@ class TestMigrationFixtures(MigrationTestCase):
 
         conn = store.connect(self.db)
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 4)
+        self.assertEqual(int(row["value"]), 5)
         self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 5)
-        assert_v4_jobs_shape(self, conn)
+        assert_v5_jobs_shape(self, conn)
         conn.close()
 
     def test_existing_invalid_state_still_rejected(self):
@@ -387,8 +393,45 @@ class TestMigrationFixtures(MigrationTestCase):
         migrated = store.connect(self.db)
         try:
             row = migrated.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            self.assertEqual(int(row["value"]), 4)
+            self.assertEqual(int(row["value"]), 5)
             self.assertEqual(store.get_job(migrated, 1).state, "done")
+        finally:
+            migrated.close()
+
+    def test_v4_to_v5_backfills_crashes_from_worker_died_only(self):
+        conn = sqlite3.connect(self.db, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript(V2_SCHEMA_SQL)
+        conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '2')")
+        self.assertTrue(store._migrate_v2_to_v3(conn))
+        self.assertTrue(store._migrate_v3_to_v4(conn))
+        conn.execute(
+            "INSERT INTO jobs (id, argv_json, state, attempts, max_retries,"
+            " timeout_seconds, created_at, next_run_at, priority, queue)"
+            " VALUES (1, '[\"a\"]', 'queued', 2, 3, 300, 1.0, 1.0, 0, 'default')"
+        )
+        conn.execute(
+            "INSERT INTO jobs (id, argv_json, state, attempts, max_retries,"
+            " timeout_seconds, created_at, next_run_at, priority, queue)"
+            " VALUES (2, '[\"b\"]', 'queued', 1, 3, 300, 1.0, 1.0, 0, 'default')"
+        )
+        conn.execute(
+            "INSERT INTO attempts (job_id, attempt_no, worker_id, worker_pid,"
+            " state, started_at, stdout_path, stderr_path, error)"
+            " VALUES (1, 1, 'w', 1, 'abandoned', 1.0, '/o1', '/e1', 'worker died')"
+        )
+        conn.execute(
+            "INSERT INTO attempts (job_id, attempt_no, worker_id, worker_pid,"
+            " state, started_at, stdout_path, stderr_path, error)"
+            " VALUES (2, 1, 'w', 1, 'abandoned', 1.0, '/o2', '/e2', 'force-retried')"
+        )
+        conn.close()
+
+        migrated = store.connect(self.db)
+        try:
+            self.assertEqual(store.get_job(migrated, 1).crashes, 1)
+            self.assertEqual(store.get_job(migrated, 2).crashes, 0)
         finally:
             migrated.close()
 
@@ -450,25 +493,25 @@ class TestMigrationRace(MigrationTestCase):
             out, err = proc.communicate(timeout=30)
             self.assertEqual(proc.returncode, 0, err)
             outs.append(out.strip())
-        self.assertEqual(outs, ["6 4", "6 4"])  # both saw intact data at v4
+        self.assertEqual(outs, ["6 5", "6 5"])  # both saw intact data at v5
         migrated_count = sum(os.path.exists(m) for m in markers)
         self.assertEqual(migrated_count, 1, "exactly one process must migrate")
         conn = store.connect(self.db)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
-        assert_v4_jobs_shape(self, conn)
+        assert_v5_jobs_shape(self, conn)
         conn.close()
 
 
 class TestOneWayDoor(MigrationTestCase):
-    def test_v3_binary_rejects_v4_file(self):
-        # An older binary sees schema_version=4 > its SCHEMA_VERSION=3 and
+    def test_v4_binary_rejects_v5_file(self):
+        # An older binary sees schema_version=5 > its SCHEMA_VERSION=4 and
         # refuses via SchemaTooNewError; simulated by the version gate itself
         # (test_store covers the general found > SCHEMA_VERSION case).
-        conn = store.connect(self.db)  # fresh v4 db
+        conn = store.connect(self.db)  # fresh v5 db
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         conn.close()
-        self.assertEqual(int(row["value"]), 4)
-        self.assertGreater(int(row["value"]), 3)
+        self.assertEqual(int(row["value"]), 5)
+        self.assertGreater(int(row["value"]), 4)
 
 
 if __name__ == "__main__":

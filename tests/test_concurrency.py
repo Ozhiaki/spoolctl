@@ -206,6 +206,24 @@ class TestSigkillRecovery(ConcurrencyTestCase):
             "SELECT event FROM job_events WHERE job_id=? ORDER BY id", job_id)]
         self.assertIn("reaped", events)
 
+    def test_sigkilled_worker_redelivers_with_max_retries_zero(self):
+        marker = os.path.join(self.tmp.name, "recovered-zero")
+        job_id = self.add(
+            "sh", "-c", f"sleep 1.5; echo ok >> {marker}",
+            max_retries=0,
+        )
+        victim = self.spawn_worker("victim-zero")
+        self.wait_for_state(job_id, "running", timeout=15)
+        victim.kill()
+        victim.communicate()
+        self.spawn_worker("rescuer-zero")
+        self.wait_for_state(job_id, "done", timeout=30)
+        job = self.job(job_id)
+        self.assertEqual((job.attempts, job.crashes), (1, 1))
+        states = [r["state"] for r in self.query(
+            "SELECT state FROM attempts WHERE job_id=? ORDER BY attempt_no", job_id)]
+        self.assertEqual(states, ["abandoned", "succeeded"])
+
 
 class TestNoFalsePositiveReap(ConcurrencyTestCase):
     def test_sigstopped_live_worker_never_loses_its_job(self):

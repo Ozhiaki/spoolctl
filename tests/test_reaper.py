@@ -34,8 +34,11 @@ class ReaperTestCase(unittest.TestCase):
         self.conn = store.connect(self.db)
         self.addCleanup(self.conn.close)
 
-    def claim_with_pid(self, pid: int, max_retries=3) -> int:
-        job_id = store.add_job(self.conn, ["true"], 300, max_retries, 100.0)
+    def claim_with_pid(self, pid: int, max_retries=3, max_crashes=None) -> int:
+        job_id = store.add_job(
+            self.conn, ["true"], 300, max_retries, 100.0,
+            max_crashes=max_crashes,
+        )
         store.claim_next(self.conn, f"w-{pid}", pid, 100.0, self.out_root)
         return job_id
 
@@ -141,14 +144,16 @@ class TestReapPass(ReaperTestCase):
         reaped, _ = self.reap_now()
         self.assertEqual(reaped, [], "fresh heartbeat must not be nominated")
 
-    def test_reap_exhausts_budget_to_dead(self):
+    def test_reap_exhausts_crash_budget_to_dead(self):
         proc = spawn_fake_worker(looks_like_spoolctl=True)
         proc.kill()
         proc.wait()
-        job_id = self.claim_with_pid(proc.pid, max_retries=0)
+        job_id = self.claim_with_pid(proc.pid, max_retries=0, max_crashes=0)
         reaped, _ = self.reap_now()
         self.assertEqual(reaped, [job_id])
-        self.assertEqual(store.get_job(self.conn, job_id).state, "dead")
+        job = store.get_job(self.conn, job_id)
+        self.assertEqual(job.state, "dead")
+        self.assertEqual((job.attempts, job.crashes), (1, 1))
 
     def test_env_override_shrinks_threshold(self):
         with mock.patch.dict(os.environ, {"SPOOLCTL_TEST_REAP_THRESHOLD": "0.01"}):

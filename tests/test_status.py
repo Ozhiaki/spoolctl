@@ -98,10 +98,11 @@ class TestRecentDead(StatusTestCase):
         self.assertEqual(
             set(d),
             {"attempts", "command", "finished_at", "id", "last_error",
-             "stderr_path", "stdout_path"},
+             "stderr_path", "stdout_path", "crashes"},
         )
         self.assertEqual(d["command"], "false job0")
         self.assertEqual(d["attempts"], 1)
+        self.assertEqual(d["crashes"], 0)
         self.assertIn("stdout", d["stdout_path"])
 
     def test_long_command_truncated(self):

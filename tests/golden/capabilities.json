@@ -37,6 +37,37 @@
     "succeeded",
     "timed_out"
   ],
+  "execution": {
+    "cwd": {
+      "default": null,
+      "flag": "--cwd DIR",
+      "resolution": "resolved to os.path.abspath at submit time; symlinks are not realpath-collapsed",
+      "runtime_failure": "missing or non-directory cwd is a job-owned spawn failure governed by --max-retries"
+    },
+    "env_overrides": {
+      "flag": "--env K=V",
+      "grammar": "split on first '='; key non-empty; NUL rejected in key and value; repeated keys last-win",
+      "repeatable": true,
+      "semantics": "augment worker environment; overrides are layered over os.environ at run time",
+      "values_in_add_or_list": false,
+      "values_in_show": true,
+      "values_stored_plaintext": true
+    },
+    "retry_model": {
+      "attempts": "recorded unsuccessful executions: job-owned failures plus worker crashes",
+      "backoff": "job-owned failures and crash redeliveries both use backoff_seconds(attempts)",
+      "job_owned_failures": "nonzero exit, timeout, or spawn failure; count is attempts - crashes",
+      "max_crashes": {
+        "default": null,
+        "meaning": "worker crashes tolerated before dead-lettering; null is unbounded",
+        "one": "first crash requeues, second crash dead-letters",
+        "zero": "first crash dead-letters"
+      },
+      "max_retries": "bounds job-owned failure requeues only",
+      "wait_drain": "with unbounded crashes, a deterministically crashing job can keep wait blocking and work --drain unsettled until canceled or bounded",
+      "worker_crashes": "confirmed-dead worker reaps; count stored in crashes"
+    }
+  },
   "exit_codes": {
     "0": {
       "meaning": "success (including empty results)",
@@ -121,7 +152,7 @@
   },
   "verbs": {
     "add": {
-      "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool, next_run_at: float, priority: int, queue: str}",
+      "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool, next_run_at: float, priority: int, queue: str, cwd: str|null, env_keys: [str]}",
       "flags": [
         {
           "default": null,
@@ -135,7 +166,17 @@
         },
         {
           "default": null,
+          "flag": "--cwd",
+          "type": "str"
+        },
+        {
+          "default": null,
           "flag": "--db",
+          "type": "str"
+        },
+        {
+          "default": [],
+          "flag": "--env",
           "type": "str"
         },
         {
@@ -147,6 +188,11 @@
           "default": null,
           "flag": "--key",
           "type": "str"
+        },
+        {
+          "default": null,
+          "flag": "--max-crashes",
+          "type": "int"
         },
         {
           "default": 3,
@@ -321,7 +367,7 @@
       "summary": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames"
     },
     "list": {
-      "data_schema": "{count: int, jobs: [{id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, last_exit_code, last_error, idempotency_key, tags, note}]}",
+      "data_schema": "{count: int, jobs: [{id, argv, state, attempts, crashes, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, cwd, last_exit_code, last_error, idempotency_key, tags, note}]}",
       "flags": [
         {
           "default": null,
@@ -489,7 +535,7 @@
       "summary": "export JSON Schemas for the envelope, verb data payloads, and streams"
     },
     "show": {
-      "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error, idempotency_key, tags, note}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
+      "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, cwd, env, crashes, max_crashes, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error, idempotency_key, tags, note}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
       "flags": [
         {
           "default": null,
@@ -511,7 +557,7 @@
       "summary": "one job in full detail: row, attempts, event trail"
     },
     "status": {
-      "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, scheduled: int, queues: {<queue>: {counts, scheduled}}, recent_dead: [{id, command, attempts, last_error, finished_at, stdout_path, stderr_path}]}",
+      "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, scheduled: int, queues: {<queue>: {counts, scheduled}}, recent_dead: [{id, command, attempts, crashes, last_error, finished_at, stdout_path, stderr_path}]}",
       "flags": [
         {
           "default": null,

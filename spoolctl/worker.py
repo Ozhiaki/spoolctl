@@ -176,10 +176,13 @@ def execute_attempt(
     Popen right after spawn, so a signal handler can target the group.
     """
     os.makedirs(os.path.dirname(attempt.stdout_path), exist_ok=True)
+    run_env = None if not job.env else {**os.environ, **job.env}
     with open(attempt.stdout_path, "wb") as out_f, open(attempt.stderr_path, "wb") as err_f:
         try:
             proc = subprocess.Popen(
                 job.argv,
+                cwd=job.cwd,
+                env=run_env,
                 stdout=out_f,
                 stderr=err_f,
                 stdin=subprocess.DEVNULL,

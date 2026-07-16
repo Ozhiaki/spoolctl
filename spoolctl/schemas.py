@@ -82,7 +82,9 @@ JOB_METADATA_PROPS = {
 LIST_JOB_SCHEMA = obj({
     "argv": array_of({"type": "string"}),
     "attempts": {"type": "integer"},
+    "crashes": {"type": "integer"},
     "created_at": {"type": "number"},
+    "cwd": NULLABLE_STRING,
     "finished_at": NULLABLE_NUMBER,
     "id": {"type": "integer"},
     "last_error": NULLABLE_STRING,
@@ -99,10 +101,12 @@ LIST_JOB_SCHEMA = obj({
 
 SHOW_JOB_SCHEMA = obj({
     **LIST_JOB_SCHEMA["properties"],
+    "env": {"type": "object", "additionalProperties": {"type": "string"}},
     "heartbeat_at": NULLABLE_NUMBER,
     "locked_at": NULLABLE_NUMBER,
     "locked_by": NULLABLE_STRING,
     "locked_pid": NULLABLE_INTEGER,
+    "max_crashes": NULLABLE_INTEGER,
 })
 
 ATTEMPT_SCHEMA = obj({
@@ -143,7 +147,9 @@ STREAM_SCHEMA = obj({
 
 VERB_SCHEMAS = {
     "add": obj({
+        "cwd": NULLABLE_STRING,
         "deduplicated": {"type": "boolean"},
+        "env_keys": array_of({"type": "string"}),
         "job_id": {"type": "integer"},
         "next_run_at": {"type": "number"},
         "priority": {"type": "integer"},
@@ -186,6 +192,7 @@ VERB_SCHEMAS = {
         "recent_dead": array_of(obj({
             "attempts": {"type": "integer"},
             "command": {"type": "string"},
+            "crashes": {"type": "integer"},
             "finished_at": NULLABLE_NUMBER,
             "id": {"type": "integer"},
             "last_error": NULLABLE_STRING,
@@ -247,6 +254,7 @@ VERB_SCHEMAS = {
         "env": {"type": "object", "additionalProperties": {"type": "string"}},
         "error_codes": array_of({"type": "string"}),
         "events": array_of({"type": "string"}),
+        "execution": {"type": "object", "additionalProperties": {}},
         "exit_codes": {
             "type": "object",
             "additionalProperties": obj({
@@ -294,9 +302,9 @@ def build_brief(
         " work --drain, then wait on all ids. wait exits 6 when any awaited"
         " job ends non-success, but the JSON envelope is still ok:true and"
         " data.all_succeeded=false.",
-        "add supports --after/--at, --priority, --queue, --key, repeatable"
-        " --tag KEY=VALUE, and --note; delayed jobs remain queued with future"
-        " next_run_at.",
+        "add supports --after/--at, --priority, --queue, --key, --cwd,"
+        " repeatable --env K=V, repeatable --tag KEY=VALUE, and --note;"
+        " delayed jobs remain queued with future next_run_at.",
         "work serves one lane with --queue (default default); --slots N is an"
         " opt-in fleet-wide running ceiling for that lane.",
         "list filters by --state, repeatable --tag, --queue, and --priority-min;"
@@ -310,7 +318,7 @@ def build_brief(
         " raw NDJSON event records only, no control frames.",
         "schema --json exports the envelope, verb data, and raw stream JSON"
         " Schemas. capabilities --json describes flags, modes, states, events,"
-        " env, and exit codes.",
+        " process env, execution, and exit codes.",
         f"Exit codes: {exit_bits}.",
         "Use retry for dead/failed jobs, cancel for queued/running withdrawal,"
         " prune for old terminal jobs, status for counts/recent dead jobs.",

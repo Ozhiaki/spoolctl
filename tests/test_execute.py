@@ -21,8 +21,8 @@ class ExecTestCase(unittest.TestCase):
         self.conn = store.connect(self.db)
         self.addCleanup(self.conn.close)
 
-    def claim(self, argv, timeout=300, max_retries=3):
-        store.add_job(self.conn, argv, timeout, max_retries, time.time())
+    def claim(self, argv, timeout=300, max_retries=3, **kwargs):
+        store.add_job(self.conn, argv, timeout, max_retries, time.time(), **kwargs)
         return store.claim_next(self.conn, "w1", os.getpid(), time.time(), self.out_root)
 
 
@@ -55,6 +55,22 @@ class TestCapture(ExecTestCase):
         worker.execute_attempt(job2, a2)
         self.assertEqual(Path(a1.stdout_path).read_bytes(), b"first")
         self.assertEqual(Path(a2.stdout_path).read_bytes(), b"second")
+
+    def test_cwd_and_env_applied_to_child(self):
+        cwd = os.path.join(self.tmp.name, "job-cwd")
+        os.mkdir(cwd)
+        job, attempt = self.claim(
+            [sys.executable, "-c",
+             "import os; print(os.getcwd()); print(os.environ['FOO']); print(bool(os.environ.get('PATH')))"],
+            cwd=cwd,
+            env={"FOO": "bar"},
+        )
+        kind, code, err = worker.execute_attempt(job, attempt)
+        self.assertEqual((kind, code, err), ("succeeded", 0, None))
+        lines = Path(attempt.stdout_path).read_text().splitlines()
+        self.assertEqual(os.path.realpath(lines[0]), os.path.realpath(cwd))
+        self.assertEqual(lines[1], "bar")
+        self.assertEqual(lines[2], "True")
 
 
 class TestFailureAndTimeout(ExecTestCase):

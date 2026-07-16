@@ -140,12 +140,15 @@ class TestRowAndOutput(AddTestCase):
         self.assertTrue(env["ok"])
         self.assertEqual(
             set(env["data"]),
-            {"deduplicated", "job_id", "next_run_at", "priority", "queue", "state"},
+            {"cwd", "deduplicated", "env_keys", "job_id", "next_run_at",
+             "priority", "queue", "state"},
         )
         self.assertEqual(env["data"]["state"], "queued")
         self.assertIs(env["data"]["deduplicated"], False)
         self.assertEqual(env["data"]["priority"], 0)
         self.assertEqual(env["data"]["queue"], "default")
+        self.assertIsNone(env["data"]["cwd"])
+        self.assertEqual(env["data"]["env_keys"], [])
 
     def test_env_var_db_path(self):
         envdb = os.path.join(self.tmp.name, "env.db")
@@ -160,6 +163,57 @@ class TestRowAndOutput(AddTestCase):
                 os.environ["SPOOLCTL_DB"] = old
         self.assertEqual(code, 0)
         self.assertTrue(os.path.exists(envdb))
+
+
+class TestExecutionFlags(AddTestCase):
+    def test_cwd_resolved_absolute_at_submit(self):
+        submit_dir = os.path.join(self.tmp.name, "submit")
+        os.mkdir(submit_dir)
+        old = os.getcwd()
+        try:
+            os.chdir(submit_dir)
+            expected = os.path.abspath("relsub")
+            code, out, _ = run_cli("add", "--db", self.db, "--json",
+                                   "--cwd", "relsub", "--", "true")
+        finally:
+            os.chdir(old)
+        self.assertEqual(code, 0)
+        data = json.loads(out)["data"]
+        self.assertEqual(data["cwd"], expected)
+        row = self.job_row(data["job_id"])
+        self.assertEqual(row["cwd"], expected)
+
+    def test_env_keys_sorted_and_values_not_echoed(self):
+        code, out, _ = run_cli(
+            "add", "--db", self.db, "--json",
+            "--env", "TOKEN=secret", "--env", "A=1", "--env", "TOKEN=override",
+            "--", "true",
+        )
+        self.assertEqual(code, 0)
+        self.assertNotIn("secret", out)
+        self.assertNotIn("override", out)
+        data = json.loads(out)["data"]
+        self.assertEqual(data["env_keys"], ["A", "TOKEN"])
+        row = self.job_row(data["job_id"])
+        self.assertEqual(json.loads(row["env_json"]), {"A": "1", "TOKEN": "override"})
+
+    def test_bad_execution_flags_rejected_before_db_creation(self):
+        cases = [
+            ("--cwd", ""),
+            ("--cwd", "bad\x00cwd"),
+            ("--env", "MISSING_EQUALS"),
+            ("--env", "=value"),
+            ("--env", "A=bad\x00value"),
+            ("--max-crashes", "-1"),
+        ]
+        for i, (flag, value) in enumerate(cases):
+            with self.subTest(flag=flag, value=repr(value)):
+                db = os.path.join(self.tmp.name, f"bad-exec-{i}.db")
+                code, out, _ = run_cli("add", "--db", db, "--json",
+                                       flag, value, "--", "true")
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+                self.assertFalse(os.path.exists(db))
 
 
 class TestIdempotencyKey(AddTestCase):
@@ -197,12 +251,34 @@ class TestIdempotencyKey(AddTestCase):
         self.assertEqual(json.loads(out)["data"],
                          {
                              "deduplicated": True,
+                             "cwd": None,
+                             "env_keys": [],
                              "job_id": 1,
                              "next_run_at": self.job_row(1)["next_run_at"],
                              "priority": 0,
                              "queue": "default",
                              "state": "running",
                          })
+
+    def test_dedup_returns_env_keys_without_values(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json", "--key", "run-1",
+                               "--env", "TOKEN=secret", "--cwd", ".",
+                               "--", "sleep", "5")
+        self.assertEqual(code, 0)
+        first = json.loads(out)["data"]
+        conn = store.connect(self.db)
+        store.claim_next(conn, "w", 1, time.time() + 1, store.output_root(self.db))
+        conn.close()
+        code, out, _ = run_cli("add", "--db", self.db, "--json", "--key", "run-1",
+                               "--env", "TOKEN=other-secret",
+                               "--", "false")
+        self.assertEqual(code, 0)
+        self.assertNotIn("secret", out)
+        second = json.loads(out)["data"]
+        self.assertTrue(second["deduplicated"])
+        self.assertEqual(second["job_id"], first["job_id"])
+        self.assertEqual(second["cwd"], first["cwd"])
+        self.assertEqual(second["env_keys"], ["TOKEN"])
 
     def test_terminal_key_reuse_inserts_fresh_job(self):
         run_cli("add", "--db", self.db, "--json", "--max-retries", "0",
@@ -214,6 +290,8 @@ class TestIdempotencyKey(AddTestCase):
         self.assertEqual(json.loads(out)["data"],
                          {
                              "deduplicated": False,
+                             "cwd": None,
+                             "env_keys": [],
                              "job_id": 2,
                              "next_run_at": self.job_row(2)["next_run_at"],
                              "priority": 0,

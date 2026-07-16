@@ -236,19 +236,14 @@ class TestRecordFailure(ClaimTestCase):
             "SELECT event FROM job_events WHERE job_id=?", (job_id,))}
         self.assertIn("timed_out", events)
 
-    def test_abandoned_kind_logs_reaped_event(self):
+    def test_abandoned_kind_rejected(self):
         job_id = self.add()
         job, attempt = store.claim_next(self.conn, "w1", 111, 100.0, self.out_root)
-        store.record_failure(
-            self.conn, job_id, attempt.id, "w1", 111, "abandoned", None,
-            "worker died", 200.0,
-        )
-        events = {r["event"] for r in self.conn.execute(
-            "SELECT event FROM job_events WHERE job_id=?", (job_id,))}
-        self.assertIn("reaped", events)
-        row = self.conn.execute(
-            "SELECT state FROM attempts WHERE id=?", (attempt.id,)).fetchone()
-        self.assertEqual(row["state"], "abandoned")
+        with self.assertRaises(ValueError):
+            store.record_failure(
+                self.conn, job_id, attempt.id, "w1", 111, "abandoned", None,
+                "worker died", 200.0,
+            )
 
     def test_guarded_failure_discarded_after_reassignment(self):
         job_id = self.add()
@@ -269,6 +264,59 @@ class TestRecordFailure(ClaimTestCase):
         _, a2 = store.claim_next(self.conn, "w1", 111, 200.0, self.out_root)
         self.assertNotEqual(a1.stdout_path, a2.stdout_path)
         self.assertEqual(a2.attempt_no, 2)
+
+
+class TestCrashAccounting(ClaimTestCase):
+    def reap_once(self, job_id: int, locked_pid: int = 111, now: float = 200.0):
+        return store.reap(self.conn, job_id, locked_pid, now - 10.0, now, "reaper")
+
+    def test_max_crashes_zero_dead_on_first_crash(self):
+        job_id = self.add(max_crashes=0)
+        store.claim_next(self.conn, "w1", 111, 100.0, self.out_root)
+        state = self.reap_once(job_id)
+        self.assertEqual(state, "dead")
+        job = store.get_job(self.conn, job_id)
+        self.assertEqual((job.attempts, job.crashes), (1, 1))
+
+    def test_max_crashes_one_dead_on_second_crash(self):
+        job_id = self.add(max_crashes=1)
+        store.claim_next(self.conn, "w1", 111, 100.0, self.out_root)
+        state = self.reap_once(job_id, now=200.0)
+        self.assertEqual(state, "queued")
+        self.conn.execute("UPDATE jobs SET next_run_at=0 WHERE id=?", (job_id,))
+        store.claim_next(self.conn, "w2", 222, 300.0, self.out_root)
+        state = self.reap_once(job_id, locked_pid=222, now=400.0)
+        self.assertEqual(state, "dead")
+        job = store.get_job(self.conn, job_id)
+        self.assertEqual((job.attempts, job.crashes), (2, 2))
+
+    def test_crash_does_not_consume_failure_budget(self):
+        job_id = self.add(max_retries=1)
+        _, attempt = store.claim_next(self.conn, "w1", 111, 100.0, self.out_root)
+        state = store.record_failure(
+            self.conn, job_id, attempt.id, "w1", 111, "failed", 1, "exit 1", 101.0
+        )
+        self.assertEqual(state, "queued")
+        self.conn.execute("UPDATE jobs SET next_run_at=0 WHERE id=?", (job_id,))
+        store.claim_next(self.conn, "w2", 222, 200.0, self.out_root)
+        state = self.reap_once(job_id, locked_pid=222, now=300.0)
+        self.assertEqual(state, "queued")
+        self.conn.execute("UPDATE jobs SET next_run_at=0 WHERE id=?", (job_id,))
+        _, attempt = store.claim_next(self.conn, "w3", 333, 400.0, self.out_root)
+        state = store.record_failure(
+            self.conn, job_id, attempt.id, "w3", 333, "failed", 1, "exit 1", 401.0
+        )
+        self.assertEqual(state, "dead")
+        job = store.get_job(self.conn, job_id)
+        self.assertEqual((job.attempts, job.crashes), (3, 1))
+
+    def test_store_defensive_checks(self):
+        with self.assertRaises(ValueError):
+            self.add(cwd=object())
+        with self.assertRaises(ValueError):
+            self.add(env={"A": 1})
+        with self.assertRaises(ValueError):
+            self.add(max_crashes=-1)
 
 
 if __name__ == "__main__":

@@ -5,12 +5,12 @@ JSON mode: every normal verb accepts --json and returns {ok, tool_version, data,
 SPOOLCTL_DB: queue database path (overridden by --db; default ./.spoolctl/queue.db). --db overrides it.
 Typical loop: spoolctl add -- <cmd>; spoolctl work --drain; spoolctl wait <ids>; spoolctl output <id> --stream stdout.
 Submit many jobs first, remember their ids, run one worker with work --drain, then wait on all ids. wait exits 6 when any awaited job ends non-success, but the JSON envelope is still ok:true and data.all_succeeded=false.
-add supports --after/--at, --priority, --queue, --key, repeatable --tag KEY=VALUE, and --note; delayed jobs remain queued with future next_run_at.
+add supports --after/--at, --priority, --queue, --key, --cwd, repeatable --env K=V, repeatable --tag KEY=VALUE, and --note; delayed jobs remain queued with future next_run_at.
 work serves one lane with --queue (default default); --slots N is an opt-in fleet-wide running ceiling for that lane.
 list filters by --state, repeatable --tag, --queue, and --priority-min; show prints full job, scheduling fields, attempts, events, key, tags, and note.
 status counts queued jobs inclusively and adds scheduled plus per-queue counts; scheduled means queued with future next_run_at, including retry backoff.
 events reads the durable job_events ledger: one-shot and --wait return envelopes with meta.pagination.cursor; --follow --json emits raw NDJSON event records only, no control frames.
-schema --json exports the envelope, verb data, and raw stream JSON Schemas. capabilities --json describes flags, modes, states, events, env, and exit codes.
+schema --json exports the envelope, verb data, and raw stream JSON Schemas. capabilities --json describes flags, modes, states, events, process env, execution, and exit codes.
 Exit codes: 0=success (including empty results), 1=user-input-error, 2=safety-block (refused; a --force form may exist), 3=tool-environment-error, 4=transient-failure (retry after a short delay), 5=conflict (state changed underneath), 6=job-outcome-failure (an awaited job ended non-success).
 Use retry for dead/failed jobs, cancel for queued/running withdrawal, prune for old terminal jobs, status for counts/recent dead jobs.
-~530 tokens (budget 700).
+~542 tokens (budget 700).
