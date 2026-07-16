@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TOOL_VERSION = "0.3.0"
+TOOL_VERSION = "0.4.0"
 CONTRACT_VERSION = "1"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 # Job states
 QUEUED = "queued"
@@ -109,6 +109,8 @@ class Job:
     timeout_seconds: int
     created_at: float
     next_run_at: float
+    priority: int = 0
+    queue: str = "default"
     locked_by: str | None = None
     locked_pid: int | None = None
     locked_at: float | None = None

@@ -34,6 +34,8 @@ _JOBS_BODY = """(
   timeout_seconds INTEGER NOT NULL DEFAULT 300,
   created_at      REAL    NOT NULL,
   next_run_at     REAL    NOT NULL,
+  priority        INTEGER NOT NULL DEFAULT 0,
+  queue           TEXT    NOT NULL DEFAULT 'default',
   locked_by       TEXT,
   locked_pid      INTEGER,
   locked_at       REAL,
@@ -86,7 +88,8 @@ _ATTEMPTS_BODY = """(
 
 SCHEMA_SQL = f"""
 CREATE TABLE IF NOT EXISTS jobs {_JOBS_BODY};
-CREATE INDEX IF NOT EXISTS idx_jobs_claimable ON jobs (state, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_jobs_claimable
+  ON jobs (state, queue, priority DESC, next_run_at ASC, id ASC);
 CREATE INDEX IF NOT EXISTS idx_jobs_finished ON jobs (state, finished_at);
 CREATE INDEX IF NOT EXISTS idx_jobs_key ON jobs (idempotency_key)
   WHERE idempotency_key IS NOT NULL;
@@ -170,6 +173,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
                 _migrate_v1_to_v2(conn)
             elif found == 2:
                 _migrate_v2_to_v3(conn)
+            elif found == 3:
+                _migrate_v3_to_v4(conn)
             else:
                 raise sqlite3.DatabaseError(f"unsupported schema version {found}")
         return
@@ -250,6 +255,35 @@ def _migrate_v2_to_v3(conn: sqlite3.Connection) -> bool:
     return True
 
 
+def _migrate_v3_to_v4(conn: sqlite3.Connection) -> bool:
+    """Add scheduling-lite columns and the lane/priority claim index.
+
+    BEGIN IMMEDIATE serializes concurrent migrators, and the version is
+    re-read inside the transaction so the race loser no-ops.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        found = int(conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone()["value"])
+        if found >= 4:
+            conn.execute("COMMIT")
+            return False
+        conn.execute("ALTER TABLE jobs ADD COLUMN priority INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE jobs ADD COLUMN queue TEXT NOT NULL DEFAULT 'default'")
+        conn.execute("DROP INDEX idx_jobs_claimable")
+        conn.execute(
+            "CREATE INDEX idx_jobs_claimable ON jobs"
+            " (state, queue, priority DESC, next_run_at ASC, id ASC)"
+        )
+        conn.execute("UPDATE meta SET value='4' WHERE key='schema_version'")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return True
+
+
 def _rebuild_table(conn: sqlite3.Connection, name: str, body: str) -> None:
     """Replace `name` with a fresh table of the same columns built from `body`.
 
@@ -287,6 +321,8 @@ def job_from_row(row: sqlite3.Row) -> Job:
         timeout_seconds=row["timeout_seconds"],
         created_at=row["created_at"],
         next_run_at=row["next_run_at"],
+        priority=row["priority"],
+        queue=row["queue"],
         locked_by=row["locked_by"],
         locked_pid=row["locked_pid"],
         locked_at=row["locked_at"],
@@ -324,8 +360,15 @@ def add_job(
     timeout_seconds: int,
     max_retries: int,
     now: float,
+    *,
+    priority: int = 0,
+    queue: str = "default",
+    next_run_at: float | None = None,
 ) -> int:
-    job_id, _, _ = add_job_checked(conn, argv, timeout_seconds, max_retries, now)
+    job_id, _, _ = add_job_checked(
+        conn, argv, timeout_seconds, max_retries, now,
+        priority=priority, queue=queue, next_run_at=next_run_at,
+    )
     return job_id
 
 
@@ -338,6 +381,9 @@ def add_job_checked(
     idempotency_key: str | None = None,
     tags: dict[str, str] | None = None,
     note: str | None = None,
+    priority: int = 0,
+    queue: str = "default",
+    next_run_at: float | None = None,
 ) -> tuple[int, str, bool]:
     conn.execute("BEGIN IMMEDIATE")
     try:
@@ -352,9 +398,11 @@ def add_job_checked(
                 return row["id"], row["state"], True
         cur = conn.execute(
             "INSERT INTO jobs (argv_json, state, max_retries, timeout_seconds,"
-            " created_at, next_run_at, idempotency_key, tags_json, note)"
-            " VALUES (?,?,?,?,?,?,?,?,?)",
-            (json.dumps(argv), "queued", max_retries, timeout_seconds, now, now,
+            " created_at, next_run_at, priority, queue, idempotency_key,"
+            " tags_json, note)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (json.dumps(argv), "queued", max_retries, timeout_seconds, now,
+             now if next_run_at is None else next_run_at, priority, queue,
              idempotency_key, json.dumps(tags or {}, sort_keys=True), note),
         )
         job_id = cur.lastrowid
@@ -372,6 +420,8 @@ def claim_next(
     worker_pid: int,
     now: float,
     out_root: str,
+    lane: str = "default",
+    slots: int | None = None,
 ) -> tuple[Job, Attempt] | None:
     """Atomically claim the oldest eligible queued job.
 
@@ -384,8 +434,9 @@ def claim_next(
     try:
         row = conn.execute(
             "SELECT * FROM jobs WHERE state='queued' AND next_run_at <= ?"
-            " ORDER BY next_run_at, id LIMIT 1",
-            (now,),
+            " AND queue=?"
+            " ORDER BY priority DESC, next_run_at ASC, id ASC LIMIT 1",
+            (now, lane),
         ).fetchone()
         if row is None:
             conn.execute("COMMIT")

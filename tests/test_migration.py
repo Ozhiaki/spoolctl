@@ -208,22 +208,35 @@ def dump(conn, table: str) -> list[tuple]:
     return conn.execute(f"SELECT * FROM {table} ORDER BY id").fetchall()
 
 
-def with_v3_job_defaults(rows: list[tuple]) -> list[tuple]:
-    return [tuple(r) + (None, "{}", None) for r in rows]
+def with_v4_migration_job_defaults(rows: list[tuple]) -> list[tuple]:
+    return [tuple(r) + (None, "{}", None, 0, "default") for r in rows]
 
 
-def assert_v3_jobs_shape(testcase: unittest.TestCase, conn) -> None:
+def assert_v4_jobs_shape(testcase: unittest.TestCase, conn) -> None:
     columns = {r["name"]: r for r in conn.execute("PRAGMA table_info(jobs)")}
     testcase.assertIn("idempotency_key", columns)
     testcase.assertIn("tags_json", columns)
     testcase.assertIn("note", columns)
+    testcase.assertIn("priority", columns)
+    testcase.assertIn("queue", columns)
     testcase.assertEqual(columns["tags_json"]["dflt_value"], "'{}'")
+    testcase.assertEqual(columns["priority"]["dflt_value"], "0")
+    testcase.assertEqual(columns["queue"]["dflt_value"], "'default'")
     indexes = {
         r["name"] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='index'"
         )
     }
     testcase.assertIn("idx_jobs_key", indexes)
+    testcase.assertIn("idx_jobs_claimable", indexes)
+    idx_cols = [
+        (r["name"], r["desc"]) for r in conn.execute("PRAGMA index_xinfo(idx_jobs_claimable)")
+        if r["key"]
+    ]
+    testcase.assertEqual(
+        idx_cols,
+        [("state", 0), ("queue", 0), ("priority", 1), ("next_run_at", 0), ("id", 0)],
+    )
 
 
 class MigrationTestCase(unittest.TestCase):
@@ -234,7 +247,7 @@ class MigrationTestCase(unittest.TestCase):
 
 
 class TestMigrationFixtures(MigrationTestCase):
-    def test_populated_v1_db_chains_to_v3_intact(self):
+    def test_populated_v1_db_chains_to_v4_intact(self):
         make_populated_v1_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -245,16 +258,16 @@ class TestMigrationFixtures(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 3)
+        self.assertEqual(int(row["value"]), 4)
         self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
-                         with_v3_job_defaults(jobs_before))
+                         with_v4_migration_job_defaults(jobs_before))
         self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
         self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
-        assert_v3_jobs_shape(self, conn)
+        assert_v4_jobs_shape(self, conn)
         conn.close()
 
-    def test_populated_v2_db_migrates_to_v3_intact(self):
+    def test_populated_v2_db_migrates_to_v4_intact(self):
         make_populated_v2_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -265,12 +278,12 @@ class TestMigrationFixtures(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 3)
+        self.assertEqual(int(row["value"]), 4)
         self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
-                         with_v3_job_defaults(jobs_before))
+                         with_v4_migration_job_defaults(jobs_before))
         self.assertEqual([tuple(r) for r in dump(conn, "attempts")], attempts_before)
         self.assertEqual([tuple(r) for r in dump(conn, "job_events")], events_before)
-        assert_v3_jobs_shape(self, conn)
+        assert_v4_jobs_shape(self, conn)
         conn.close()
 
     def test_canceled_insertable_after_migration(self):
@@ -331,9 +344,9 @@ class TestMigrationFixtures(MigrationTestCase):
 
         conn = store.connect(self.db)
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 3)
+        self.assertEqual(int(row["value"]), 4)
         self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 5)
-        assert_v3_jobs_shape(self, conn)
+        assert_v4_jobs_shape(self, conn)
         conn.close()
 
     def test_existing_invalid_state_still_rejected(self):
@@ -404,25 +417,25 @@ class TestMigrationRace(MigrationTestCase):
             out, err = proc.communicate(timeout=30)
             self.assertEqual(proc.returncode, 0, err)
             outs.append(out.strip())
-        self.assertEqual(outs, ["6 3", "6 3"])  # both saw intact data at v3
+        self.assertEqual(outs, ["6 4", "6 4"])  # both saw intact data at v4
         migrated_count = sum(os.path.exists(m) for m in markers)
         self.assertEqual(migrated_count, 1, "exactly one process must migrate")
         conn = store.connect(self.db)
         self.assertEqual(conn.execute("PRAGMA foreign_key_check").fetchall(), [])
-        assert_v3_jobs_shape(self, conn)
+        assert_v4_jobs_shape(self, conn)
         conn.close()
 
 
 class TestOneWayDoor(MigrationTestCase):
-    def test_v2_binary_rejects_v3_file(self):
-        # An older binary sees schema_version=3 > its SCHEMA_VERSION=2 and
+    def test_v3_binary_rejects_v4_file(self):
+        # An older binary sees schema_version=4 > its SCHEMA_VERSION=3 and
         # refuses via SchemaTooNewError; simulated by the version gate itself
         # (test_store covers the general found > SCHEMA_VERSION case).
-        conn = store.connect(self.db)  # fresh v3 db
+        conn = store.connect(self.db)  # fresh v4 db
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         conn.close()
-        self.assertEqual(int(row["value"]), 3)
-        self.assertGreater(int(row["value"]), 2)
+        self.assertEqual(int(row["value"]), 4)
+        self.assertGreater(int(row["value"]), 3)
 
 
 if __name__ == "__main__":
