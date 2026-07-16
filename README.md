@@ -14,7 +14,7 @@ No broker. No server. No dependencies.
 
 </div>
 
-> **Status: pre-release.** spoolctl v0.3 is implemented with a local contract,
+> **Status: pre-release.** spoolctl v0.4 is implemented with a local contract,
 > migration, schema, and concurrency test suite. The CLI surface may still move before
 > a public package release, but the documented interface and guarantees are tested in
 > this repository.
@@ -54,6 +54,8 @@ arbitrary shell commands, with less infrastructure than either shelf:
   backoff, then land in a durable `dead` state you can inspect and requeue.
 - **Per-job timeouts** with process-group kill — a hung job's entire process tree dies,
   not just its shell.
+- **Scheduling-lite and lanes.** Delay jobs with `--after`/`--at`, prioritize eligible
+  work, and isolate scarce resources with named queues plus opt-in per-lane slot ceilings.
 - **Captured output, retrievable later** — by a different process than the one that
   submitted the job, including after every retry.
 - **Zero install surface.** Python 3 standard library only. It's infrastructure you can
@@ -61,24 +63,29 @@ arbitrary shell commands, with less infrastructure than either shelf:
 
 ## Interface Preview
 
-*Pre-release: this is the committed v0.3 CLI surface.*
+*Pre-release: this is the committed v0.4 CLI surface.*
 
 ```console
 $ spoolctl add -- python fetch.py --all
 Added job 1
 
-$ spoolctl add --timeout 600 -- ffmpeg -i in.mp4 out.webm
+$ spoolctl add --after 5m --priority 10 --queue gpu -- python train.py
 Added job 2
+
+$ spoolctl add --timeout 600 -- ffmpeg -i in.mp4 out.webm
+Added job 3
 
 # Start workers anywhere, any time — as many as you like, no coordination needed
 $ spoolctl work &
 $ spoolctl work &
+$ spoolctl work --queue gpu --slots 1 &
 
 $ spoolctl status
-queued: 0   running: 1   done: 1   failed: 0   dead: 0
+canceled 0  dead 0  done 1  failed 0  queued 1  running 1
+scheduled 1
 
 $ spoolctl status --json          # machine-readable, for operators without eyes
-{"counts": {"queued": 0, "running": 1, "done": 1, ...}, "recent_dead": []}
+{"counts": {"queued": 1, "running": 1, "done": 1, ...}, "scheduled": 1, "queues": {...}}
 
 $ spoolctl output 1               # captured stdout/stderr, any time after the run
 fetched 3120 records
@@ -121,6 +128,7 @@ $ spoolctl events --json          # durable event ledger with resume cursor
 | Automatic retry + backoff | ✓ | ✗ | ✗ | ✗ | ✓ |
 | Dead-letter state | ✓ | ✗ | ✗ | ✗ | varies |
 | Per-job timeout, process-group kill | ✓ | ✗ | ✗ | ✗ | varies |
+| Delays, priorities, named resource lanes | ✓ | partial | partial | ✗ | varies |
 | Runtime dependencies | none | Rust binary + daemon | C binary + daemon | C binary | app + pip/broker |
 
 ¹ Celery, RQ, huey, litequeue, plainjob, pg-boss, et al. — excellent semantics, but they
@@ -178,8 +186,9 @@ Read these before adopting. They are design decisions, not roadmap gaps:
   positives in one direction, and spoolctl refuses the dangerous direction.
 - **One machine, local filesystem.** Coordination correctness comes from SQLite locking;
   NFS and friends are unsupported. No distributed mode, ever — that's a different tool.
-- **No scheduling, priorities, or job dependencies.** FIFO among eligible jobs. Cron
-  handles time; spoolctl handles reliability.
+- **Scheduling is deliberately small.** v0.4 has one-shot delays, priorities, and named
+  lanes with opt-in slot ceilings. It does not have recurring schedules or job
+  dependencies.
 - **POSIX only.** macOS and Linux. Process groups and signal semantics are load-bearing;
   Windows is out of scope.
 
@@ -215,7 +224,7 @@ Zero-dependency single-file Python is the most installable software artifact tha
 every macOS and Linux box can run it, and an agent can "install" it by writing a file.
 
 **When can I use it?**
-From a checkout now, with the usual pre-release caution. v0.3 has a full
+From a checkout now, with the usual pre-release caution. v0.4 has a full
 concurrency/crash test suite, JSON contract goldens, schema conformance tests, and
 single-file build coverage.
 

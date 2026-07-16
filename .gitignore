@@ -4,3 +4,4 @@ dist/
 build/
 *.egg-info/
 .spoolctl/
+.beads/.local_version
