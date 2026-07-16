@@ -119,6 +119,37 @@ class TestClaim(ClaimTestCase):
         self.assertEqual(len(claimed), n_jobs)
         self.assertEqual(len(set(claimed)), n_jobs, "a job was claimed twice")
 
+    def test_delayed_backlog_scan_gate_claims_due_job_without_temp_scheduler(self):
+        rows = [
+            ('["future"]', "queued", 0, 3, 300, 1.0, 9999999999.0, 1_000_000, "default")
+            for _ in range(50_000)
+        ]
+        self.conn.executemany(
+            "INSERT INTO jobs (argv_json, state, attempts, max_retries,"
+            " timeout_seconds, created_at, next_run_at, priority, queue)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        due_id = store.add_job(
+            self.conn, ["due"], 300, 3, 1.0,
+            priority=0, queue="default", next_run_at=1.0,
+        )
+
+        progress_ticks = [0]
+
+        def progress():
+            progress_ticks[0] += 1
+            return 0
+
+        self.conn.set_progress_handler(progress, 1000)
+        try:
+            claimed = store.claim_next(self.conn, "w1", 111, 2.0, self.out_root)
+        finally:
+            self.conn.set_progress_handler(None, 0)
+
+        self.assertEqual(claimed[0].id, due_id)
+        self.assertLess(progress_ticks[0], 1000)
+
 
 class TestRecordSuccess(ClaimTestCase):
     def test_success_clears_locks_and_logs_event(self):

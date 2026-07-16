@@ -54,11 +54,12 @@ class ConcurrencyTestCase(unittest.TestCase):
         out = self.cli("add", *extra, "--", *cmd)
         return json.loads(out)["data"]["job_id"]
 
-    def spawn_worker(self, worker_id: str | None = None) -> subprocess.Popen:
+    def spawn_worker(self, worker_id: str | None = None, *extra: str) -> subprocess.Popen:
         argv = [sys.executable, "-m", "spoolctl", "work", "--db", self.db,
                 "--poll-interval", "0.05"]
         if worker_id:
             argv += ["--worker-id", worker_id]
+        argv += list(extra)
         proc = subprocess.Popen(
             argv, cwd=REPO, env=FAST_ENV,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
@@ -130,6 +131,52 @@ class TestNoDoubleExecution(ConcurrencyTestCase):
             self.assertEqual(len(lines), 1, f"{marker} executed {len(lines)} times")
         n_attempts = self.query("SELECT COUNT(*) AS n FROM attempts")[0]["n"]
         self.assertEqual(n_attempts, n_jobs, "no job may have a second attempt")
+
+    def test_no_new_flags_two_default_workers_run_two_default_jobs_concurrently(self):
+        first = self.add("sleep", "1.0")
+        second = self.add("sleep", "1.0")
+        self.spawn_worker("plain-1")
+        self.spawn_worker("plain-2")
+        self.wait_for(
+            lambda: self.query(
+                "SELECT COUNT(*) AS n FROM jobs WHERE state='running'"
+                " AND queue='default'"
+            )[0]["n"] == 2,
+            timeout=15,
+            message="two default jobs running concurrently",
+        )
+        self.wait_for_state(first, "done", timeout=15)
+        self.wait_for_state(second, "done", timeout=15)
+
+
+class TestLaneSlots(ConcurrencyTestCase):
+    def add_gpu(self, *cmd: str) -> int:
+        out = self.cli("add", "--queue", "gpu", "--", *cmd)
+        return json.loads(out)["data"]["job_id"]
+
+    def test_k_workers_with_slots_k_never_exceed_k_running_rows(self):
+        k = 2
+        jobs = [self.add_gpu("sleep", "0.6") for _ in range(5)]
+        for i in range(5):
+            self.spawn_worker(f"gpu-{i}", "--queue", "gpu", "--slots", str(k))
+
+        max_running = 0
+        deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            running = self.query(
+                "SELECT COUNT(*) AS n FROM jobs WHERE state='running' AND queue='gpu'"
+            )[0]["n"]
+            max_running = max(max_running, running)
+            self.assertLessEqual(running, k)
+            done = self.query(
+                "SELECT COUNT(*) AS n FROM jobs WHERE state='done' AND queue='gpu'"
+            )[0]["n"]
+            if done == len(jobs):
+                break
+            time.sleep(0.02)
+        else:
+            self.fail("gpu jobs did not finish")
+        self.assertEqual(max_running, k)
 
 
 class TestSigkillRecovery(ConcurrencyTestCase):

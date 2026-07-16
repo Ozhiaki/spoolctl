@@ -7,6 +7,7 @@ it must never track store.SCHEMA_SQL, that would defeat the fixture.
 from __future__ import annotations
 
 import os
+import json
 import sqlite3
 import subprocess
 import sys
@@ -358,6 +359,38 @@ class TestMigrationFixtures(MigrationTestCase):
                 " VALUES ('[\"x\"]', 'bogus', 1.0, 1.0)"
             )
         conn.close()
+
+    def test_v3_retry_backoff_row_holds_v4_drain_open(self):
+        conn = sqlite3.connect(self.db, isolation_level=None)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.executescript(V2_SCHEMA_SQL)
+        conn.execute("INSERT INTO meta (key, value) VALUES ('schema_version', '2')")
+        self.assertTrue(store._migrate_v2_to_v3(conn))
+        row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        self.assertEqual(int(row["value"]), 3)
+        conn.execute(
+            "INSERT INTO jobs (argv_json, state, attempts, max_retries,"
+            " timeout_seconds, created_at, next_run_at)"
+            " VALUES (?,?,?,?,?,?,?)",
+            ('["true"]', "queued", 1, 3, 300, time.time(), time.time() + 0.25),
+        )
+        conn.close()
+
+        proc = subprocess.run(
+            [sys.executable, "-m", "spoolctl", "work", "--drain",
+             "--db", self.db, "--json", "--poll-interval", "0.05"],
+            cwd=REPO, capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(json.loads(proc.stdout)["data"], {"drained": True, "executed": 1})
+        migrated = store.connect(self.db)
+        try:
+            row = migrated.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+            self.assertEqual(int(row["value"]), 4)
+            self.assertEqual(store.get_job(migrated, 1).state, "done")
+        finally:
+            migrated.close()
 
 
 _RACER = """
