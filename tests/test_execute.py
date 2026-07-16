@@ -118,6 +118,22 @@ class TestFailureAndTimeout(ExecTestCase):
                                      os.getpid(), kind, code, err, time.time())
         self.assertEqual(state, "queued")
 
+    def test_missing_cwd_is_job_failure_governed_by_retries(self):
+        missing = os.path.join(self.tmp.name, "missing-cwd")
+        job, attempt = self.claim(["true"], max_retries=0, cwd=missing)
+        kind, code, err = worker.execute_attempt(job, attempt)
+        self.assertEqual(kind, "failed")
+        self.assertIsNone(code)
+        self.assertIn("spawn failed", err)
+
+        state = store.record_failure(self.conn, job.id, attempt.id, "w1",
+                                     os.getpid(), kind, code, err, time.time())
+        self.assertEqual(state, "dead")
+        stored = store.get_job(self.conn, job.id)
+        self.assertEqual(stored.state, "dead")
+        self.assertEqual(stored.attempts, 1)
+        self.assertEqual(stored.crashes, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

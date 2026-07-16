@@ -183,19 +183,39 @@ class TestExecutionFlags(AddTestCase):
         row = self.job_row(data["job_id"])
         self.assertEqual(row["cwd"], expected)
 
+    def test_cwd_preserves_symlink_spelling(self):
+        target = os.path.join(self.tmp.name, "target")
+        link = os.path.join(self.tmp.name, "link")
+        os.mkdir(target)
+        try:
+            os.symlink(target, link)
+        except (OSError, NotImplementedError) as exc:
+            self.skipTest(f"symlink unavailable: {exc}")
+
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--cwd", link, "--", "true")
+        self.assertEqual(code, 0)
+        data = json.loads(out)["data"]
+        self.assertEqual(data["cwd"], os.path.abspath(link))
+        self.assertNotEqual(data["cwd"], os.path.realpath(link))
+        row = self.job_row(data["job_id"])
+        self.assertEqual(row["cwd"], os.path.abspath(link))
+
     def test_env_keys_sorted_and_values_not_echoed(self):
         code, out, _ = run_cli(
             "add", "--db", self.db, "--json",
-            "--env", "TOKEN=secret", "--env", "A=1", "--env", "TOKEN=override",
+            "--env", "TOKEN=secret", "--env", "A=1", "--env", "EMPTY=",
+            "--env", "TOKEN=override",
             "--", "true",
         )
         self.assertEqual(code, 0)
         self.assertNotIn("secret", out)
         self.assertNotIn("override", out)
         data = json.loads(out)["data"]
-        self.assertEqual(data["env_keys"], ["A", "TOKEN"])
+        self.assertEqual(data["env_keys"], ["A", "EMPTY", "TOKEN"])
         row = self.job_row(data["job_id"])
-        self.assertEqual(json.loads(row["env_json"]), {"A": "1", "TOKEN": "override"})
+        self.assertEqual(json.loads(row["env_json"]),
+                         {"A": "1", "EMPTY": "", "TOKEN": "override"})
 
     def test_bad_execution_flags_rejected_before_db_creation(self):
         cases = [
@@ -203,6 +223,7 @@ class TestExecutionFlags(AddTestCase):
             ("--cwd", "bad\x00cwd"),
             ("--env", "MISSING_EQUALS"),
             ("--env", "=value"),
+            ("--env", "BAD\x00KEY=value"),
             ("--env", "A=bad\x00value"),
             ("--max-crashes", "-1"),
         ]
