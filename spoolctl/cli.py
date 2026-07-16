@@ -257,6 +257,10 @@ def build_parser() -> _Parser:
                        help="comma-separated states to include")
     list_.add_argument("--tag", action="append", default=[], metavar="KEY[=VALUE]",
                        help="filter by tag existence or exact value; repeatable")
+    list_.add_argument("--queue", default=None, metavar="NAME",
+                       help="filter to one lane")
+    list_.add_argument("--priority-min", default=None, metavar="N",
+                       help="minimum priority to include")
     list_.add_argument("--limit", type=int, default=50, metavar="N",
                        help="max jobs (0 = unlimited)")
 
@@ -732,11 +736,22 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
         )
     conn = _open_db(args)
     try:
-        counts = store.state_counts(conn)
+        counts, scheduled, queues = store.status_counts(conn, time.time())
         dead = store.recent_dead(conn, args.limit)
     finally:
         conn.close()
     lines = ["  ".join(f"{k} {v}" for k, v in counts.items())]
+    if scheduled > 0:
+        lines.append(f"scheduled {scheduled}")
+    non_default_queues = {
+        name: data for name, data in queues.items() if name != "default"
+    }
+    if non_default_queues:
+        lines.append("queues:")
+        for name, data in queues.items():
+            counts_text = "  ".join(f"{k} {v}" for k, v in data["counts"].items())
+            suffix = f"  scheduled {data['scheduled']}" if data["scheduled"] > 0 else ""
+            lines.append(f"  {name}: {counts_text}{suffix}")
     if dead:
         lines.append("recent dead:")
         for d in dead:
@@ -745,7 +760,8 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
                 f" error={d['last_error'] or '-'} cmd: {d['command']}"
             )
     return VerbResult(
-        data={"counts": counts, "recent_dead": dead},
+        data={"counts": counts, "scheduled": scheduled, "queues": queues,
+              "recent_dead": dead},
         human="\n".join(lines),
     )
 
@@ -773,6 +789,11 @@ def _parse_states(raw: str | None) -> list[str] | None:
 def cmd_list(args: argparse.Namespace) -> VerbResult:
     states = _parse_states(args.state)
     tag_predicates = _parse_list_tags(args.tag)
+    queue = _parse_queue(args.queue) if args.queue is not None else None
+    priority_min = (
+        _parse_priority(args.priority_min, flag="--priority-min")
+        if args.priority_min is not None else None
+    )
     if args.limit < 0:
         raise CliError(
             "INVALID_INPUT",
@@ -781,7 +802,10 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
         )
     conn = _open_db(args)
     try:
-        jobs = store.list_jobs(conn, states, 0 if tag_predicates else args.limit)
+        jobs = store.list_jobs(
+            conn, states, 0 if tag_predicates else args.limit,
+            queue=queue, priority_min=priority_min,
+        )
     finally:
         conn.close()
     if tag_predicates:
@@ -800,6 +824,8 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
             "max_retries": j.max_retries,
             "next_run_at": j.next_run_at,
             "note": j.note,
+            "priority": j.priority,
+            "queue": j.queue,
             "started_at": j.started_at,
             "state": j.state,
             "tags": j.tags or {},
@@ -812,7 +838,10 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
         command = " ".join(j.argv)
         if len(command) > 80:
             command = command[:77] + "..."
-        lines.append(f"#{j.id}  {j.state}  attempts={j.attempts}  {command}")
+        lines.append(
+            f"#{j.id}  {j.state}  queue={j.queue}  priority={j.priority}"
+            f"  next_run_at={j.next_run_at:g}  attempts={j.attempts}  {command}"
+        )
     return VerbResult(
         data={"count": len(rows), "jobs": rows},
         human="\n".join(lines) if lines else "No jobs",
@@ -861,6 +890,8 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
         "max_retries": job.max_retries,
         "next_run_at": job.next_run_at,
         "note": job.note,
+        "priority": job.priority,
+        "queue": job.queue,
         "started_at": job.started_at,
         "state": job.state,
         "tags": job.tags or {},
@@ -886,6 +917,9 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
     if len(command) > 80:
         command = command[:77] + "..."
     lines = [f"#{job.id}  {job.state}  attempts={job.attempts}/{job.max_retries}  {command}"]
+    lines.append(f"queue: {job.queue}")
+    lines.append(f"priority: {job.priority}")
+    lines.append(f"next_run_at: {job.next_run_at:g}")
     if job.idempotency_key:
         lines.append(f"key: {job.idempotency_key}")
     if job.tags:

@@ -48,6 +48,8 @@ class TestCounts(StatusTestCase):
         self.assertEqual(env["data"]["counts"],
                          {"canceled": 0, "dead": 0, "done": 0, "failed": 0,
                           "queued": 0, "running": 0})
+        self.assertEqual(env["data"]["scheduled"], 0)
+        self.assertEqual(env["data"]["queues"], {})
         self.assertEqual(env["data"]["recent_dead"], [])
 
     def test_counts_reflect_states(self):
@@ -63,6 +65,23 @@ class TestCounts(StatusTestCase):
         counts = json.loads(out)["data"]["counts"]
         self.assertEqual(counts, {"canceled": 0, "dead": 0, "done": 1, "failed": 0,
                                   "queued": 2, "running": 0})
+
+    def test_scheduled_and_queue_counts(self):
+        conn = store.connect(self.db)
+        future = time.time() + 1000.0
+        store.add_job(conn, ["true"], 300, 3, 10.0, next_run_at=future)
+        store.add_job(conn, ["true"], 300, 3, 10.0, queue="gpu", next_run_at=future)
+        store.add_job(conn, ["true"], 300, 3, 10.0, queue="gpu")
+        conn.close()
+        code, out, _ = run_cli("status", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        data = json.loads(out)["data"]
+        self.assertEqual(data["counts"]["queued"], 3)
+        self.assertEqual(data["scheduled"], 2)
+        self.assertEqual(data["queues"]["default"]["counts"]["queued"], 1)
+        self.assertEqual(data["queues"]["default"]["scheduled"], 1)
+        self.assertEqual(data["queues"]["gpu"]["counts"]["queued"], 2)
+        self.assertEqual(data["queues"]["gpu"]["scheduled"], 1)
 
 
 class TestRecentDead(StatusTestCase):
@@ -108,6 +127,23 @@ class TestHumanAndDeterminism(StatusTestCase):
         self.assertEqual(code, 0)
         self.assertIn("queued 0", out)
         self.assertIn("dead 0", out)
+
+    def test_human_scheduled_line_and_queue_lines(self):
+        conn = store.connect(self.db)
+        store.add_job(conn, ["true"], 300, 3, 10.0, next_run_at=time.time() + 1000.0)
+        conn.close()
+        code, out, _ = run_cli("status", "--db", self.db)
+        self.assertEqual(code, 0)
+        self.assertIn("scheduled 1", out)
+        self.assertNotIn("queues:", out)
+
+        conn = store.connect(self.db)
+        store.add_job(conn, ["true"], 300, 3, 10.0, queue="gpu")
+        conn.close()
+        code, out, _ = run_cli("status", "--db", self.db)
+        self.assertEqual(code, 0)
+        self.assertIn("queues:", out)
+        self.assertIn("  gpu:", out)
 
     def test_identical_calls_identical_data_hash(self):
         self.make_dead(2)

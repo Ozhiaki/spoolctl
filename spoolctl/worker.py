@@ -325,7 +325,7 @@ def work_loop(
             if summary is not None:
                 executed += 1
                 continue
-            if drain and store.unsettled_count(conn) == 0:
+            if drain and store.unsettled_count(conn, lane=lane, now=time.time()) == 0:
                 settled = True
                 break
             if not stop.is_set():

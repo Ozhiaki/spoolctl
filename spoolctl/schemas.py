@@ -89,6 +89,8 @@ LIST_JOB_SCHEMA = obj({
     "last_exit_code": NULLABLE_INTEGER,
     "max_retries": {"type": "integer"},
     "next_run_at": {"type": "number"},
+    "priority": {"type": "integer"},
+    "queue": {"type": "string"},
     "started_at": NULLABLE_NUMBER,
     "state": {"type": "string", "enum": list(JOB_STATES)},
     "timeout_seconds": {"type": "integer"},
@@ -143,6 +145,9 @@ VERB_SCHEMAS = {
     "add": obj({
         "deduplicated": {"type": "boolean"},
         "job_id": {"type": "integer"},
+        "next_run_at": {"type": "number"},
+        "priority": {"type": "integer"},
+        "queue": {"type": "string"},
         "state": {"type": "string", "enum": ["queued", "running"]},
     }),
     "work": {
@@ -170,6 +175,14 @@ VERB_SCHEMAS = {
     }),
     "status": obj({
         "counts": obj({state: {"type": "integer"} for state in sorted(JOB_STATES)}),
+        "scheduled": {"type": "integer"},
+        "queues": {
+            "type": "object",
+            "additionalProperties": obj({
+                "counts": obj({state: {"type": "integer"} for state in sorted(JOB_STATES)}),
+                "scheduled": {"type": "integer"},
+            }),
+        },
         "recent_dead": array_of(obj({
             "attempts": {"type": "integer"},
             "command": {"type": "string"},

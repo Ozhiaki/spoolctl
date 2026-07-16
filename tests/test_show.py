@@ -51,6 +51,8 @@ class TestShowDetail(ShowTestCase):
         self.assertEqual(data["job"]["argv"], ["echo", "hi"])
         self.assertIsNone(data["job"]["locked_by"])
         self.assertIsNone(data["job"]["idempotency_key"])
+        self.assertEqual(data["job"]["priority"], 0)
+        self.assertEqual(data["job"]["queue"], "default")
         self.assertEqual(data["job"]["tags"], {})
         self.assertIsNone(data["job"]["note"])
 
@@ -74,6 +76,9 @@ class TestShowDetail(ShowTestCase):
         self.assertEqual(code, 0)
         lines = out.rstrip("\n").split("\n")
         self.assertTrue(lines[0].startswith(f"#{job_id}  done  "))
+        self.assertIn("queue: default", lines)
+        self.assertIn("priority: 0", lines)
+        self.assertIn("next_run_at: 13", lines)
         self.assertIn("  attempt 1  failed  exit=1  worker=w1  error: exit 1", lines)
         self.assertIn("  attempt 2  succeeded  exit=0  worker=w2", lines)
         self.assertIn("events:", lines)
@@ -92,6 +97,7 @@ class TestShowDetail(ShowTestCase):
         code, out, _ = run_cli(
             "add", "--db", self.db, "--json",
             "--key", "run-1", "--tag", "owner=agent", "--note", "handoff",
+            "--priority", "4", "--queue", "gpu",
             "--", "true",
         )
         job_id = json.loads(out)["data"]["job_id"]
@@ -99,12 +105,15 @@ class TestShowDetail(ShowTestCase):
         self.assertEqual(code, 0)
         job = json.loads(out)["data"]["job"]
         self.assertEqual(job["idempotency_key"], "run-1")
+        self.assertEqual((job["priority"], job["queue"]), (4, "gpu"))
         self.assertEqual(job["tags"], {"owner": "agent"})
         self.assertEqual(job["note"], "handoff")
 
         code, out, _ = run_cli("show", str(job_id), "--db", self.db)
         self.assertEqual(code, 0)
         self.assertIn("key: run-1", out)
+        self.assertIn("queue: gpu", out)
+        self.assertIn("priority: 4", out)
         self.assertIn("tags: owner=agent", out)
         self.assertIn("note: handoff", out)
 

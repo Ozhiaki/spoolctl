@@ -172,6 +172,22 @@ class TestDrain(WorkTestCase):
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["data"], {"drained": True, "executed": 3})
 
+    def test_drain_ignores_other_lanes(self):
+        default_job = self.add("true")
+        code, out, _ = run_cli("work", "--drain", "--db", self.db, "--json",
+                               "--queue", "gpu")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"], {"drained": True, "executed": 0})
+        self.assertEqual(self.job_state(default_job), "queued")
+
+    def test_drain_ignores_user_delayed_future_job(self):
+        job_id = self.add("true", extra=("--after", "1d"))
+        code, out, _ = run_cli("work", "--drain", "--db", self.db, "--json",
+                               "--poll-interval", "0.05")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"], {"drained": True, "executed": 0})
+        self.assertEqual(self.job_state(job_id), "queued")
+
     def test_drain_waits_out_a_backoff_requeue(self):
         # Fails on the first execution, succeeds on the second: drain must
         # wait through the 2s backoff instead of exiting with work left.

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import time
 
 from spoolctl.models import (
     Attempt,
@@ -723,16 +724,27 @@ def list_jobs(
     conn: sqlite3.Connection,
     states: list[str] | None,
     limit: int,
+    queue: str | None = None,
+    priority_min: int | None = None,
 ) -> list[Job]:
-    """Enumerate jobs newest-first, optionally filtered by state.
+    """Enumerate jobs newest-first, optionally filtered by state/scheduling.
 
     Pure SELECT (WAL reader, never blocks workers). states=None/[] means
     every state; limit 0 means unlimited."""
     sql = "SELECT * FROM jobs"
     params: list = []
+    clauses = []
     if states:
-        sql += " WHERE state IN (%s)" % ",".join("?" * len(states))
+        clauses.append("state IN (%s)" % ",".join("?" * len(states)))
         params += list(states)
+    if queue is not None:
+        clauses.append("queue=?")
+        params.append(queue)
+    if priority_min is not None:
+        clauses.append("priority>=?")
+        params.append(priority_min)
+    if clauses:
+        sql += " WHERE " + " AND ".join(clauses)
     sql += " ORDER BY id DESC"
     if limit:
         sql += " LIMIT ?"
@@ -869,12 +881,20 @@ def prune_delete(
     return deleted_jobs, deleted_attempts, deleted_events
 
 
-def unsettled_count(conn: sqlite3.Connection) -> int:
-    """Jobs still queued or running — drain's settled test. A backoff
-    requeue is queued (next_run_at in the future) and counts; so does
-    another worker's in-flight job."""
+def unsettled_count(conn: sqlite3.Connection, lane: str = "default", now: float | None = None) -> int:
+    """Jobs that keep a lane drain alive.
+
+    Running rows in the lane always count. Queued rows count when due, or when
+    they are retry/reap backoff rows (`attempts > 0`). Brand-new user-delayed
+    rows (`attempts = 0`, future `next_run_at`) do not hold drain open.
+    """
+    if now is None:
+        now = time.time()
     return conn.execute(
-        "SELECT COUNT(*) AS n FROM jobs WHERE state IN ('queued','running')"
+        "SELECT COUNT(*) AS n FROM jobs"
+        " WHERE queue=? AND (state='running'"
+        " OR (state='queued' AND (next_run_at <= ? OR attempts > 0)))",
+        (lane, now),
     ).fetchone()["n"]
 
 
@@ -884,6 +904,35 @@ def state_counts(conn: sqlite3.Connection) -> dict[str, int]:
     for row in conn.execute("SELECT state, COUNT(*) AS n FROM jobs GROUP BY state"):
         counts[row["state"]] = row["n"]
     return counts
+
+
+def status_counts(conn: sqlite3.Connection, now: float) -> tuple[dict[str, int], int, dict[str, dict]]:
+    """Top-level and per-queue state counts plus future-queued sub-counts."""
+    counts = {state: 0 for state in sorted(JOB_STATES)}
+    queues: dict[str, dict] = {}
+    rows = conn.execute(
+        "SELECT queue, state, COUNT(*) AS n,"
+        " SUM(CASE WHEN state='queued' AND next_run_at > ? THEN 1 ELSE 0 END)"
+        " AS scheduled"
+        " FROM jobs GROUP BY queue, state ORDER BY queue, state",
+        (now,),
+    ).fetchall()
+    scheduled = 0
+    for row in rows:
+        queue = row["queue"]
+        if queue not in queues:
+            queues[queue] = {
+                "counts": {state: 0 for state in sorted(JOB_STATES)},
+                "scheduled": 0,
+            }
+        n = row["n"]
+        state = row["state"]
+        counts[state] += n
+        queues[queue]["counts"][state] = n
+        queue_scheduled = row["scheduled"] or 0
+        scheduled += queue_scheduled
+        queues[queue]["scheduled"] += queue_scheduled
+    return counts, scheduled, queues
 
 
 def recent_dead(conn: sqlite3.Connection, limit: int) -> list[dict]:

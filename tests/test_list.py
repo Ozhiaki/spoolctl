@@ -59,6 +59,8 @@ class TestFilterAndOrder(ListTestCase):
         self.assertEqual([j["id"] for j in data["jobs"]], [4, 3, 2, 1])
         self.assertEqual(data["jobs"][3]["argv"], ["echo", "one"])
         self.assertEqual(data["jobs"][3]["idempotency_key"], None)
+        self.assertEqual(data["jobs"][3]["priority"], 0)
+        self.assertEqual(data["jobs"][3]["queue"], "default")
         self.assertEqual(data["jobs"][3]["tags"], {})
         self.assertEqual(data["jobs"][3]["note"], None)
 
@@ -125,6 +127,27 @@ class TestLimitGrammar(ListTestCase):
         self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
 
 
+class TestSchedulingFilters(ListTestCase):
+    def test_queue_and_priority_min_filter_before_limit(self):
+        self.add_cli("--priority", "9", "--queue", "gpu")
+        self.add_cli("--priority", "9", "--queue", "default")
+        self.add_cli("--priority", "1", "--queue", "gpu")
+        data = self.list_data("--queue", "gpu", "--priority-min", "5", "--limit", "1")
+        self.assertEqual([j["id"] for j in data["jobs"]], [1])
+        self.assertEqual(data["jobs"][0]["priority"], 9)
+        self.assertEqual(data["jobs"][0]["queue"], "gpu")
+
+    def test_bad_queue_and_priority_min_rejected(self):
+        code, out, _ = run_cli("list", "--db", self.db, "--json",
+                               "--queue", "bad name")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+        code, out, _ = run_cli("list", "--db", self.db, "--json",
+                               "--priority-min", "2147483648")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+
 class TestTagFilter(ListTestCase):
     def test_tag_existence_and_exact_value_filters(self):
         self.add_cli("--tag", "owner=agent", "--tag", "mode=fast")
@@ -185,7 +208,9 @@ class TestHuman(ListTestCase):
         self.assertEqual(code, 0)
         lines = out.rstrip("\n").split("\n")
         self.assertEqual(len(lines), 5)
-        self.assertTrue(lines[0].startswith("#5  queued  attempts=0  "))
+        self.assertTrue(lines[0].startswith(
+            "#5  queued  queue=default  priority=0  next_run_at=30  attempts=0  "
+        ))
         command = lines[0].split("attempts=0  ", 1)[1]
         self.assertEqual(len(command), 80)
         self.assertTrue(command.endswith("..."))
