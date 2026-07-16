@@ -432,6 +432,14 @@ def claim_next(
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
+        if slots is not None:
+            running = conn.execute(
+                "SELECT COUNT(*) AS n FROM jobs WHERE state='running' AND queue=?",
+                (lane,),
+            ).fetchone()["n"]
+            if running >= slots:
+                conn.execute("COMMIT")
+                return None
         row = conn.execute(
             "SELECT * FROM jobs WHERE state='queued' AND next_run_at <= ?"
             " AND queue=?"

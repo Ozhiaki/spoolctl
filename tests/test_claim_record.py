@@ -19,8 +19,8 @@ class ClaimTestCase(unittest.TestCase):
         self.conn = store.connect(self.db)
         self.addCleanup(self.conn.close)
 
-    def add(self, max_retries=3, now=100.0) -> int:
-        return store.add_job(self.conn, ["true"], 300, max_retries, now)
+    def add(self, max_retries=3, now=100.0, **kwargs) -> int:
+        return store.add_job(self.conn, ["true"], 300, max_retries, now, **kwargs)
 
 
 class TestClaim(ClaimTestCase):
@@ -51,10 +51,49 @@ class TestClaim(ClaimTestCase):
         self.assertEqual(claimed[0].id, b)
         _ = a
 
+    def test_priority_before_next_run_at_then_id(self):
+        low_due_early = self.add(now=10.0, priority=0)
+        high_due_late = self.add(now=20.0, priority=5)
+        high_due_early = self.add(now=15.0, priority=5)
+        claimed = store.claim_next(self.conn, "w1", 111, 200.0, self.out_root)
+        self.assertEqual(claimed[0].id, high_due_early)
+        claimed = store.claim_next(self.conn, "w2", 222, 200.0, self.out_root)
+        self.assertEqual(claimed[0].id, high_due_late)
+        claimed = store.claim_next(self.conn, "w3", 333, 200.0, self.out_root)
+        self.assertEqual(claimed[0].id, low_due_early)
+
     def test_future_next_run_at_not_eligible(self):
         self.add(now=100.0)
         self.conn.execute("UPDATE jobs SET next_run_at=999.0")
         self.assertIsNone(store.claim_next(self.conn, "w1", 111, 200.0, self.out_root))
+
+    def test_lane_filter_isolated(self):
+        default_job = self.add(queue="default")
+        gpu_job = self.add(queue="gpu")
+        claimed = store.claim_next(self.conn, "w1", 111, 200.0, self.out_root, lane="gpu")
+        self.assertEqual(claimed[0].id, gpu_job)
+        claimed = store.claim_next(self.conn, "w2", 222, 200.0, self.out_root)
+        self.assertEqual(claimed[0].id, default_job)
+
+    def test_slot_ceiling_blocks_claim_when_lane_full(self):
+        running = self.add(queue="gpu")
+        queued = self.add(queue="gpu")
+        store.claim_next(self.conn, "w1", 111, 200.0, self.out_root, lane="gpu")
+        self.assertIsNone(
+            store.claim_next(self.conn, "w2", 222, 200.0, self.out_root,
+                             lane="gpu", slots=1)
+        )
+        claimed = store.claim_next(self.conn, "w3", 333, 200.0, self.out_root,
+                                   lane="gpu", slots=2)
+        self.assertEqual(claimed[0].id, queued)
+        _ = running
+
+    def test_no_slots_keeps_default_unbounded(self):
+        first = self.add(queue="default")
+        second = self.add(queue="default")
+        c1 = store.claim_next(self.conn, "w1", 111, 200.0, self.out_root)
+        c2 = store.claim_next(self.conn, "w2", 222, 200.0, self.out_root)
+        self.assertEqual({c1[0].id, c2[0].id}, {first, second})
 
     def test_concurrent_threads_disjoint_claims(self):
         n_jobs, n_workers = 5, 12

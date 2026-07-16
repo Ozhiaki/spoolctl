@@ -237,6 +237,10 @@ def build_parser() -> _Parser:
                       help="run until the queue settles (no queued or running jobs), then exit")
     work.add_argument("--poll-interval", type=float, default=None, metavar="SECONDS")
     work.add_argument("--worker-id", default=None, metavar="NAME")
+    work.add_argument("--queue", default="default", metavar="NAME",
+                      help="serve one lane; default 'default'")
+    work.add_argument("--slots", type=int, default=None, metavar="N",
+                      help="optional fleet-wide running-job ceiling for the served lane")
 
     wait = sub.add_parser("wait", parents=[common],
                           help="block until jobs settle; exit 6 if any failed")
@@ -675,6 +679,13 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
             "--drain and --once are mutually exclusive",
             "try: spoolctl work --drain   or: spoolctl work --once",
         )
+    lane = _parse_queue(args.queue)
+    if args.slots is not None and args.slots < 1:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--slots must be >= 1 (got {args.slots})",
+            "try: spoolctl work --queue gpu --slots 1",
+        )
     from spoolctl import worker
 
     worker_id = args.worker_id or worker.default_worker_id()
@@ -682,7 +693,7 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
     if args.once:
         conn = store.connect(db_path)
         try:
-            summary = worker.process_one(conn, db_path, worker_id)
+            summary = worker.process_one(conn, db_path, worker_id, lane=lane, slots=args.slots)
         finally:
             conn.close()
         if summary is None:
@@ -694,7 +705,8 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
         )
         return VerbResult(data=data, human=human)
     poll = args.poll_interval if args.poll_interval is not None else DEFAULT_POLL_INTERVAL
-    outcome = worker.work_loop(db_path, worker_id, poll, drain=args.drain)
+    outcome = worker.work_loop(db_path, worker_id, poll, drain=args.drain,
+                               lane=lane, slots=args.slots)
     if args.drain:
         executed = outcome["executed"]
         human = (
@@ -1448,10 +1460,13 @@ VERB_SUMMARIES = {
     },
     "work": {
         "summary": "run jobs until stopped; --once runs at most one;"
-                   " --drain runs until the queue settles",
+                   " --drain runs until the queue settles; --queue serves one"
+                   " lane; --slots optionally bounds running jobs in that lane",
         "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?,"
                        " job_state?}; --drain: {drained: bool, executed: int};"
-                       " loop mode writes nothing to stdout",
+                       " loop mode writes nothing to stdout; claimed:false means"
+                       " no job runnable by this worker right now, including a"
+                       " full slot ceiling",
     },
     "wait": {
         "summary": "block until every given job settles (done/dead/canceled);"

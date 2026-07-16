@@ -112,6 +112,45 @@ class TestOnce(WorkTestCase):
         self.assertEqual(code, 1)
         self.assertIn("poll-interval", err)
 
+    def test_queue_flag_claims_only_that_lane(self):
+        default_job = self.add("true")
+        gpu_job = self.add("true", extra=("--queue", "gpu"))
+        code, out, _ = run_cli("work", "--db", self.db, "--once", "--json",
+                               "--queue", "gpu")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"]["job_id"], gpu_job)
+        self.assertEqual(self.job_state(default_job), "queued")
+
+    def test_default_worker_ignores_non_default_lane(self):
+        self.add("true", extra=("--queue", "gpu"))
+        code, out, _ = run_cli("work", "--db", self.db, "--once", "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"], {"claimed": False})
+
+    def test_slots_full_reports_claimed_false(self):
+        self.add("true", extra=("--queue", "gpu"))
+        self.add("true", extra=("--queue", "gpu"))
+        conn = store.connect(self.db)
+        try:
+            store.claim_next(conn, "w1", 111, time.time(), store.output_root(self.db),
+                             lane="gpu")
+        finally:
+            conn.close()
+        code, out, _ = run_cli("work", "--db", self.db, "--once", "--json",
+                               "--queue", "gpu", "--slots", "1")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["data"], {"claimed": False})
+
+    def test_bad_work_queue_and_slots_rejected(self):
+        code, out, _ = run_cli("work", "--db", self.db, "--once", "--json",
+                               "--queue", "bad name")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+        code, out, _ = run_cli("work", "--db", self.db, "--once", "--json",
+                               "--slots", "0")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
 
 class TestDrain(WorkTestCase):
     def test_drain_once_mutually_exclusive(self):

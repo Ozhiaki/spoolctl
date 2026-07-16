@@ -207,6 +207,8 @@ def process_one(
     conn,
     db_path: str,
     worker_id: str,
+    lane: str = "default",
+    slots: int | None = None,
     on_spawn=None,
 ) -> dict | None:
     """One claim cycle: reap pass, claim, execute, record.
@@ -216,7 +218,8 @@ def process_one(
     """
     reap_pass(conn, reaper_id=worker_id)
     claimed = store.claim_next(
-        conn, worker_id, os.getpid(), time.time(), store.output_root(db_path)
+        conn, worker_id, os.getpid(), time.time(), store.output_root(db_path),
+        lane=lane, slots=slots,
     )
     if claimed is None:
         return None
@@ -274,6 +277,8 @@ def work_loop(
     worker_id: str,
     poll_interval: float,
     drain: bool = False,
+    lane: str = "default",
+    slots: int | None = None,
 ) -> dict:
     """Run jobs until SIGINT/SIGTERM — or, when draining, until the queue
     settles (zero queued or running rows at a moment nothing was claimable;
@@ -313,7 +318,9 @@ def work_loop(
     conn = store.connect(db_path)
     try:
         while not stop.is_set():
-            summary = process_one(conn, db_path, worker_id, on_spawn=on_spawn)
+            summary = process_one(
+                conn, db_path, worker_id, lane=lane, slots=slots, on_spawn=on_spawn
+            )
             current["proc"] = None
             if summary is not None:
                 executed += 1
