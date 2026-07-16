@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import math
 import signal
 import shlex
 import sqlite3
@@ -218,6 +219,14 @@ def build_parser() -> _Parser:
                      help="submit-time metadata tag; repeatable")
     add.add_argument("--note", default=None, metavar="STRING",
                      help="submit-time handoff note")
+    add.add_argument("--after", default=None, metavar="DURATION",
+                     help="run after duration: 30s, 5m, 2h, 1d, or bare seconds")
+    add.add_argument("--at", default=None, metavar="TIMESTAMP",
+                     help="run at epoch seconds or ISO-8601 timestamp")
+    add.add_argument("--priority", default="0", metavar="N",
+                     help="claim priority, signed 32-bit integer; higher runs first")
+    add.add_argument("--queue", default="default", metavar="NAME",
+                     help="lane name, default 'default'")
     add.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, metavar="SECONDS")
     add.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES, metavar="N")
     add.add_argument("argv", nargs=argparse.REMAINDER, metavar="[--] ARGV...")
@@ -403,6 +412,11 @@ def _normalize_key(raw: str | None) -> str | None:
 
 
 TAG_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+QUEUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+DECIMAL_RE = re.compile(r"^(?:\d+(?:\.\d*)?|\.\d+)$")
+SIGNED_DECIMAL_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
+PRIORITY_MIN = -2_147_483_648
+PRIORITY_MAX = 2_147_483_647
 
 
 def _parse_tag_key(raw: str, *, flag: str) -> str:
@@ -465,6 +479,98 @@ def _parse_list_tags(raw_tags: list[str]) -> list[tuple[str, str | None]]:
     return predicates
 
 
+def _finite_decimal(raw: str, *, signed: bool, flag: str) -> float:
+    pattern = SIGNED_DECIMAL_RE if signed else DECIMAL_RE
+    if not pattern.fullmatch(raw):
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} expects a finite decimal number (got {raw!r})",
+            f"try: {flag} 30s   or: {flag} 1700000000",
+        )
+    value = float(raw)
+    if not math.isfinite(value):
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} must be finite (got {raw!r})",
+            f"try: {flag} 30s   or: {flag} 1700000000",
+        )
+    return value
+
+
+def _parse_after(raw: str) -> float:
+    unit = raw[-1:] if raw else ""
+    multipliers = {"s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
+    if unit.isalpha():
+        if unit not in multipliers:
+            raise CliError(
+                "INVALID_INPUT",
+                f"bad --after duration: {raw!r}",
+                "duration grammar is <number>[s|m|h|d], lowercase units only, or bare seconds",
+            )
+        number = raw[:-1]
+        multiplier = multipliers[unit]
+    else:
+        number = raw
+        multiplier = 1.0
+    seconds = _finite_decimal(number, signed=False, flag="--after") * multiplier
+    if not math.isfinite(seconds):
+        raise CliError(
+            "INVALID_INPUT",
+            f"--after duration overflows: {raw!r}",
+            "use a shorter duration",
+        )
+    return seconds
+
+
+def _parse_at(raw: str) -> float:
+    if SIGNED_DECIMAL_RE.fullmatch(raw):
+        return _finite_decimal(raw, signed=True, flag="--at")
+    text = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        raise CliError(
+            "INVALID_INPUT",
+            f"bad --at timestamp: {raw!r}",
+            "use epoch seconds or ISO-8601, e.g. 2026-07-16T09:00:00-04:00",
+        ) from None
+    return dt.timestamp()
+
+
+def _parse_priority(raw: str, *, flag: str = "--priority") -> int:
+    try:
+        value = int(raw, 10)
+    except ValueError:
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} must be an integer (got {raw!r})",
+            f"try: {flag} 0",
+        ) from None
+    if value < PRIORITY_MIN or value > PRIORITY_MAX:
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} must be in [{PRIORITY_MIN}, {PRIORITY_MAX}] (got {value})",
+            f"try: {flag} 0",
+        )
+    return value
+
+
+def _parse_queue(raw: str, *, flag: str = "--queue") -> str:
+    if raw.strip() != raw:
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} must not have leading or trailing whitespace",
+            "queue names must match ^[A-Za-z0-9][A-Za-z0-9._-]*$",
+        )
+    if not (1 <= len(raw) <= 64) or not QUEUE_RE.fullmatch(raw):
+        raise CliError(
+            "INVALID_INPUT",
+            f"bad {flag} name: {raw!r}",
+            "queue names must be 1-64 chars and match ^[A-Za-z0-9][A-Za-z0-9._-]*$",
+        )
+    return raw
+
+
 def _tags_match(tags: dict[str, str], predicates: list[tuple[str, str | None]]) -> bool:
     for key, value in predicates:
         if key not in tags:
@@ -507,6 +613,14 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
             f"--max-retries must be >= 0 (got {args.max_retries})",
             "try: spoolctl add --max-retries 3 -- <cmd>",
         )
+    if args.after is not None and args.at is not None:
+        raise CliError(
+            "INVALID_INPUT",
+            "--after and --at are mutually exclusive",
+            "try: spoolctl add --after 30s -- <cmd>   or: spoolctl add --at 2026-07-16T09:00:00-04:00 -- <cmd>",
+        )
+    priority = _parse_priority(args.priority)
+    queue = _parse_queue(args.queue)
     key = _normalize_key(args.key)
     tags = _parse_add_tags(args.tag)
     if args.note is not None and len(args.note) > 10000:
@@ -516,11 +630,19 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
             "use a shorter note",
         )
 
+    now = time.time()
+    next_run_at = None
+    if args.after is not None:
+        next_run_at = now + _parse_after(args.after)
+    elif args.at is not None:
+        next_run_at = max(_parse_at(args.at), now)
+
     conn = _open_db(args)
     try:
         job_id, state, deduplicated = store.add_job_checked(
-            conn, job_argv, args.timeout, args.max_retries, time.time(), key,
-            tags, args.note)
+            conn, job_argv, args.timeout, args.max_retries, now, key,
+            tags, args.note, priority=priority, queue=queue, next_run_at=next_run_at)
+        job = store.get_job(conn, job_id)
     finally:
         conn.close()
     if deduplicated:
@@ -528,7 +650,14 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
     else:
         human = f"Added job {job_id}"
     return VerbResult(
-        data={"deduplicated": deduplicated, "job_id": job_id, "state": state},
+        data={
+            "deduplicated": deduplicated,
+            "job_id": job_id,
+            "next_run_at": job.next_run_at,
+            "priority": job.priority,
+            "queue": job.queue,
+            "state": state,
+        },
         human=human,
     )
 
@@ -1314,7 +1443,8 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
 VERB_SUMMARIES = {
     "add": {
         "summary": "enqueue a command; --key deduplicates active queued/running jobs",
-        "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool}",
+        "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool,"
+                       " next_run_at: float, priority: int, queue: str}",
     },
     "work": {
         "summary": "run jobs until stopped; --once runs at most one;"

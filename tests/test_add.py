@@ -115,6 +115,8 @@ class TestRowAndOutput(AddTestCase):
         self.assertEqual(row["max_retries"], 3)
         self.assertEqual(row["timeout_seconds"], 300)
         self.assertEqual(row["next_run_at"], row["created_at"])
+        self.assertEqual(row["priority"], 0)
+        self.assertEqual(row["queue"], "default")
         conn = store.connect(self.db)
         events = [r["event"] for r in conn.execute(
             "SELECT event FROM job_events WHERE job_id=?", (job_id,))]
@@ -136,9 +138,14 @@ class TestRowAndOutput(AddTestCase):
         code, out, _ = run_cli("add", "--db", self.db, "--json", "--", "true")
         env = json.loads(out)
         self.assertTrue(env["ok"])
-        self.assertEqual(set(env["data"]), {"deduplicated", "job_id", "state"})
+        self.assertEqual(
+            set(env["data"]),
+            {"deduplicated", "job_id", "next_run_at", "priority", "queue", "state"},
+        )
         self.assertEqual(env["data"]["state"], "queued")
         self.assertIs(env["data"]["deduplicated"], False)
+        self.assertEqual(env["data"]["priority"], 0)
+        self.assertEqual(env["data"]["queue"], "default")
 
     def test_env_var_db_path(self):
         envdb = os.path.join(self.tmp.name, "env.db")
@@ -161,13 +168,17 @@ class TestIdempotencyKey(AddTestCase):
                                "--key", "run-1", "--", "true")
         self.assertEqual(code, 0)
         first = json.loads(out)["data"]
-        self.assertEqual(first, {"deduplicated": False, "job_id": 1, "state": "queued"})
+        self.assertEqual(first["deduplicated"], False)
+        self.assertEqual((first["job_id"], first["state"], first["priority"], first["queue"]),
+                         (1, "queued", 0, "default"))
 
         code, out, _ = run_cli("add", "--db", self.db, "--json",
                                "--key", "run-1", "--", "false")
         self.assertEqual(code, 0)
         second = json.loads(out)["data"]
-        self.assertEqual(second, {"deduplicated": True, "job_id": 1, "state": "queued"})
+        self.assertEqual(second["deduplicated"], True)
+        self.assertEqual((second["job_id"], second["state"], second["priority"], second["queue"]),
+                         (1, "queued", 0, "default"))
 
         conn = store.connect(self.db)
         self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 1)
@@ -184,7 +195,14 @@ class TestIdempotencyKey(AddTestCase):
                                "--key", "run-1", "--", "false")
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["data"],
-                         {"deduplicated": True, "job_id": 1, "state": "running"})
+                         {
+                             "deduplicated": True,
+                             "job_id": 1,
+                             "next_run_at": self.job_row(1)["next_run_at"],
+                             "priority": 0,
+                             "queue": "default",
+                             "state": "running",
+                         })
 
     def test_terminal_key_reuse_inserts_fresh_job(self):
         run_cli("add", "--db", self.db, "--json", "--max-retries", "0",
@@ -194,7 +212,14 @@ class TestIdempotencyKey(AddTestCase):
                                "--key", "run-1", "--", "true")
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["data"],
-                         {"deduplicated": False, "job_id": 2, "state": "queued"})
+                         {
+                             "deduplicated": False,
+                             "job_id": 2,
+                             "next_run_at": self.job_row(2)["next_run_at"],
+                             "priority": 0,
+                             "queue": "default",
+                             "state": "queued",
+                         })
 
     def test_retry_does_not_consult_active_key(self):
         run_cli("add", "--db", self.db, "--json", "--max-retries", "0",
@@ -211,6 +236,117 @@ class TestIdempotencyKey(AddTestCase):
         ).fetchall()
         conn.close()
         self.assertEqual([r["id"] for r in rows], [1, 2])
+
+
+class TestSchedulingFlags(AddTestCase):
+    def test_after_seconds_sets_future_next_run_at(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--after", "2s", "--", "true")
+        self.assertEqual(code, 0)
+        data = json.loads(out)["data"]
+        row = self.job_row(data["job_id"])
+        self.assertAlmostEqual(row["next_run_at"] - row["created_at"], 2.0, delta=0.25)
+        self.assertEqual(data["next_run_at"], row["next_run_at"])
+
+    def test_after_fractional_minutes(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--after", "0.5m", "--", "true")
+        self.assertEqual(code, 0)
+        row = self.job_row(json.loads(out)["data"]["job_id"])
+        self.assertAlmostEqual(row["next_run_at"] - row["created_at"], 30.0, delta=0.25)
+
+    def test_at_past_clamps_to_created_at(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--at", "1", "--", "true")
+        self.assertEqual(code, 0)
+        row = self.job_row(json.loads(out)["data"]["job_id"])
+        self.assertEqual(row["next_run_at"], row["created_at"])
+
+    def test_at_future_epoch(self):
+        future = time.time() + 3600
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--at", str(future), "--", "true")
+        self.assertEqual(code, 0)
+        row = self.job_row(json.loads(out)["data"]["job_id"])
+        self.assertAlmostEqual(row["next_run_at"], future, delta=0.25)
+
+    def test_priority_and_queue_stored(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--priority", "7", "--queue", "gpu.1", "--", "true")
+        self.assertEqual(code, 0)
+        data = json.loads(out)["data"]
+        row = self.job_row(data["job_id"])
+        self.assertEqual((row["priority"], row["queue"]), (7, "gpu.1"))
+        self.assertEqual((data["priority"], data["queue"]), (7, "gpu.1"))
+
+    def test_after_and_at_are_mutually_exclusive(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--after", "1s", "--at", "1", "--", "true")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_bad_after_values_rejected_before_db(self):
+        cases = ["-1", "1H", "nan", "inf", "1e9999", "abc"]
+        for i, raw in enumerate(cases):
+            with self.subTest(raw=raw):
+                db = os.path.join(self.tmp.name, f"bad-after-{i}.db")
+                code, out, _ = run_cli("add", "--db", db, "--json",
+                                       "--after", raw, "--", "true")
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+                self.assertFalse(os.path.exists(db))
+
+    def test_bad_at_values_rejected_before_db(self):
+        cases = ["not-a-time", "nan", "inf", "1e9999"]
+        for i, raw in enumerate(cases):
+            with self.subTest(raw=raw):
+                db = os.path.join(self.tmp.name, f"bad-at-{i}.db")
+                code, out, _ = run_cli("add", "--db", db, "--json",
+                                       "--at", raw, "--", "true")
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+                self.assertFalse(os.path.exists(db))
+
+    def test_bad_queue_values_rejected_before_db(self):
+        cases = ["", " bad", "bad ", "bad name", "-bad", "x" * 65]
+        for i, raw in enumerate(cases):
+            with self.subTest(raw=repr(raw)):
+                db = os.path.join(self.tmp.name, f"bad-queue-{i}.db")
+                code, out, _ = run_cli("add", "--db", db, "--json",
+                                       "--queue", raw, "--", "true")
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+                self.assertFalse(os.path.exists(db))
+
+    def test_bad_priority_values_rejected_before_db(self):
+        cases = ["x", str(2_147_483_648), str(-2_147_483_649)]
+        for i, raw in enumerate(cases):
+            with self.subTest(raw=raw):
+                db = os.path.join(self.tmp.name, f"bad-priority-{i}.db")
+                code, out, _ = run_cli("add", "--db", db, "--json",
+                                       "--priority", raw, "--", "true")
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+                self.assertFalse(os.path.exists(db))
+
+    def test_dedupe_returns_existing_scheduling_fields(self):
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "run-1", "--after", "10s",
+                               "--priority", "5", "--queue", "gpu", "--", "true")
+        self.assertEqual(code, 0)
+        first = json.loads(out)["data"]
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "run-1", "--after", "1s",
+                               "--priority", "1", "--queue", "cpu", "--", "false")
+        self.assertEqual(code, 0)
+        second = json.loads(out)["data"]
+        self.assertTrue(second["deduplicated"])
+        self.assertEqual(second["job_id"], first["job_id"])
+        self.assertEqual(second["next_run_at"], first["next_run_at"])
+        self.assertEqual(second["priority"], 5)
+        self.assertEqual(second["queue"], "gpu")
+        row = self.job_row(first["job_id"])
+        self.assertEqual((row["priority"], row["queue"]), (5, "gpu"))
 
     def test_key_is_stripped_before_store_and_lookup(self):
         run_cli("add", "--db", self.db, "--json", "--key", "  K  ", "--", "true")
