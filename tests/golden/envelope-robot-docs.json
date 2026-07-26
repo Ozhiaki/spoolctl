@@ -1,0 +1,55 @@
+{
+  "commands": [],
+  "data": {
+    "approx_tokens": 195,
+    "sections": [
+      {
+        "bullets": [
+          "spoolctl capabilities --json",
+          "spoolctl schema --json",
+          "spoolctl brief --json"
+        ],
+        "title": "Discover the contract"
+      },
+      {
+        "bullets": [
+          "spoolctl add --json --key run-1 --tag owner=agent -- true",
+          "spoolctl work --json --once",
+          "spoolctl wait --json 1",
+          "spoolctl output --json 1 --stream stdout"
+        ],
+        "title": "Submit and observe work"
+      },
+      {
+        "bullets": [
+          "Reuse --key only with the same execution payload.",
+          "Use prune --dry-run before prune --yes.",
+          "Use cancel --running --yes only when process interruption is intended.",
+          "Use retry --force only for a running-job recovery override."
+        ],
+        "title": "Handle conflicts and safety"
+      },
+      {
+        "bullets": [
+          "spoolctl events --json --limit 100",
+          "spoolctl events --follow --json --since-id 0 --max-events 1",
+          "spoolctl events --follow --json --idle-timeout 0.1",
+          "spoolctl list --json --limit 50"
+        ],
+        "title": "Stream and page safely"
+      }
+    ],
+    "text": "spoolctl robot-docs guide\n\nDiscover the contract\n- spoolctl capabilities --json\n- spoolctl schema --json\n- spoolctl brief --json\n\nSubmit and observe work\n- spoolctl add --json --key run-1 --tag owner=agent -- true\n- spoolctl work --json --once\n- spoolctl wait --json 1\n- spoolctl output --json 1 --stream stdout\n\nHandle conflicts and safety\n- Reuse --key only with the same execution payload.\n- Use prune --dry-run before prune --yes.\n- Use cancel --running --yes only when process interruption is intended.\n- Use retry --force only for a running-job recovery override.\n\nStream and page safely\n- spoolctl events --json --limit 100\n- spoolctl events --follow --json --since-id 0 --max-events 1\n- spoolctl events --follow --json --idle-timeout 0.1\n- spoolctl list --json --limit 50"
+  },
+  "errors": [],
+  "meta": {
+    "contract_version": "1",
+    "data_hash": "sha256:PINNED",
+    "elapsed_ms": 0,
+    "request_id": "req_PINNED",
+    "ts_iso": "PINNED"
+  },
+  "ok": true,
+  "tool_version": "0.4.2",
+  "warnings": []
+}

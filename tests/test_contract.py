@@ -149,6 +149,11 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assertEqual(code, 0)
         self.assert_golden("brief", out)
 
+    def test_robot_docs(self):
+        code, out, _ = run_cli("robot-docs", "guide", "--json")
+        self.assertEqual(code, 0)
+        self.assert_golden("robot-docs", out)
+
     def test_schema(self):
         code, out, _ = run_cli("schema", "--json")
         self.assertEqual(code, 0)

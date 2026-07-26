@@ -322,6 +322,7 @@
     "did_you_mean",
     "event_ledger",
     "raw_output",
+    "robot_docs",
     "idempotency_keys",
     "destructive_gates",
     "probeable_surface"
@@ -604,7 +605,7 @@
       "valid": "1700000000"
     }
   },
-  "robot_docs_uri": null,
+  "robot_docs_uri": "spoolctl robot-docs guide",
   "scheduling": {
     "at_timestamp": "epoch seconds or ISO-8601; naive ISO timestamps use the local process timezone",
     "drain": {
@@ -3151,7 +3152,7 @@
     "events": {
       "args": [],
       "data_schema": "{count: int, events: [{id, job_id, at, event, worker_id, detail}]}; meta.pagination:{cursor, first_id}; --wait also adds meta.wait:{reason, waited_ms}",
-      "description": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames",
+      "description": "read the durable event ledger; verify job ids with spoolctl show; --follow --json emits NDJSON data frames plus end/error control frames",
       "destructive": false,
       "examples": [
         [
@@ -3708,7 +3709,7 @@
       "schema_ref": "spoolctl schema --json --verb events",
       "since_cursor_alias": "--since-cursor",
       "stdin": "none",
-      "summary": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames",
+      "summary": "read the durable event ledger; verify job ids with spoolctl show; --follow --json emits NDJSON data frames plus end/error control frames",
       "text": {
         "contract": "human-readable stdout on success; diagnostics on stderr for errors",
         "mode": "text"
@@ -4942,6 +4943,177 @@
         "mode": "text"
       }
     },
+    "robot-docs": {
+      "args": [
+        {
+          "choices": [
+            "guide"
+          ],
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "name": "robot_docs_command",
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "enum",
+          "unbounded": false
+        }
+      ],
+      "data_schema": "{text: str, approx_tokens: int, sections: [{title, bullets}]}",
+      "description": "agent workflow guide; currently supports the guide subcommand",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "robot-docs",
+          "guide",
+          "--json"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "flags": [
+        {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
+          "default": false,
+          "flag": "--json",
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
+        }
+      ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb robot-docs"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "approx_tokens": {
+            "type": "integer"
+          },
+          "sections": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "bullets": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "title": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "bullets",
+                "title"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approx_tokens",
+          "sections",
+          "text"
+        ],
+        "type": "object"
+      },
+      "positionals": [
+        {
+          "choices": [
+            "guide"
+          ],
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "name": "robot_docs_command",
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "enum",
+          "unbounded": false
+        }
+      ],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb robot-docs",
+      "stdin": "none",
+      "summary": "agent workflow guide; currently supports the guide subcommand",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
+    },
     "schema": {
       "args": [],
       "data_schema": "{dialect: str, envelope_schema: object, verbs: {<name>: schema}, streams: {events_follow: schema}}",
@@ -4995,6 +5167,7 @@
             "output",
             "prune",
             "retry",
+            "robot-docs",
             "schema",
             "show",
             "status",

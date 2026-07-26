@@ -138,6 +138,8 @@ def base(verb: str, caps: dict, db: str, *, json_mode: bool = True) -> list[str]
 def valid_positionals(verb: str) -> list[str]:
     if verb == "add":
         return ["--", "true"]
+    if verb == "robot-docs":
+        return ["guide"]
     if verb == "wait":
         return ["1"]
     if verb in {"cancel", "output", "retry", "show"}:
@@ -182,6 +184,8 @@ def setup_for_success(verb: str, mode: str, db: str) -> list[list[str]]:
 
 def success_argv(verb: str, mode: str, caps: dict, db: str) -> list[str]:
     json_mode = mode == "envelope"
+    if verb == "robot-docs":
+        return ["robot-docs", "guide", "--json"] if json_mode else ["robot-docs", "guide"]
     argv = base(verb, caps, db, json_mode=json_mode)
     if verb == "add":
         return argv + ["--", "true"]

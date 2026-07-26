@@ -53,6 +53,7 @@ HELP_EPILOG = """\
 AGENT/AUTOMATION:
   Run `spoolctl capabilities --json` for the full machine-readable contract:
   verbs, flags, data schemas, exit codes, error codes.
+  Run `spoolctl robot-docs guide --json` for workflow guidance.
 """
 
 
@@ -216,7 +217,7 @@ def make_envelope(
 # --- parser -------------------------------------------------------------
 
 VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
-         "output", "events", "brief", "schema", "capabilities")
+         "output", "events", "brief", "schema", "capabilities", "robot-docs")
 SQLITE_INT64_MIN = -(2 ** 63)
 SQLITE_INT64_MAX = 2 ** 63 - 1
 MAX_DURATION_SECONDS = 31_536_000_000.0  # 1000 365-day years
@@ -386,13 +387,19 @@ def build_parser() -> _Parser:
 
     caps = sub.add_parser("capabilities", parents=[common_nodb], help="machine-readable contract",
                           allow_abbrev=False)
+    robot = sub.add_parser("robot-docs", parents=[common_nodb], help="agent workflow guide",
+                           allow_abbrev=False)
+    robot_sub = robot.add_subparsers(dest="robot_docs_command", metavar="COMMAND",
+                                     parser_class=_Parser, required=True)
+    guide = robot_sub.add_parser("guide", parents=[common_nodb],
+                                 help="agent workflow handbook", allow_abbrev=False)
 
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
          "show": show, "retry": retry, "cancel": cancel, "prune": prune,
          "output": output, "events": events, "brief": brief, "schema": schema,
-         "capabilities": caps}
+         "capabilities": caps, "robot-docs": robot}
     )
     return parser
 
@@ -2027,7 +2034,7 @@ VERB_SUMMARIES = {
     },
     "events": {
         "summary": "read the durable event ledger; verify job ids with spoolctl show;"
-                   " --follow --json is raw bare-record NDJSON with no control frames",
+                   " --follow --json emits NDJSON data frames plus end/error control frames",
         "data_schema": "{count: int, events: [{id, job_id, at, event, worker_id,"
                        " detail}]}; meta.pagination:{cursor, first_id};"
                        " --wait also adds meta.wait:{reason, waited_ms}",
@@ -2046,6 +2053,10 @@ VERB_SUMMARIES = {
         "data_schema": "{attempt_states, contract_policy, contract_version, env,"
                        " error_codes, events, exit_codes, failure_reasons, job_states,"
                        " scheduling, verbs}",
+    },
+    "robot-docs": {
+        "summary": "agent workflow guide; currently supports the guide subcommand",
+        "data_schema": "{text: str, approx_tokens: int, sections: [{title, bullets}]}",
     },
 }
 
@@ -2085,6 +2096,7 @@ FEATURES = [
     "did_you_mean",
     "event_ledger",
     "raw_output",
+    "robot_docs",
     "idempotency_keys",
     "destructive_gates",
     "probeable_surface",
@@ -2429,6 +2441,13 @@ VERB_FLAG_CONTRACTS = {
 POSITIONAL_CONTRACTS = {
     "id": {"type": "integer", **LIMITS["id"]},
     "ids": {"type": "integer", **LIMITS["id"]},
+    "robot_docs_command": {
+        "type": "enum",
+        "choices": ["guide"],
+        "required": True,
+        "nargs": "1",
+        "unbounded": False,
+    },
     "argv": {
         "type": "string",
         "required": True,
@@ -2444,6 +2463,7 @@ VERB_TRAITS = {
     "brief": {"mutates": False, "destructive": False, "idempotent": True},
     "cancel": {"mutates": True, "destructive": "only with --running", "idempotent": False},
     "capabilities": {"mutates": False, "destructive": False, "idempotent": True},
+    "robot-docs": {"mutates": False, "destructive": False, "idempotent": True},
     "events": {"mutates": False, "destructive": False, "idempotent": True},
     "list": {"mutates": False, "destructive": False, "idempotent": True},
     "output": {"mutates": False, "destructive": False, "idempotent": True},
@@ -2478,6 +2498,7 @@ VERB_EXAMPLES = {
     "brief": [["spoolctl", "brief", "--json"]],
     "cancel": [["spoolctl", "cancel", "--json", "1"]],
     "capabilities": [["spoolctl", "capabilities", "--json"]],
+    "robot-docs": [["spoolctl", "robot-docs", "guide", "--json"]],
     "events": [["spoolctl", "events", "--json", "--limit", "10"]],
     "list": [["spoolctl", "list", "--json", "--limit", "10"]],
     "output": [["spoolctl", "output", "--json", "1", "--stream", "stdout"]],
@@ -2891,6 +2912,74 @@ EXECUTION_CAPABILITIES = {
 }
 
 
+ROBOT_DOC_SECTIONS = [
+    {
+        "title": "Discover the contract",
+        "bullets": [
+            "spoolctl capabilities --json",
+            "spoolctl schema --json",
+            "spoolctl brief --json",
+        ],
+    },
+    {
+        "title": "Submit and observe work",
+        "bullets": [
+            "spoolctl add --json --key run-1 --tag owner=agent -- true",
+            "spoolctl work --json --once",
+            "spoolctl wait --json 1",
+            "spoolctl output --json 1 --stream stdout",
+        ],
+    },
+    {
+        "title": "Handle conflicts and safety",
+        "bullets": [
+            "Reuse --key only with the same execution payload.",
+            "Use prune --dry-run before prune --yes.",
+            "Use cancel --running --yes only when process interruption is intended.",
+            "Use retry --force only for a running-job recovery override.",
+        ],
+    },
+    {
+        "title": "Stream and page safely",
+        "bullets": [
+            "spoolctl events --json --limit 100",
+            "spoolctl events --follow --json --since-id 0 --max-events 1",
+            "spoolctl events --follow --json --idle-timeout 0.1",
+            "spoolctl list --json --limit 50",
+        ],
+    },
+]
+
+
+def _robot_docs_text() -> tuple[str, int]:
+    lines = ["spoolctl robot-docs guide"]
+    for section in ROBOT_DOC_SECTIONS:
+        lines.append("")
+        lines.append(section["title"])
+        for bullet in section["bullets"]:
+            lines.append(f"- {bullet}")
+    text = "\n".join(lines)
+    return text, schemas.approx_tokens(text)
+
+
+def cmd_robot_docs(args: argparse.Namespace) -> VerbResult:
+    if args.robot_docs_command != "guide":
+        raise CliError(
+            "MISSING_REQUIRED",
+            "missing robot-docs subcommand",
+            "run: spoolctl robot-docs guide --json",
+        )
+    text, tokens = _robot_docs_text()
+    return VerbResult(
+        data={
+            "approx_tokens": tokens,
+            "sections": ROBOT_DOC_SECTIONS,
+            "text": text,
+        },
+        human=text,
+    )
+
+
 def cmd_brief(args: argparse.Namespace) -> VerbResult:
     text, tokens = schemas.build_brief(VERB_SUMMARIES, EXIT_CODES, JOB_STATES, ENV_DOCS)
     return VerbResult(
@@ -2964,7 +3053,7 @@ def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
         "limits": LIMITS,
         "output_modes": OUTPUT_MODES,
         "probe_vocabularies": PROBE_VOCABULARIES,
-        "robot_docs_uri": None,
+        "robot_docs_uri": "spoolctl robot-docs guide",
         "scheduling": SCHEDULING_CAPABILITIES,
         "schemas_uri": "spoolctl schema --json",
         "tool_name": "spoolctl",
@@ -2989,6 +3078,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "output": cmd_output,
     "prune": cmd_prune,
     "retry": cmd_retry,
+    "robot-docs": cmd_robot_docs,
     "schema": cmd_schema,
     "show": cmd_show,
     "status": cmd_status,

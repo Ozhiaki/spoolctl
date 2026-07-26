@@ -46,6 +46,7 @@ class TestEntryPoints(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("spoolctl", proc.stdout)
         self.assertIn("capabilities", proc.stdout)
+        self.assertIn("robot-docs", proc.stdout)
 
     def test_help_stays_terse(self):
         proc = subprocess.run(

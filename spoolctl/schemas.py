@@ -463,6 +463,14 @@ VERB_SCHEMAS = {
         "budget_tokens": {"type": "integer", "const": BRIEF_BUDGET_TOKENS},
         "text": {"type": "string"},
     }),
+    "robot-docs": obj({
+        "approx_tokens": {"type": "integer"},
+        "sections": array_of(obj({
+            "bullets": array_of({"type": "string"}),
+            "title": {"type": "string"},
+        })),
+        "text": {"type": "string"},
+    }),
     "schema": obj({
         "dialect": {"type": "string", "const": DIALECT},
         "envelope_schema": {},
@@ -563,13 +571,19 @@ def build_brief(
         " retry backoff.",
         "events reads the durable job_events ledger: one-shot and --wait"
         " return envelopes with meta.pagination.cursor; --follow --json emits"
-        " raw NDJSON event records only, no control frames.",
+        " NDJSON data frames plus end/error control frames.",
         "schema --json exports the envelope, verb data, and raw stream JSON"
-        " Schemas. capabilities --json describes flags, modes, states, events,"
-        " process env, execution, and exit codes.",
+        " Schemas. capabilities --json describes contract v2 surfaces: flags,"
+        " modes, states, events, process env, execution, safety gates,"
+        " idempotency mismatches, exit codes, and robot_docs_uri.",
+        "robot-docs guide is the longer paste-ready agent workflow handbook;"
+        " use --json for structured sections and token estimate.",
         f"Exit codes: {exit_bits}.",
         "Use retry for dead/failed jobs, cancel for queued/running withdrawal,"
-        " prune for old terminal jobs, status for counts/recent dead jobs.",
+        " prune for old terminal jobs, status for counts/recent dead jobs."
+        " Destructive forms require confirmations: prune uses --yes or"
+        " --dry-run, cancel --running needs --yes, retry --force is the"
+        " running-job recovery override.",
     ]
     prefix = "\n".join(lines)
     tokens = approx_tokens(prefix)

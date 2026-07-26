@@ -2170,6 +2170,45 @@
       ],
       "type": "object"
     },
+    "robot-docs": {
+      "additionalProperties": false,
+      "properties": {
+        "approx_tokens": {
+          "type": "integer"
+        },
+        "sections": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "bullets": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "bullets",
+              "title"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "approx_tokens",
+        "sections",
+        "text"
+      ],
+      "type": "object"
+    },
     "schema": {
       "additionalProperties": false,
       "properties": {
