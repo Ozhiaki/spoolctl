@@ -247,7 +247,7 @@ class TestExecutionFlags(AddTestCase):
 
 
 class TestIdempotencyKey(AddTestCase):
-    def test_key_fresh_insert_then_active_dedup(self):
+    def test_key_fresh_insert_then_same_execution_payload_dedup(self):
         code, out, _ = run_cli("add", "--db", self.db, "--json",
                                "--key", "run-1", "--", "true")
         self.assertEqual(code, 0)
@@ -257,12 +257,20 @@ class TestIdempotencyKey(AddTestCase):
                          (1, "queued", 0, "default"))
 
         code, out, _ = run_cli("add", "--db", self.db, "--json",
-                               "--key", "run-1", "--", "false")
+                               "--key", "run-1", "--", "true")
         self.assertEqual(code, 0)
-        second = json.loads(out)["data"]
+        envelope = json.loads(out)
+        second = envelope["data"]
         self.assertEqual(second["deduplicated"], True)
         self.assertEqual((second["job_id"], second["state"], second["priority"], second["queue"]),
                          (1, "queued", 0, "default"))
+        self.assertEqual(envelope["warnings"], [])
+        self.assertEqual(second["idempotency"],
+                         {
+                             "key": "run-1",
+                             "metadata_differs": False,
+                             "metadata_differences": {},
+                         })
 
         conn = store.connect(self.db)
         self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 1)
@@ -276,13 +284,18 @@ class TestIdempotencyKey(AddTestCase):
         store.claim_next(conn, "w", 1, time.time() + 1, store.output_root(self.db))
         conn.close()
         code, out, _ = run_cli("add", "--db", self.db, "--json",
-                               "--key", "run-1", "--", "false")
+                               "--key", "run-1", "--", "sleep", "5")
         self.assertEqual(code, 0)
         self.assertEqual(json.loads(out)["data"],
                          {
                              "deduplicated": True,
                              "cwd": None,
                              "env_keys": [],
+                             "idempotency": {
+                                 "key": "run-1",
+                                 "metadata_differs": False,
+                                 "metadata_differences": {},
+                             },
                              "job_id": 1,
                              "next_run_at": self.job_row(1)["next_run_at"],
                              "priority": 0,
@@ -300,8 +313,8 @@ class TestIdempotencyKey(AddTestCase):
         store.claim_next(conn, "w", 1, time.time() + 1, store.output_root(self.db))
         conn.close()
         code, out, _ = run_cli("add", "--db", self.db, "--json", "--key", "run-1",
-                               "--env", "TOKEN=other-secret",
-                               "--", "false")
+                               "--env", "TOKEN=secret", "--cwd", ".",
+                               "--", "sleep", "5")
         self.assertEqual(code, 0)
         self.assertNotIn("secret", out)
         second = json.loads(out)["data"]
@@ -309,6 +322,30 @@ class TestIdempotencyKey(AddTestCase):
         self.assertEqual(second["job_id"], first["job_id"])
         self.assertEqual(second["cwd"], first["cwd"])
         self.assertEqual(second["env_keys"], ["TOKEN"])
+
+    def test_active_key_different_execution_payload_conflicts(self):
+        run_cli("add", "--db", self.db, "--json", "--key", "run-1", "--", "true")
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "run-1", "--", "false")
+        self.assertEqual(code, 5)
+        envelope = json.loads(out)
+        self.assertFalse(envelope["ok"])
+        self.assertEqual(envelope["errors"][0]["code"], "IDEMPOTENCY_CONFLICT")
+        self.assertIn("argv", envelope["errors"][0]["message"])
+
+        conn = store.connect(self.db)
+        self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 1)
+        conn.close()
+
+    def test_active_key_execution_conflict_does_not_leak_env_values(self):
+        run_cli("add", "--db", self.db, "--json", "--key", "run-1",
+                "--env", "TOKEN=secret", "--", "true")
+        code, out, _ = run_cli("add", "--db", self.db, "--json",
+                               "--key", "run-1", "--env", "TOKEN=other-secret",
+                               "--", "true")
+        self.assertEqual(code, 5)
+        self.assertIn("env", json.loads(out)["errors"][0]["message"])
+        self.assertNotIn("secret", out)
 
     def test_terminal_key_reuse_inserts_fresh_job(self):
         run_cli("add", "--db", self.db, "--json", "--max-retries", "0",
@@ -440,26 +477,46 @@ class TestSchedulingFlags(AddTestCase):
     def test_dedupe_returns_existing_scheduling_fields(self):
         code, out, _ = run_cli("add", "--db", self.db, "--json",
                                "--key", "run-1", "--after", "10s",
-                               "--priority", "5", "--queue", "gpu", "--", "true")
+                               "--priority", "5", "--queue", "gpu",
+                               "--tag", "owner=a", "--note", "first",
+                               "--", "true")
         self.assertEqual(code, 0)
         first = json.loads(out)["data"]
         code, out, _ = run_cli("add", "--db", self.db, "--json",
                                "--key", "run-1", "--after", "1s",
-                               "--priority", "1", "--queue", "cpu", "--", "false")
+                               "--priority", "5", "--queue", "gpu",
+                               "--tag", "owner=b", "--note", "second",
+                               "--", "true")
         self.assertEqual(code, 0)
-        second = json.loads(out)["data"]
+        envelope = json.loads(out)
+        second = envelope["data"]
         self.assertTrue(second["deduplicated"])
         self.assertEqual(second["job_id"], first["job_id"])
         self.assertEqual(second["next_run_at"], first["next_run_at"])
         self.assertEqual(second["priority"], 5)
         self.assertEqual(second["queue"], "gpu")
+        self.assertEqual(envelope["warnings"][0]["code"],
+                         "IDEMPOTENCY_METADATA_DIFFERS")
+        idempotency = second["idempotency"]
+        self.assertEqual(idempotency["key"], "run-1")
+        self.assertTrue(idempotency["metadata_differs"])
+        self.assertEqual(sorted(idempotency["metadata_differences"]),
+                         ["next_run_at", "note", "tags"])
+        self.assertEqual(idempotency["metadata_differences"]["tags"]["existing"],
+                         {"owner": "a"})
+        self.assertEqual(idempotency["metadata_differences"]["tags"]["submitted"],
+                         {"owner": "b"})
+        self.assertEqual(idempotency["metadata_differences"]["note"]["existing"],
+                         "first")
+        self.assertEqual(idempotency["metadata_differences"]["note"]["submitted"],
+                         "second")
         row = self.job_row(first["job_id"])
         self.assertEqual((row["priority"], row["queue"]), (5, "gpu"))
 
     def test_key_is_stripped_before_store_and_lookup(self):
         run_cli("add", "--db", self.db, "--json", "--key", "  K  ", "--", "true")
         code, out, _ = run_cli("add", "--db", self.db, "--json",
-                               "--key", "K", "--", "false")
+                               "--key", "K", "--", "true")
         self.assertEqual(code, 0)
         self.assertTrue(json.loads(out)["data"]["deduplicated"])
         row = self.job_row(1)

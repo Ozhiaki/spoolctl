@@ -237,6 +237,38 @@
             },
             "type": "array"
           },
+          "idempotency": {
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "metadata_differences": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "existing": {},
+                    "submitted": {}
+                  },
+                  "required": [
+                    "existing",
+                    "submitted"
+                  ],
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              "metadata_differs": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "key",
+              "metadata_differences",
+              "metadata_differs"
+            ],
+            "type": "object"
+          },
           "job_id": {
             "type": "integer"
           },

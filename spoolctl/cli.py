@@ -837,10 +837,20 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
 
     conn = _open_db(args)
     try:
-        job_id, state, deduplicated = store.add_job_checked(
+        job_id, state, deduplicated, idempotency = store.add_job_checked(
             conn, job_argv, timeout, max_retries, now, key,
             tags, args.note, priority=priority, queue=queue, next_run_at=next_run_at,
             cwd=cwd, env=env, max_crashes=max_crashes)
+        if idempotency.get("execution_differences"):
+            fields = ", ".join(idempotency["execution_differences"])
+            raise CliError(
+                "IDEMPOTENCY_CONFLICT",
+                f"--key {key!r} is already active with a different execution payload"
+                f" ({fields})",
+                "reuse the key only with the same command, execution flags, queue,"
+                " cwd, and environment; choose a new --key for different work",
+                exit_code=EXIT_CONFLICT,
+            )
         job = store.get_job(conn, job_id)
     finally:
         conn.close()
@@ -848,18 +858,34 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
         human = f"Job {job_id} already active under key '{key}' ({state})"
     else:
         human = f"Added job {job_id}"
+    metadata_differences = idempotency.get("metadata_differences", {})
+    warnings = []
+    if metadata_differences:
+        fields = ", ".join(sorted(metadata_differences))
+        warnings.append({
+            "code": "IDEMPOTENCY_METADATA_DIFFERS",
+            "message": f"active idempotent add ignored differing metadata: {fields}",
+        })
+    data = {
+        "deduplicated": deduplicated,
+        "cwd": job.cwd,
+        "env_keys": sorted((job.env or {}).keys()),
+        "job_id": job_id,
+        "next_run_at": job.next_run_at,
+        "priority": job.priority,
+        "queue": job.queue,
+        "state": state,
+    }
+    if deduplicated:
+        data["idempotency"] = {
+            "key": key,
+            "metadata_differs": bool(metadata_differences),
+            "metadata_differences": metadata_differences,
+        }
     return VerbResult(
-        data={
-            "deduplicated": deduplicated,
-            "cwd": job.cwd,
-            "env_keys": sorted((job.env or {}).keys()),
-            "job_id": job_id,
-            "next_run_at": job.next_run_at,
-            "priority": job.priority,
-            "queue": job.queue,
-            "state": state,
-        },
+        data=data,
         human=human,
+        warnings=warnings,
     )
 
 
@@ -1740,7 +1766,8 @@ VERB_SUMMARIES = {
         "summary": "enqueue a command; --key deduplicates active queued/running jobs",
         "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool,"
                        " next_run_at: float, priority: int, queue: str,"
-                       " cwd: str|null, env_keys: [str]}",
+                       " cwd: str|null, env_keys: [str], idempotency?:"
+                       " {key, metadata_differs, metadata_differences}}",
     },
     "work": {
         "summary": "run jobs until stopped; --once runs at most one;"

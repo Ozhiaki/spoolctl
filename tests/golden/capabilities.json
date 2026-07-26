@@ -286,7 +286,7 @@
   },
   "verbs": {
     "add": {
-      "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool, next_run_at: float, priority: int, queue: str, cwd: str|null, env_keys: [str]}",
+      "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool, next_run_at: float, priority: int, queue: str, cwd: str|null, env_keys: [str], idempotency?: {key, metadata_differs, metadata_differences}}",
       "flags": [
         {
           "default": null,

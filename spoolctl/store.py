@@ -11,6 +11,7 @@ import json
 import os
 import sqlite3
 import time
+from typing import Any
 
 from spoolctl.models import (
     Attempt,
@@ -480,7 +481,7 @@ def add_job(
     env: dict[str, str] | None = None,
     max_crashes: int | None = None,
 ) -> int:
-    job_id, _, _ = add_job_checked(
+    job_id, _, _, _ = add_job_checked(
         conn, argv, timeout_seconds, max_retries, now,
         priority=priority, queue=queue, next_run_at=next_run_at,
         cwd=cwd, env=env, max_crashes=max_crashes,
@@ -506,6 +507,84 @@ def _validate_execution_payload(
             raise ValueError("max_crashes must be None or int >= 0")
 
 
+def _execution_payload(
+    argv: list[str],
+    timeout_seconds: int,
+    max_retries: int,
+    priority: int,
+    queue: str,
+    cwd: str | None,
+    env: dict[str, str] | None,
+    max_crashes: int | None,
+) -> dict[str, Any]:
+    return {
+        "argv": argv,
+        "timeout_seconds": timeout_seconds,
+        "max_retries": max_retries,
+        "priority": priority,
+        "queue": queue,
+        "cwd": cwd,
+        "env": env or {},
+        "max_crashes": max_crashes,
+    }
+
+
+def _execution_payload_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return _execution_payload(
+        json.loads(row["argv_json"]),
+        row["timeout_seconds"],
+        row["max_retries"],
+        row["priority"],
+        row["queue"],
+        row["cwd"],
+        json.loads(row["env_json"]),
+        row["max_crashes"],
+    )
+
+
+def _resolved_schedule_metadata(created_at: float, next_run_at: float) -> float | None:
+    if next_run_at == created_at:
+        return None
+    return next_run_at
+
+
+def _submitted_schedule_metadata(now: float, next_run_at: float | None) -> float | None:
+    if next_run_at is None or next_run_at == now:
+        return None
+    return next_run_at
+
+
+def _metadata_payload(
+    tags: dict[str, str] | None,
+    note: str | None,
+    schedule: float | None,
+) -> dict[str, Any]:
+    return {
+        "tags": tags or {},
+        "note": note,
+        "next_run_at": schedule,
+    }
+
+
+def _metadata_payload_from_row(row: sqlite3.Row) -> dict[str, Any]:
+    return _metadata_payload(
+        json.loads(row["tags_json"]),
+        row["note"],
+        _resolved_schedule_metadata(row["created_at"], row["next_run_at"]),
+    )
+
+
+def _payload_diff(existing: dict[str, Any], submitted: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    diff = {}
+    for key in sorted(set(existing) | set(submitted)):
+        if existing.get(key) != submitted.get(key):
+            diff[key] = {
+                "existing": existing.get(key),
+                "submitted": submitted.get(key),
+            }
+    return diff
+
+
 def add_job_checked(
     conn: sqlite3.Connection,
     argv: list[str],
@@ -521,19 +600,38 @@ def add_job_checked(
     cwd: str | None = None,
     env: dict[str, str] | None = None,
     max_crashes: int | None = None,
-) -> tuple[int, str, bool]:
+) -> tuple[int, str, bool, dict[str, Any]]:
     _validate_execution_payload(cwd, env, max_crashes)
+    submitted_execution = _execution_payload(
+        argv, timeout_seconds, max_retries, priority, queue, cwd, env, max_crashes
+    )
+    submitted_metadata = _metadata_payload(
+        tags, note, _submitted_schedule_metadata(now, next_run_at)
+    )
     conn.execute("BEGIN IMMEDIATE")
     try:
         if idempotency_key is not None:
             row = conn.execute(
-                "SELECT id, state FROM jobs WHERE idempotency_key=?"
+                "SELECT * FROM jobs WHERE idempotency_key=?"
                 " AND state IN ('queued','running') ORDER BY id ASC LIMIT 1",
                 (idempotency_key,),
             ).fetchone()
             if row is not None:
+                execution_diff = _payload_diff(
+                    _execution_payload_from_row(row), submitted_execution
+                )
+                if execution_diff:
+                    conn.execute("COMMIT")
+                    return row["id"], row["state"], False, {
+                        "execution_differences": sorted(execution_diff),
+                    }
+                metadata_diff = _payload_diff(
+                    _metadata_payload_from_row(row), submitted_metadata
+                )
                 conn.execute("COMMIT")
-                return row["id"], row["state"], True
+                return row["id"], row["state"], True, {
+                    "metadata_differences": metadata_diff,
+                }
         cur = conn.execute(
             "INSERT INTO jobs (argv_json, state, max_retries, timeout_seconds,"
             " created_at, next_run_at, priority, queue, idempotency_key,"
@@ -550,7 +648,7 @@ def add_job_checked(
     except BaseException:
         conn.execute("ROLLBACK")
         raise
-    return job_id, "queued", False
+    return job_id, "queued", False, {}
 
 
 def claim_next(

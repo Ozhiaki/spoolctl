@@ -168,17 +168,41 @@ STREAM_SCHEMA = obj({
     "size_bytes": {"type": "integer"},
 })
 
+DIFFERENCE_SCHEMA = obj({
+    "existing": {},
+    "submitted": {},
+})
+
+IDEMPOTENCY_RESULT_SCHEMA = obj({
+    "key": {"type": "string"},
+    "metadata_differs": {"type": "boolean"},
+    "metadata_differences": {
+        "type": "object",
+        "additionalProperties": DIFFERENCE_SCHEMA,
+    },
+})
+
 VERB_SCHEMAS = {
     "add": obj({
         "cwd": NULLABLE_STRING,
         "deduplicated": {"type": "boolean"},
         "env_keys": array_of({"type": "string"}),
+        "idempotency": IDEMPOTENCY_RESULT_SCHEMA,
         "job_id": {"type": "integer"},
         "next_run_at": {"type": "number"},
         "priority": {"type": "integer"},
         "queue": {"type": "string"},
         "state": {"type": "string", "enum": ["queued", "running"]},
-    }),
+    }, required=[
+        "cwd",
+        "deduplicated",
+        "env_keys",
+        "job_id",
+        "next_run_at",
+        "priority",
+        "queue",
+        "state",
+    ]),
     "work": {
         "oneOf": [
             obj({"claimed": {"type": "boolean", "const": False}}),
