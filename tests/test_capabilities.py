@@ -76,7 +76,9 @@ class TestParserParity(unittest.TestCase):
         self.assertIn("canceled", data["job_states"])
         self.assertIn("canceled", data["attempt_states"])
         self.assertIn("canceled", data["events"])
-        self.assertIn("additive", data["contract_policy"])
+        self.assertIn("contract_version 2", data["contract_policy"])
+        self.assertIn("pre-release hardening", data["contract_policy"])
+        self.assertIn("No contract_version 1 compatibility shim", data["contract_policy"])
         self.assertIn("contract_version", data["contract_policy"])
 
     def test_failure_reasons_registry_documented(self):

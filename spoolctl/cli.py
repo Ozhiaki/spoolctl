@@ -2112,7 +2112,7 @@ TOTALITY_CONTRACT = {
         "traceback_allowed": False,
     },
     "frames": {
-        "implemented": False,
+        "implemented": True,
         "failure_stdout": "valid NDJSON frames when a frames surface exists",
         "traceback_allowed": False,
     },
@@ -2779,9 +2779,9 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
         description["raw_legacy"] = {
             "delivery_class": "best-effort-tail over replayable-from-cursor ledger",
             "mode": "ndjson",
-            "record": "bare event records only; no control frames",
-            "stream": "events_follow",
-            "when": "--follow --json",
+            "record": "contract v1 bare event records; contract v2 uses frames with control frames",
+            "stream": "events_follow_data",
+            "when": "not available in contract_version 2",
         }
         description["since_cursor_alias"] = "--since-cursor"
     if name == "prune":
@@ -2828,10 +2828,12 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
 
 
 CONTRACT_POLICY = (
-    "additive under contract_version 1: consumers must tolerate new verbs,"
-    " new enum members (states, events), and new exit codes reachable only"
-    " via new verbs; a breaking change to an existing verb's data shape or"
-    " exit mapping is what bumps contract_version"
+    "contract_version 2 is the v0.4.5 pre-release hardening contract; it"
+    " intentionally breaks v1 quirks by refusing unsafe destructive operations,"
+    " rejecting inert or abbreviated flags, enforcing active idempotency"
+    " execution-payload conflicts, making malformed inputs total and"
+    " structured, and declaring envelope, frames, raw, and text modes."
+    " No contract_version 1 compatibility shim is provided before public release."
 )
 
 

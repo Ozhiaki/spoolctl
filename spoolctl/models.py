@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-TOOL_VERSION = "0.4.2"
-CONTRACT_VERSION = "1"
+TOOL_VERSION = "0.4.5"
+CONTRACT_VERSION = "2"
 SCHEMA_VERSION = 6
 
 # Job states
@@ -48,7 +48,7 @@ FAILURE_REASONS = (
     REASON_UNKNOWN,
 )
 
-# job_events.event values (additive under contract_version 1)
+# job_events.event values
 JOB_EVENT_TYPES = (
     "added", "claimed", "succeeded", "failed", "timed_out",
     "reaped", "dead", "retried", "canceled",

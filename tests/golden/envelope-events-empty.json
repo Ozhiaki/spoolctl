@@ -6,7 +6,7 @@
   },
   "errors": [],
   "meta": {
-    "contract_version": "1",
+    "contract_version": "2",
     "data_hash": "sha256:PINNED",
     "elapsed_ms": 0,
     "pagination": {
@@ -17,6 +17,6 @@
     "ts_iso": "PINNED"
   },
   "ok": true,
-  "tool_version": "0.4.2",
+  "tool_version": "0.4.5",
   "warnings": []
 }
