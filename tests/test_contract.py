@@ -175,6 +175,14 @@ class TestRemainingExitCodePaths(unittest.TestCase):
         self.assertTrue(err.strip())
 
 
+class TestDeterministicEnvelopeControls(unittest.TestCase):
+    def test_source_date_epoch_controls_ts_iso(self):
+        with mock.patch.dict(os.environ, {"SOURCE_DATE_EPOCH": "0"}):
+            code, out, err = run_cli("brief", "--json")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["meta"]["ts_iso"], "1970-01-01T00:00:00.000Z")
+
+
 class TestBackoffCap(unittest.TestCase):
     def test_backoff_sequence_caps_at_60(self):
         self.assertEqual(

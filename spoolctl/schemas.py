@@ -69,7 +69,11 @@ CODE_REGISTRY_ENTRY_SCHEMA = obj({
 PAGINATION_SCHEMA = obj({
     "cursor": {"type": "integer"},
     "first_id": NULLABLE_INTEGER,
-})
+    "limit": {"type": "integer"},
+    "scan_limit": {"type": "integer"},
+    "scanned": {"type": "integer"},
+    "truncated": {"type": "boolean"},
+}, required=["cursor", "first_id"])
 
 WAIT_META_SCHEMA = obj({
     "waited_ms": {"type": "integer"},

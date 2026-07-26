@@ -104,6 +104,14 @@
       "retryable": false,
       "summary": "A destructive or interrupting action was refused without explicit confirmation."
     },
+    "TAG_FILTER_SCAN_CAPPED": {
+      "appears_in": [
+        "warnings"
+      ],
+      "example": "spoolctl list --tag owner=agent --limit 0 --json",
+      "retryable": null,
+      "summary": "A list tag filter scanned a bounded prefix and may have omitted later matches."
+    },
     "TIMEOUT": {
       "appears_in": [
         "errors"
@@ -166,13 +174,12 @@
           "exit_code": 1
         }
       },
-      "maximum": null,
+      "maximum": 4096,
       "minimum": 1,
       "required": false,
       "shadowed_by": "--db",
       "type": "path",
-      "unbounded": true,
-      "unbounded_reason": "path length is governed by the host filesystem"
+      "unbounded": false
     },
     "SPOOLCTL_TEST_HEARTBEAT_INTERVAL": {
       "consumed_by": [
@@ -187,7 +194,7 @@
           "exit_code": 1
         }
       },
-      "maximum": 1e+308,
+      "maximum": 86400.0,
       "minimum": 0,
       "required": false,
       "shadowed_by": null,
@@ -207,7 +214,7 @@
           "exit_code": 1
         }
       },
-      "maximum": 1e+308,
+      "maximum": 86400.0,
       "minimum": 0,
       "required": false,
       "shadowed_by": null,
@@ -380,24 +387,34 @@
       "unbounded": false
     },
     "cwd_length": {
-      "maximum": null,
+      "maximum": 4096,
       "minimum": 1,
       "type": "path",
-      "unbounded": true,
-      "unbounded_reason": "no explicit CLI length cap beyond OS path limits"
+      "unbounded": false
     },
     "duration_seconds": {
-      "maximum": 9223372036854775807,
+      "maximum": 31536000000.0,
       "minimum": 0,
       "type": "duration",
       "unbounded": false
     },
     "env_key_length": {
-      "maximum": null,
+      "maximum": 128,
       "minimum": 1,
       "type": "string",
-      "unbounded": true,
-      "unbounded_reason": "no explicit CLI length cap; NUL and empty keys are rejected"
+      "unbounded": false
+    },
+    "env_value_length": {
+      "maximum": 4096,
+      "minimum": 0,
+      "type": "string",
+      "unbounded": false
+    },
+    "event_limit": {
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "integer",
+      "unbounded": false
     },
     "id": {
       "maximum": 9223372036854775807,
@@ -413,7 +430,7 @@
       "unbounded": false
     },
     "limit": {
-      "maximum": 9223372036854775807,
+      "maximum": 1000,
       "minimum": 0,
       "type": "integer",
       "unbounded": false
@@ -426,7 +443,7 @@
     },
     "poll_interval_seconds": {
       "grammar": "finite float > 0",
-      "maximum": 1e+308,
+      "maximum": 3600.0,
       "minimum": 0,
       "type": "float",
       "unbounded": false
@@ -442,6 +459,12 @@
       "maximum": 64,
       "minimum": 1,
       "type": "queue",
+      "unbounded": false
+    },
+    "status_limit": {
+      "maximum": 1000,
+      "minimum": 0,
+      "type": "integer",
       "unbounded": false
     },
     "tag_count": {
@@ -471,9 +494,23 @@
     },
     "timestamp_epoch_seconds": {
       "grammar": "finite signed decimal epoch seconds or ISO-8601 timestamp",
-      "maximum": 1e+308,
-      "minimum": -1e+308,
+      "maximum": 31536000000.0,
+      "minimum": -31536000000.0,
       "type": "timestamp",
+      "unbounded": false
+    },
+    "wait_seconds": {
+      "grammar": "finite float > 0",
+      "maximum": 86400.0,
+      "minimum": 0,
+      "type": "float",
+      "unbounded": false
+    },
+    "worker_id_length": {
+      "charset": "printable; no control characters",
+      "maximum": 256,
+      "minimum": 1,
+      "type": "string",
       "unbounded": false
     },
     "worker_slots": {
@@ -716,7 +753,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 9223372036854775807,
+          "maximum": 31536000000.0,
           "minimum": 0,
           "name": "--after",
           "repeatable": false,
@@ -751,8 +788,8 @@
               "exit_code": 1
             }
           },
-          "maximum": 1e+308,
-          "minimum": -1e+308,
+          "maximum": 31536000000.0,
+          "minimum": -31536000000.0,
           "name": "--at",
           "repeatable": false,
           "required": false,
@@ -808,14 +845,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -826,6 +862,7 @@
           "default": [],
           "flag": "--env",
           "grammar": "K=V split on first '='; key non-empty; NUL rejected",
+          "key_maximum": 128,
           "malformed_expectations": {
             "bad_type": {
               "code": "INVALID_INPUT",
@@ -849,6 +886,7 @@
           "required": false,
           "type": "key_value",
           "unbounded": false,
+          "value_maximum": 4096,
           "value_required": true
         },
         {
@@ -1479,14 +1517,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -2102,6 +2139,42 @@
                 ],
                 "type": "object"
               },
+              "TAG_FILTER_SCAN_CAPPED": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
               "TIMEOUT": {
                 "additionalProperties": false,
                 "properties": {
@@ -2223,6 +2296,7 @@
               "NOT_FOUND",
               "NO_ATTEMPTS_YET",
               "SAFETY_BLOCK",
+              "TAG_FILTER_SCAN_CAPPED",
               "TIMEOUT",
               "UNKNOWN_COMMAND",
               "UNKNOWN_FLAG"
@@ -3119,14 +3193,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -3172,7 +3245,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 1e+308,
+          "maximum": 86400.0,
           "minimum": 0,
           "name": "--idle-timeout",
           "repeatable": false,
@@ -3257,7 +3330,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 9223372036854775807,
+          "maximum": 10000,
           "minimum": 0,
           "name": "--limit",
           "repeatable": false,
@@ -3291,7 +3364,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 9223372036854775807,
+          "maximum": 10000,
           "minimum": 1,
           "name": "--max-events",
           "repeatable": false,
@@ -3326,7 +3399,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 1e+308,
+          "maximum": 3600.0,
           "minimum": 0,
           "name": "--poll-interval",
           "repeatable": false,
@@ -3413,7 +3486,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 1e+308,
+          "maximum": 86400.0,
           "minimum": 0,
           "name": "--wait-timeout",
           "repeatable": false,
@@ -3686,14 +3759,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -3738,7 +3810,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 9223372036854775807,
+          "maximum": 1000,
           "minimum": 0,
           "name": "--limit",
           "repeatable": false,
@@ -4160,14 +4232,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -4442,14 +4513,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -4511,7 +4581,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 9223372036854775807,
+          "maximum": 31536000000.0,
           "minimum": 0,
           "name": "--older-than",
           "repeatable": false,
@@ -4739,14 +4809,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -5090,14 +5159,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -5542,14 +5610,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -5594,7 +5661,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 9223372036854775807,
+          "maximum": 1000,
           "minimum": 0,
           "name": "--limit",
           "repeatable": false,
@@ -5863,14 +5930,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -5916,7 +5982,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 1e+308,
+          "maximum": 3600.0,
           "minimum": 0,
           "name": "--poll-interval",
           "repeatable": false,
@@ -5951,7 +6017,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 1e+308,
+          "maximum": 86400.0,
           "minimum": 0,
           "name": "--timeout",
           "repeatable": false,
@@ -6124,14 +6190,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 4096,
           "minimum": 1,
           "name": "--db",
           "repeatable": false,
           "required": false,
           "type": "path",
-          "unbounded": true,
-          "unbounded_reason": "path length is governed by the host filesystem",
+          "unbounded": false,
           "value_required": true
         },
         {
@@ -6211,7 +6276,7 @@
               "exit_code": 1
             }
           },
-          "maximum": 1e+308,
+          "maximum": 3600.0,
           "minimum": 0,
           "name": "--poll-interval",
           "repeatable": false,
@@ -6289,6 +6354,7 @@
           "aliases": [
             "--worker-id"
           ],
+          "charset": "printable; no control characters",
           "choices": null,
           "default": null,
           "flag": "--worker-id",
@@ -6302,14 +6368,13 @@
               "exit_code": 1
             }
           },
-          "maximum": null,
+          "maximum": 256,
           "minimum": 1,
           "name": "--worker-id",
           "repeatable": false,
           "required": false,
           "type": "string",
-          "unbounded": true,
-          "unbounded_reason": "worker ids are stored as text without an explicit CLI cap",
+          "unbounded": false,
           "value_required": true
         }
       ],

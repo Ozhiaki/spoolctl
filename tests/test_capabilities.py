@@ -229,11 +229,15 @@ class TestParserParity(unittest.TestCase):
     def test_length_constrained_strings_declare_rules(self):
         data = capabilities_data()
         for limit_name in [
+            "cwd_length",
+            "env_key_length",
+            "env_value_length",
             "idempotency_key_length",
             "note_length",
             "queue_name",
             "tag_key_length",
             "tag_value_length",
+            "worker_id_length",
         ]:
             entry = data["limits"][limit_name]
             self.assertIn("maximum", entry, limit_name)

@@ -63,11 +63,12 @@ class TestDurationGrammar(PruneTestCase):
         self.assertEqual(cli._parse_duration("10s"), 10)
         self.assertEqual(cli._parse_duration("5m"), 300)
         self.assertEqual(cli._parse_duration("2h"), 7200)
+        self.assertEqual(cli._parse_duration("1.5h"), 5400)
         self.assertEqual(cli._parse_duration("1d"), 86400)
         self.assertEqual(cli._parse_duration("0"), 0)
 
     def test_garbage_exits_1(self):
-        for bad in ("5w", "abc", "-3", "1.5h", "", "d"):
+        for bad in ("5w", "abc", "-3", "", "d"):
             code, env = self.prune("--older-than", bad)
             self.assertEqual(code, 1, bad)
             self.assertEqual(env["errors"][0]["code"], "INVALID_INPUT", bad)

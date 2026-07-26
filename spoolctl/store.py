@@ -1023,6 +1023,11 @@ def list_jobs(
     return [job_from_row(r) for r in conn.execute(sql, params)]
 
 
+def job_id_bounds(conn: sqlite3.Connection) -> tuple[int | None, int | None]:
+    row = conn.execute("SELECT MIN(id) AS first_id, MAX(id) AS last_id FROM jobs").fetchone()
+    return row["first_id"], row["last_id"]
+
+
 def cancel_job(
     conn: sqlite3.Connection,
     job_id: int,

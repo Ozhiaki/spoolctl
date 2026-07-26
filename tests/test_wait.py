@@ -82,6 +82,14 @@ class TestWaitExitPaths(WaitTestCase):
         self.assertEqual(e["code"], "TIMEOUT")
         self.assertIn(f"spoolctl wait --timeout 0.2 {job_id}", e["remediation"])
 
+    def test_timeout_and_poll_bounds_rejected_before_db_lookup(self):
+        for flag, value in (("--timeout", "86401"), ("--poll-interval", "3601")):
+            with self.subTest(flag=flag):
+                code, out, _ = run_cli("wait", "999", "--db", self.db, "--json",
+                                       flag, value)
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
     def test_unknown_ids_fail_fast_exit_1(self):
         known = self.add("true")
         code, out, _ = run_cli("wait", str(known), "41", "42",

@@ -230,8 +230,11 @@ class TestExecutionFlags(AddTestCase):
         cases = [
             ("--cwd", ""),
             ("--cwd", "bad\x00cwd"),
+            ("--cwd", "x" * 4097),
             ("--env", "MISSING_EQUALS"),
             ("--env", "=value"),
+            ("--env", "K" * 129 + "=value"),
+            ("--env", "K=" + "v" * 4097),
             ("--env", "BAD\x00KEY=value"),
             ("--env", "A=bad\x00value"),
             ("--max-crashes", "-1"),

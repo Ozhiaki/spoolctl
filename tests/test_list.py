@@ -45,6 +45,11 @@ class ListTestCase(unittest.TestCase):
         self.assertEqual(code, 0, err)
         return json.loads(out)["data"]
 
+    def list_env(self, *extra: str) -> dict:
+        code, out, err = run_cli("list", "--db", self.db, "--json", *extra)
+        self.assertEqual(code, 0, err)
+        return json.loads(out)
+
     def add_cli(self, *extra: str):
         code, out, err = run_cli("add", "--db", self.db, "--json", *extra, "--", "true")
         self.assertEqual(code, 0, err)
@@ -113,16 +118,28 @@ class TestStateGrammar(ListTestCase):
 class TestLimitGrammar(ListTestCase):
     def test_limit_truncates_newest_first(self):
         self.populate()
-        data = self.list_data("--limit", "2")
+        env = self.list_env("--limit", "2")
+        data = env["data"]
         self.assertEqual([j["id"] for j in data["jobs"]], [4, 3])
+        self.assertEqual(env["meta"]["pagination"]["cursor"], 3)
+        self.assertEqual(env["meta"]["pagination"]["first_id"], 1)
+        self.assertEqual(env["meta"]["pagination"]["limit"], 2)
+        self.assertTrue(env["meta"]["pagination"]["truncated"])
 
-    def test_limit_zero_means_unlimited(self):
+    def test_limit_zero_uses_declared_cap(self):
         self.populate()
-        data = self.list_data("--limit", "0")
-        self.assertEqual(data["count"], 4)
+        env = self.list_env("--limit", "0")
+        self.assertEqual(env["data"]["count"], 4)
+        self.assertEqual(env["meta"]["pagination"]["limit"], 1000)
+        self.assertFalse(env["meta"]["pagination"]["truncated"])
 
     def test_negative_limit_rejected(self):
         code, out, _ = run_cli("list", "--db", self.db, "--json", "--limit", "-1")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_too_large_limit_rejected(self):
+        code, out, _ = run_cli("list", "--db", self.db, "--json", "--limit", "1001")
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
 
@@ -172,6 +189,17 @@ class TestTagFilter(ListTestCase):
         self.add_cli("--tag", "owner=agent")
         data = self.list_data("--tag", "owner=agent", "--limit", "2")
         self.assertEqual([j["id"] for j in data["jobs"]], [7, 6])
+
+    def test_tag_filter_scan_is_capped_with_warning(self):
+        self.add_cli("--tag", "owner=agent")
+        for _ in range(1001):
+            self.add_cli()
+        env = self.list_env("--tag", "owner=agent", "--limit", "0")
+        self.assertEqual(env["data"]["jobs"], [])
+        self.assertEqual(env["warnings"][0]["code"], "TAG_FILTER_SCAN_CAPPED")
+        self.assertEqual(env["meta"]["pagination"]["scan_limit"], 1000)
+        self.assertEqual(env["meta"]["pagination"]["scanned"], 1000)
+        self.assertTrue(env["meta"]["pagination"]["truncated"])
 
     def test_tag_keys_with_json_path_characters_filter_correctly(self):
         self.add_cli("--tag", "a.b=dot", "--tag", "a:b=colon", "--tag", "a-b=dash")

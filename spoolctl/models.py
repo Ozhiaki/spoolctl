@@ -193,6 +193,12 @@ CODE_REGISTRY = {
         "retryable": None,
         "example": "spoolctl add --key daily --note changed -- true",
     },
+    "TAG_FILTER_SCAN_CAPPED": {
+        "appears_in": ["warnings"],
+        "summary": "A list tag filter scanned a bounded prefix and may have omitted later matches.",
+        "retryable": None,
+        "example": "spoolctl list --tag owner=agent --limit 0 --json",
+    },
 }
 
 ERROR_CODES = tuple(

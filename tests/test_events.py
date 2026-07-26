@@ -176,13 +176,18 @@ class TestEventsWait(EventsTestCase):
             ("--follow", "--limit", "1"),
             ("--follow", "--wait"),
             ("--follow", "--max-events", "0"),
+            ("--follow", "--max-events", "10001"),
             ("--follow", "--idle-timeout", "0"),
+            ("--follow", "--idle-timeout", "86401"),
             ("--max-events", "1"),
             ("--idle-timeout", "0.1"),
             ("--since-id", "-1"),
             ("--limit", "-1"),
+            ("--limit", "10001"),
             ("--wait-timeout", "0"),
+            ("--wait-timeout", "86401"),
             ("--poll-interval", "0"),
+            ("--poll-interval", "3601"),
             ("--job", "0"),
         ]
         for argv in cases:

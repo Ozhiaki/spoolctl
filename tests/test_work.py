@@ -111,6 +111,18 @@ class TestOnce(WorkTestCase):
         code, _, err = run_cli("work", "--db", self.db, "--poll-interval", "0")
         self.assertEqual(code, 1)
         self.assertIn("poll-interval", err)
+        code, out, _ = run_cli("work", "--db", self.db, "--once", "--json",
+                               "--poll-interval", "3601")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_bad_worker_id_rejected(self):
+        for raw in ("", "bad\nid", "w" * 257):
+            with self.subTest(raw=repr(raw[:20])):
+                code, out, _ = run_cli("work", "--db", self.db, "--once", "--json",
+                                       "--worker-id", raw)
+                self.assertEqual(code, 1)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
 
     def test_queue_flag_claims_only_that_lane(self):
         default_job = self.add("true")

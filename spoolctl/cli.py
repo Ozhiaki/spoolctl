@@ -179,7 +179,14 @@ def make_envelope(
     meta_extra: dict[str, Any] | None = None,
     errors: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    now = datetime.now(timezone.utc)
+    source_epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if source_epoch is not None:
+        try:
+            now = datetime.fromtimestamp(float(source_epoch), timezone.utc)
+        except (OverflowError, OSError, ValueError):
+            now = datetime.now(timezone.utc)
+    else:
+        now = datetime.now(timezone.utc)
     meta = {
         "request_id": "req_" + uuid.uuid4().hex[:12],
         "ts_iso": now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z",
@@ -212,6 +219,17 @@ VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "pr
          "output", "events", "brief", "schema", "capabilities")
 SQLITE_INT64_MIN = -(2 ** 63)
 SQLITE_INT64_MAX = 2 ** 63 - 1
+MAX_DURATION_SECONDS = 31_536_000_000.0  # 1000 365-day years
+MAX_POLL_INTERVAL_SECONDS = 3600.0
+MAX_WAIT_SECONDS = 86_400.0
+LIST_LIMIT_MAX = 1000
+TAG_FILTER_SCAN_LIMIT = 1000
+EVENT_LIMIT_MAX = 10_000
+STATUS_LIMIT_MAX = 1000
+MAX_PATH_CHARS = 4096
+MAX_ENV_KEY_CHARS = 128
+MAX_ENV_VALUE_CHARS = 4096
+MAX_WORKER_ID_CHARS = 256
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -551,7 +569,12 @@ def _parse_int_bound(
     return value
 
 
-def _parse_positive_float(raw: str | float, *, flag: str) -> float:
+def _parse_positive_float(
+    raw: str | float,
+    *,
+    flag: str,
+    maximum: float = MAX_WAIT_SECONDS,
+) -> float:
     try:
         value = float(raw)
     except (TypeError, ValueError):
@@ -564,6 +587,12 @@ def _parse_positive_float(raw: str | float, *, flag: str) -> float:
         raise CliError(
             "INVALID_INPUT",
             f"{flag} must be finite and > 0 (got {raw!r})",
+            f"try: {flag} 0.5",
+        )
+    if value > maximum:
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} must be <= {maximum:g} (got {raw!r})",
             f"try: {flag} 0.5",
         )
     return value
@@ -636,6 +665,20 @@ def _parse_job_env(raw_env: list[str]) -> dict[str, str]:
                 "try: spoolctl add --env FOO=bar -- <cmd>",
                 did_you_mean="K=V",
             )
+        if len(key) > MAX_ENV_KEY_CHARS:
+            raise CliError(
+                "INVALID_INPUT",
+                f"--env key must be <= {MAX_ENV_KEY_CHARS} characters (got {len(key)})",
+                "use a shorter environment variable name",
+                did_you_mean="K=V",
+            )
+        if len(value) > MAX_ENV_VALUE_CHARS:
+            raise CliError(
+                "INVALID_INPUT",
+                f"--env {key!r} value must be <= {MAX_ENV_VALUE_CHARS} characters (got {len(value)})",
+                "use a shorter environment value",
+                did_you_mean="K=V",
+            )
         if "\x00" in key or "\x00" in value:
             raise CliError(
                 "INVALID_INPUT",
@@ -662,7 +705,37 @@ def _parse_job_cwd(raw: str | None) -> str | None:
             "--cwd must not contain NUL bytes",
             "remove embedded NUL bytes from --cwd",
         )
+    if len(raw) > MAX_PATH_CHARS:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--cwd must be <= {MAX_PATH_CHARS} characters (got {len(raw)})",
+            "use a shorter working-directory path",
+        )
     return os.path.abspath(raw)
+
+
+def _parse_worker_id(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    if not raw:
+        raise CliError(
+            "INVALID_INPUT",
+            "--worker-id must not be empty",
+            "try: spoolctl work --worker-id worker-1",
+        )
+    if len(raw) > MAX_WORKER_ID_CHARS:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--worker-id must be <= {MAX_WORKER_ID_CHARS} characters (got {len(raw)})",
+            "use a shorter worker id",
+        )
+    if not raw.isprintable():
+        raise CliError(
+            "INVALID_INPUT",
+            "--worker-id must contain only printable characters",
+            "remove embedded newlines, tabs, or control characters",
+        )
+    return raw
 
 
 def _parse_list_tags(raw_tags: list[str]) -> list[tuple[str, str | None]]:
@@ -694,14 +767,14 @@ def _finite_decimal(raw: str, *, signed: bool, flag: str) -> float:
     return value
 
 
-def _parse_after(raw: str) -> float:
+def _parse_duration_seconds(raw: str, *, flag: str) -> float:
     unit = raw[-1:] if raw else ""
     multipliers = {"s": 1.0, "m": 60.0, "h": 3600.0, "d": 86400.0}
     if unit.isalpha():
         if unit not in multipliers:
             raise CliError(
                 "INVALID_INPUT",
-                f"bad --after duration: {raw!r}",
+                f"bad {flag} duration: {raw!r}",
                 "duration grammar is <number>[s|m|h|d], lowercase units only, or bare seconds",
             )
         number = raw[:-1]
@@ -709,19 +782,30 @@ def _parse_after(raw: str) -> float:
     else:
         number = raw
         multiplier = 1.0
-    seconds = _finite_decimal(number, signed=False, flag="--after") * multiplier
-    if not math.isfinite(seconds):
+    seconds = _finite_decimal(number, signed=False, flag=flag) * multiplier
+    if not math.isfinite(seconds) or seconds > MAX_DURATION_SECONDS:
         raise CliError(
             "INVALID_INPUT",
-            f"--after duration overflows: {raw!r}",
+            f"{flag} duration must be <= {MAX_DURATION_SECONDS:g} seconds",
             "use a shorter duration",
         )
     return seconds
 
 
+def _parse_after(raw: str) -> float:
+    return _parse_duration_seconds(raw, flag="--after")
+
+
 def _parse_at(raw: str) -> float:
     if SIGNED_DECIMAL_RE.fullmatch(raw):
-        return _finite_decimal(raw, signed=True, flag="--at")
+        value = _finite_decimal(raw, signed=True, flag="--at")
+        if abs(value) > MAX_DURATION_SECONDS:
+            raise CliError(
+                "INVALID_INPUT",
+                f"--at epoch seconds must be in [-{MAX_DURATION_SECONDS:g}, {MAX_DURATION_SECONDS:g}]",
+                "use a nearer epoch seconds value or an ISO-8601 timestamp",
+            )
+        return value
     text = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
     try:
         dt = datetime.fromisoformat(text)
@@ -731,7 +815,14 @@ def _parse_at(raw: str) -> float:
             f"bad --at timestamp: {raw!r}",
             "use epoch seconds or ISO-8601, e.g. 2026-07-16T09:00:00-04:00",
         ) from None
-    return dt.timestamp()
+    value = dt.timestamp()
+    if abs(value) > MAX_DURATION_SECONDS:
+        raise CliError(
+            "INVALID_INPUT",
+            f"--at timestamp must be within {MAX_DURATION_SECONDS:g} seconds of epoch",
+            "use a nearer timestamp",
+        )
+    return value
 
 
 def _parse_priority(raw: str, *, flag: str = "--priority") -> int:
@@ -758,7 +849,7 @@ def _validate_positive_float_env(name: str) -> None:
     raw = os.environ.get(name)
     if raw is None:
         return
-    _parse_positive_float(raw, flag=name)
+    _parse_positive_float(raw, flag=name, maximum=MAX_WAIT_SECONDS)
 
 
 def _tags_match(tags: dict[str, str], predicates: list[tuple[str, str | None]]) -> bool:
@@ -907,7 +998,9 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
     _validate_positive_float_env("SPOOLCTL_TEST_HEARTBEAT_INTERVAL")
     _validate_positive_float_env("SPOOLCTL_TEST_REAP_THRESHOLD")
     poll_interval = (
-        _parse_positive_float(args.poll_interval, flag="--poll-interval")
+        _parse_positive_float(
+            args.poll_interval, flag="--poll-interval", maximum=MAX_POLL_INTERVAL_SECONDS
+        )
         if args.poll_interval is not None else None
     )
     if args.drain and args.once:
@@ -923,7 +1016,7 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
     )
     from spoolctl import worker
 
-    worker_id = args.worker_id or worker.default_worker_id()
+    worker_id = _parse_worker_id(args.worker_id) or worker.default_worker_id()
     db_path = store.resolve_db_path(args.db)
     if args.once:
         conn = store.connect(db_path)
@@ -959,7 +1052,9 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
 
 # Each handler takes parsed args and returns a VerbResult or raises CliError.
 def cmd_status(args: argparse.Namespace) -> VerbResult:
-    limit = _parse_int_bound(args.limit, flag="--limit", minimum=0)
+    limit = _parse_int_bound(
+        args.limit, flag="--limit", minimum=0, maximum=STATUS_LIMIT_MAX
+    )
     conn = _open_db(args)
     try:
         counts, scheduled, queues = store.status_counts(conn, time.time())
@@ -1021,18 +1116,32 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
         _parse_priority(args.priority_min, flag="--priority-min")
         if args.priority_min is not None else None
     )
-    limit = _parse_int_bound(args.limit, flag="--limit", minimum=0)
+    limit = _parse_int_bound(
+        args.limit, flag="--limit", minimum=0, maximum=LIST_LIMIT_MAX
+    )
+    effective_limit = LIST_LIMIT_MAX if limit == 0 else limit
+    fetch_limit = (
+        TAG_FILTER_SCAN_LIMIT + 1 if tag_predicates else effective_limit + 1
+    )
     conn = _open_db(args)
     try:
         jobs = store.list_jobs(
-            conn, states, 0 if tag_predicates else limit,
+            conn, states, fetch_limit,
             queue=queue, priority_min=priority_min,
         )
+        first_id, _ = store.job_id_bounds(conn)
     finally:
         conn.close()
+    scanned = len(jobs)
+    scan_truncated = bool(tag_predicates and len(jobs) > TAG_FILTER_SCAN_LIMIT)
     if tag_predicates:
-        filtered = [j for j in jobs if _tags_match(j.tags or {}, tag_predicates)]
-        jobs = filtered if limit == 0 else filtered[:limit]
+        scan_rows = jobs[:TAG_FILTER_SCAN_LIMIT]
+        filtered = [j for j in scan_rows if _tags_match(j.tags or {}, tag_predicates)]
+        truncated = scan_truncated or len(filtered) > effective_limit
+        jobs = filtered[:effective_limit]
+    else:
+        truncated = len(jobs) > effective_limit
+        jobs = jobs[:effective_limit]
     rows = [
         {
             "argv": j.argv,
@@ -1071,9 +1180,30 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
             f"#{j.id}  {j.state}  queue={j.queue}  priority={j.priority}"
             f"  next_run_at={j.next_run_at:g}  attempts={j.attempts}{extra}  {command}"
         )
+    pagination = {
+        "cursor": jobs[-1].id if jobs else 0,
+        "first_id": first_id,
+        "limit": effective_limit,
+        "truncated": truncated,
+    }
+    if tag_predicates:
+        pagination["scanned"] = min(scanned, TAG_FILTER_SCAN_LIMIT)
+        pagination["scan_limit"] = TAG_FILTER_SCAN_LIMIT
+    warnings = []
+    if scan_truncated:
+        warnings.append({
+            "code": "TAG_FILTER_SCAN_CAPPED",
+            "message": (
+                "tag-filtered list scanned the newest"
+                f" {TAG_FILTER_SCAN_LIMIT} matching pre-filter rows; later"
+                " tag matches may be omitted"
+            ),
+        })
     return VerbResult(
         data={"count": len(rows), "jobs": rows},
         human="\n".join(lines) if lines else "No jobs",
+        warnings=warnings,
+        meta_extra={"pagination": pagination},
     )
 
 
@@ -1253,10 +1383,12 @@ _WAIT_TERMINAL = ("canceled", "dead", "done")
 def cmd_wait(args: argparse.Namespace) -> VerbResult:
     ids = [_job_id_arg(raw) for raw in args.ids]
     timeout = (
-        _parse_positive_float(args.timeout, flag="--timeout")
+        _parse_positive_float(args.timeout, flag="--timeout", maximum=MAX_WAIT_SECONDS)
         if args.timeout is not None else None
     )
-    poll_interval = _parse_positive_float(args.poll_interval, flag="--poll-interval")
+    poll_interval = _parse_positive_float(
+        args.poll_interval, flag="--poll-interval", maximum=MAX_POLL_INTERVAL_SECONDS
+    )
     id_list = " ".join(str(i) for i in ids)
     conn = _open_db(args)
     try:
@@ -1376,24 +1508,9 @@ _DURATION_UNITS = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}
 PRUNABLE_STATES = ("canceled", "dead", "done")
 
 
-def _parse_duration(raw: str) -> int:
-    """DURATION grammar: integer with optional s|m|h|d suffix; bare means
-    seconds; 0 matches everything."""
-    m = re.fullmatch(r"(\d+)([smhd]?)", raw)
-    if m is None:
-        raise CliError(
-            "INVALID_INPUT",
-            f"bad duration: {raw!r} (integer with optional s/m/h/d suffix)",
-            "try: spoolctl prune --older-than 30d",
-        )
-    value = int(m.group(1)) * _DURATION_UNITS[m.group(2)]
-    if value > SQLITE_INT64_MAX:
-        raise CliError(
-            "INVALID_INPUT",
-            f"duration must be <= {SQLITE_INT64_MAX} seconds (got {value})",
-            "use a shorter duration",
-        )
-    return value
+def _parse_duration(raw: str) -> float:
+    """DURATION grammar: bounded decimal with optional s|m|h|d suffix."""
+    return _parse_duration_seconds(raw, flag="--older-than")
 
 
 def _parse_prune_states(raw: str) -> list[str]:
@@ -1508,19 +1625,25 @@ def _validate_events_args(args: argparse.Namespace) -> None:
         if args.since_id is not None else None
     )
     args.limit = (
-        _parse_int_bound(args.limit, flag="--limit", minimum=0)
+        _parse_int_bound(args.limit, flag="--limit", minimum=0, maximum=EVENT_LIMIT_MAX)
         if args.limit is not None else None
     )
     args.max_events = (
-        _parse_int_bound(args.max_events, flag="--max-events", minimum=1)
+        _parse_int_bound(
+            args.max_events, flag="--max-events", minimum=1, maximum=EVENT_LIMIT_MAX
+        )
         if args.max_events is not None else None
     )
     args.idle_timeout = (
-        _parse_positive_float(args.idle_timeout, flag="--idle-timeout")
+        _parse_positive_float(args.idle_timeout, flag="--idle-timeout", maximum=MAX_WAIT_SECONDS)
         if args.idle_timeout is not None else None
     )
-    args.poll_interval = _parse_positive_float(args.poll_interval, flag="--poll-interval")
-    args.wait_timeout = _parse_positive_float(args.wait_timeout, flag="--wait-timeout")
+    args.poll_interval = _parse_positive_float(
+        args.poll_interval, flag="--poll-interval", maximum=MAX_POLL_INTERVAL_SECONDS
+    )
+    args.wait_timeout = _parse_positive_float(
+        args.wait_timeout, flag="--wait-timeout", maximum=MAX_WAIT_SECONDS
+    )
     if args.job is not None and args.job <= 0:
         raise CliError(
             "INVALID_INPUT",
@@ -2079,22 +2202,26 @@ LIMITS = {
     "cwd_length": {
         "type": "path",
         "minimum": 1,
-        "maximum": None,
-        "unbounded": True,
-        "unbounded_reason": "no explicit CLI length cap beyond OS path limits",
+        "maximum": MAX_PATH_CHARS,
+        "unbounded": False,
     },
     "duration_seconds": {
         "type": "duration",
         "minimum": 0,
-        "maximum": SQLITE_INT64_MAX,
+        "maximum": MAX_DURATION_SECONDS,
         "unbounded": False,
     },
     "env_key_length": {
         "type": "string",
         "minimum": 1,
-        "maximum": None,
-        "unbounded": True,
-        "unbounded_reason": "no explicit CLI length cap; NUL and empty keys are rejected",
+        "maximum": MAX_ENV_KEY_CHARS,
+        "unbounded": False,
+    },
+    "env_value_length": {
+        "type": "string",
+        "minimum": 0,
+        "maximum": MAX_ENV_VALUE_CHARS,
+        "unbounded": False,
     },
     "id": {
         "type": "integer",
@@ -2112,7 +2239,19 @@ LIMITS = {
     "limit": {
         "type": "integer",
         "minimum": 0,
-        "maximum": SQLITE_INT64_MAX,
+        "maximum": LIST_LIMIT_MAX,
+        "unbounded": False,
+    },
+    "event_limit": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": EVENT_LIMIT_MAX,
+        "unbounded": False,
+    },
+    "status_limit": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": STATUS_LIMIT_MAX,
         "unbounded": False,
     },
     "note_length": {
@@ -2124,7 +2263,14 @@ LIMITS = {
     "poll_interval_seconds": {
         "type": "float",
         "minimum": 0,
-        "maximum": 1e308,
+        "maximum": MAX_POLL_INTERVAL_SECONDS,
+        "unbounded": False,
+        "grammar": "finite float > 0",
+    },
+    "wait_seconds": {
+        "type": "float",
+        "minimum": 0,
+        "maximum": MAX_WAIT_SECONDS,
         "unbounded": False,
         "grammar": "finite float > 0",
     },
@@ -2168,8 +2314,8 @@ LIMITS = {
     },
     "timestamp_epoch_seconds": {
         "type": "timestamp",
-        "minimum": -1e308,
-        "maximum": 1e308,
+        "minimum": -MAX_DURATION_SECONDS,
+        "maximum": MAX_DURATION_SECONDS,
         "unbounded": False,
         "grammar": "finite signed decimal epoch seconds or ISO-8601 timestamp",
     },
@@ -2177,6 +2323,13 @@ LIMITS = {
         "type": "integer",
         "minimum": 1,
         "maximum": SQLITE_INT64_MAX,
+        "unbounded": False,
+    },
+    "worker_id_length": {
+        "type": "string",
+        "minimum": 1,
+        "maximum": MAX_WORKER_ID_CHARS,
+        "charset": "printable; no control characters",
         "unbounded": False,
     },
 }
@@ -2188,15 +2341,16 @@ FLAG_CONTRACTS = {
     "--db": {
         "type": "path",
         "minimum": 1,
-        "maximum": None,
-        "unbounded": True,
-        "unbounded_reason": "path length is governed by the host filesystem",
+        "maximum": MAX_PATH_CHARS,
+        "unbounded": False,
         "malformed_expectations": {"bad_path": EXPECT_INVALID},
     },
     "--env": {
         "type": "key_value",
         "repeatable": True,
         "grammar": "K=V split on first '='; key non-empty; NUL rejected",
+        "key_maximum": MAX_ENV_KEY_CHARS,
+        "value_maximum": MAX_ENV_VALUE_CHARS,
         "malformed_expectations": {
             "bad_type": EXPECT_INVALID,
             "empty_string": EXPECT_INVALID,
@@ -2212,7 +2366,7 @@ FLAG_CONTRACTS = {
     },
     "--limit": {"type": "integer", **LIMITS["limit"]},
     "--max-events": {"type": "integer", "minimum": 1, "maximum": SQLITE_INT64_MAX, "unbounded": False},
-    "--idle-timeout": {"type": "float", **LIMITS["poll_interval_seconds"]},
+    "--idle-timeout": {"type": "float", **LIMITS["wait_seconds"]},
     "--max-crashes": {"type": "integer", "minimum": 0, "maximum": SQLITE_INT64_MAX, "unbounded": False},
     "--max-retries": {"type": "integer", "minimum": 0, "maximum": SQLITE_INT64_MAX, "unbounded": False},
     "--note": {
@@ -2248,13 +2402,10 @@ FLAG_CONTRACTS = {
         "malformed_expectations": {"bad_type": EXPECT_INVALID},
     },
     "--timeout": {"type": "integer", **LIMITS["timeout_seconds"]},
-    "--wait-timeout": {"type": "float", **LIMITS["poll_interval_seconds"]},
+    "--wait-timeout": {"type": "float", **LIMITS["wait_seconds"]},
     "--worker-id": {
         "type": "string",
-        "minimum": 1,
-        "maximum": None,
-        "unbounded": True,
-        "unbounded_reason": "worker ids are stored as text without an explicit CLI cap",
+        **LIMITS["worker_id_length"],
     },
     "--verb": {
         "type": "enum",
@@ -2269,7 +2420,10 @@ VERB_FLAG_CONTRACTS = {
         "choices": ["canceled", "dead", "done"],
         "malformed_expectations": {"bad_type": EXPECT_INVALID},
     },
-    ("wait", "--timeout"): {"type": "float", **LIMITS["poll_interval_seconds"]},
+    ("wait", "--timeout"): {"type": "float", **LIMITS["wait_seconds"]},
+    ("events", "--limit"): {"type": "integer", **LIMITS["event_limit"]},
+    ("events", "--max-events"): {"type": "integer", "minimum": 1, "maximum": EVENT_LIMIT_MAX, "unbounded": False},
+    ("status", "--limit"): {"type": "integer", **LIMITS["status_limit"]},
 }
 
 POSITIONAL_CONTRACTS = {
@@ -2362,9 +2516,8 @@ ENV_VAR_CONTRACTS = {
         "required": False,
         "default": "./.spoolctl/queue.db",
         "minimum": 1,
-        "maximum": None,
-        "unbounded": True,
-        "unbounded_reason": "path length is governed by the host filesystem",
+        "maximum": MAX_PATH_CHARS,
+        "unbounded": False,
         "shadowed_by": "--db",
         "consumed_by": DB_VERBS,
         "malformed_expectations": {"bad_path": EXPECT_INVALID},
@@ -2375,7 +2528,7 @@ ENV_VAR_CONTRACTS = {
         "required": False,
         "default": HEARTBEAT_INTERVAL,
         "minimum": 0,
-        "maximum": 1e308,
+        "maximum": MAX_WAIT_SECONDS,
         "unbounded": False,
         "grammar": "finite float > 0",
         "shadowed_by": None,
@@ -2388,7 +2541,7 @@ ENV_VAR_CONTRACTS = {
         "required": False,
         "default": REAP_THRESHOLD,
         "minimum": 0,
-        "maximum": 1e308,
+        "maximum": MAX_WAIT_SECONDS,
         "unbounded": False,
         "grammar": "finite float > 0",
         "shadowed_by": None,

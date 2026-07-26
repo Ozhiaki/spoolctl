@@ -79,6 +79,18 @@
                   "integer",
                   "null"
                 ]
+              },
+              "limit": {
+                "type": "integer"
+              },
+              "scan_limit": {
+                "type": "integer"
+              },
+              "scanned": {
+                "type": "integer"
+              },
+              "truncated": {
+                "type": "boolean"
               }
             },
             "required": [
@@ -137,7 +149,8 @@
               "enum": [
                 "KILL_ASYNC",
                 "NO_ATTEMPTS_YET",
-                "IDEMPOTENCY_METADATA_DIFFERS"
+                "IDEMPOTENCY_METADATA_DIFFERS",
+                "TAG_FILTER_SCAN_CAPPED"
               ],
               "type": "string"
             },
@@ -842,6 +855,42 @@
               ],
               "type": "object"
             },
+            "TAG_FILTER_SCAN_CAPPED": {
+              "additionalProperties": false,
+              "properties": {
+                "appears_in": {
+                  "items": {
+                    "enum": [
+                      "errors",
+                      "warnings"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "example": {
+                  "type": "string"
+                },
+                "exit_code": {
+                  "type": "integer"
+                },
+                "retryable": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                },
+                "summary": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "appears_in",
+                "summary",
+                "retryable"
+              ],
+              "type": "object"
+            },
             "TIMEOUT": {
               "additionalProperties": false,
               "properties": {
@@ -963,6 +1012,7 @@
             "NOT_FOUND",
             "NO_ATTEMPTS_YET",
             "SAFETY_BLOCK",
+            "TAG_FILTER_SCAN_CAPPED",
             "TIMEOUT",
             "UNKNOWN_COMMAND",
             "UNKNOWN_FLAG"
