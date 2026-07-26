@@ -27,6 +27,7 @@ from typing import Any, Callable
 from spoolctl import schemas, store
 from spoolctl.models import (
     ATTEMPT_STATES,
+    CODE_REGISTRY,
     CONTRACT_VERSION,
     DEFAULT_MAX_RETRIES,
     DEFAULT_POLL_INTERVAL,
@@ -1991,8 +1992,10 @@ def cmd_capabilities(args: argparse.Namespace) -> VerbResult:
         str(code): dict(sorted(info.items()))
         for code, info in sorted(EXIT_CODES.items())
     }
+    code_registry = {code: dict(entry) for code, entry in sorted(CODE_REGISTRY.items())}
     data = {
         "attempt_states": sorted(ATTEMPT_STATES),
+        "code_registry": code_registry,
         "contract_policy": CONTRACT_POLICY,
         "contract_version": CONTRACT_VERSION,
         "env": ENV_DOCS,

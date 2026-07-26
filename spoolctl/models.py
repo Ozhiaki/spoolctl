@@ -95,18 +95,111 @@ EXIT_CODES = {
     },
 }
 
-# Error codes (5.3)
-ERROR_CODES = (
-    "INVALID_INPUT",
-    "MISSING_REQUIRED",
-    "UNKNOWN_FLAG",
-    "UNKNOWN_COMMAND",
-    "NOT_FOUND",
-    "CONFLICT",
-    "SAFETY_BLOCK",
-    "LOCKED",
-    "TIMEOUT",
-    "INTERNAL",
+# Closed code registry. `appears_in` distinguishes machine error codes from
+# warning codes while keeping one discoverable contract surface.
+CODE_REGISTRY = {
+    "INVALID_INPUT": {
+        "appears_in": ["errors"],
+        "summary": "A supplied value has the wrong type, range, enum, or grammar.",
+        "exit_code": EXIT_INPUT,
+        "retryable": False,
+        "example": "spoolctl output --json 1 --stream stdou",
+    },
+    "MISSING_REQUIRED": {
+        "appears_in": ["errors"],
+        "summary": "A required verb, flag value, or positional argument is absent.",
+        "exit_code": EXIT_INPUT,
+        "retryable": False,
+        "example": "spoolctl --json",
+    },
+    "UNKNOWN_FLAG": {
+        "appears_in": ["errors"],
+        "summary": "A flag is not accepted by the selected command surface.",
+        "exit_code": EXIT_INPUT,
+        "retryable": False,
+        "example": "spoolctl status --jsno",
+    },
+    "UNKNOWN_COMMAND": {
+        "appears_in": ["errors"],
+        "summary": "The requested verb is not implemented by this CLI.",
+        "exit_code": EXIT_INPUT,
+        "retryable": False,
+        "example": "spoolctl statu --json",
+    },
+    "NOT_FOUND": {
+        "appears_in": ["errors"],
+        "summary": "The requested job or attempt does not exist.",
+        "exit_code": EXIT_INPUT,
+        "retryable": False,
+        "example": "spoolctl show 999 --json",
+    },
+    "CONFLICT": {
+        "appears_in": ["errors"],
+        "summary": "The requested mutation conflicts with current job state.",
+        "exit_code": EXIT_CONFLICT,
+        "retryable": False,
+        "example": "spoolctl retry 1 --json when job 1 is queued",
+    },
+    "IDEMPOTENCY_CONFLICT": {
+        "appears_in": ["errors"],
+        "summary": "An active idempotency key was reused with a different execution payload.",
+        "exit_code": EXIT_CONFLICT,
+        "retryable": False,
+        "example": "spoolctl add --key daily -- false after active daily=true",
+    },
+    "SAFETY_BLOCK": {
+        "appears_in": ["errors"],
+        "summary": "A destructive or interrupting action was refused without explicit confirmation.",
+        "exit_code": EXIT_SAFETY,
+        "retryable": False,
+        "example": "spoolctl retry 1 --json while job 1 is running",
+    },
+    "LOCKED": {
+        "appears_in": ["errors"],
+        "summary": "The queue database stayed busy beyond the configured lock timeout.",
+        "exit_code": EXIT_TRANSIENT,
+        "retryable": True,
+        "example": "spoolctl add --json -- true during a long write lock",
+    },
+    "TIMEOUT": {
+        "appears_in": ["errors"],
+        "summary": "A wait-style operation exceeded its declared time budget.",
+        "exit_code": EXIT_TRANSIENT,
+        "retryable": True,
+        "example": "spoolctl wait 1 --timeout 0.1 --json",
+    },
+    "INTERNAL": {
+        "appears_in": ["errors"],
+        "summary": "The CLI or environment failed outside a user-input contract path.",
+        "exit_code": EXIT_ENVIRONMENT,
+        "retryable": None,
+        "example": "Opening a database with a schema version newer than this binary.",
+    },
+    "KILL_ASYNC": {
+        "appears_in": ["warnings"],
+        "summary": "A running cancel has been recorded; process-group termination is asynchronous.",
+        "retryable": None,
+        "example": "spoolctl cancel --running 1 --json",
+    },
+    "NO_ATTEMPTS_YET": {
+        "appears_in": ["warnings"],
+        "summary": "A job exists but no attempt output can be read yet.",
+        "retryable": None,
+        "example": "spoolctl output 1 --json before a worker runs job 1",
+    },
+    "IDEMPOTENCY_METADATA_DIFFERS": {
+        "appears_in": ["warnings"],
+        "summary": "An active idempotent add matched execution payload but ignored metadata differences.",
+        "retryable": None,
+        "example": "spoolctl add --key daily --note changed -- true",
+    },
+}
+
+ERROR_CODES = tuple(
+    code for code, entry in CODE_REGISTRY.items() if "errors" in entry["appears_in"]
+)
+WARNING_CODES = tuple(
+    code for code, entry in CODE_REGISTRY.items() if "warnings" in entry["appears_in"]
 )
 
 

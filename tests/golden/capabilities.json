@@ -7,6 +7,131 @@
     "succeeded",
     "timed_out"
   ],
+  "code_registry": {
+    "CONFLICT": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl retry 1 --json when job 1 is queued",
+      "exit_code": 5,
+      "retryable": false,
+      "summary": "The requested mutation conflicts with current job state."
+    },
+    "IDEMPOTENCY_CONFLICT": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl add --key daily -- false after active daily=true",
+      "exit_code": 5,
+      "retryable": false,
+      "summary": "An active idempotency key was reused with a different execution payload."
+    },
+    "IDEMPOTENCY_METADATA_DIFFERS": {
+      "appears_in": [
+        "warnings"
+      ],
+      "example": "spoolctl add --key daily --note changed -- true",
+      "retryable": null,
+      "summary": "An active idempotent add matched execution payload but ignored metadata differences."
+    },
+    "INTERNAL": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "Opening a database with a schema version newer than this binary.",
+      "exit_code": 3,
+      "retryable": null,
+      "summary": "The CLI or environment failed outside a user-input contract path."
+    },
+    "INVALID_INPUT": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl output --json 1 --stream stdou",
+      "exit_code": 1,
+      "retryable": false,
+      "summary": "A supplied value has the wrong type, range, enum, or grammar."
+    },
+    "KILL_ASYNC": {
+      "appears_in": [
+        "warnings"
+      ],
+      "example": "spoolctl cancel --running 1 --json",
+      "retryable": null,
+      "summary": "A running cancel has been recorded; process-group termination is asynchronous."
+    },
+    "LOCKED": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl add --json -- true during a long write lock",
+      "exit_code": 4,
+      "retryable": true,
+      "summary": "The queue database stayed busy beyond the configured lock timeout."
+    },
+    "MISSING_REQUIRED": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl --json",
+      "exit_code": 1,
+      "retryable": false,
+      "summary": "A required verb, flag value, or positional argument is absent."
+    },
+    "NOT_FOUND": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl show 999 --json",
+      "exit_code": 1,
+      "retryable": false,
+      "summary": "The requested job or attempt does not exist."
+    },
+    "NO_ATTEMPTS_YET": {
+      "appears_in": [
+        "warnings"
+      ],
+      "example": "spoolctl output 1 --json before a worker runs job 1",
+      "retryable": null,
+      "summary": "A job exists but no attempt output can be read yet."
+    },
+    "SAFETY_BLOCK": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl retry 1 --json while job 1 is running",
+      "exit_code": 2,
+      "retryable": false,
+      "summary": "A destructive or interrupting action was refused without explicit confirmation."
+    },
+    "TIMEOUT": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl wait 1 --timeout 0.1 --json",
+      "exit_code": 4,
+      "retryable": true,
+      "summary": "A wait-style operation exceeded its declared time budget."
+    },
+    "UNKNOWN_COMMAND": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl statu --json",
+      "exit_code": 1,
+      "retryable": false,
+      "summary": "The requested verb is not implemented by this CLI."
+    },
+    "UNKNOWN_FLAG": {
+      "appears_in": [
+        "errors"
+      ],
+      "example": "spoolctl status --jsno",
+      "exit_code": 1,
+      "retryable": false,
+      "summary": "A flag is not accepted by the selected command surface."
+    }
+  },
   "contract_policy": "additive under contract_version 1: consumers must tolerate new verbs, new enum members (states, events), and new exit codes reachable only via new verbs; a breaking change to an existing verb's data shape or exit mapping is what bumps contract_version",
   "contract_version": "1",
   "env": {
@@ -16,6 +141,7 @@
   },
   "error_codes": [
     "CONFLICT",
+    "IDEMPOTENCY_CONFLICT",
     "INTERNAL",
     "INVALID_INPUT",
     "LOCKED",

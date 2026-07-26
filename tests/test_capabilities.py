@@ -10,7 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from spoolctl import cli
-from spoolctl.models import FAILURE_REASONS
+from spoolctl.models import CODE_REGISTRY, ERROR_CODES, FAILURE_REASONS, WARNING_CODES
 
 GOLDEN = Path(__file__).resolve().parent / "golden" / "capabilities.json"
 
@@ -81,6 +81,16 @@ class TestParserParity(unittest.TestCase):
     def test_failure_reasons_registry_documented(self):
         data = capabilities_data()
         self.assertEqual(data["failure_reasons"], list(FAILURE_REASONS))
+
+    def test_code_registry_documented(self):
+        data = capabilities_data()
+        self.assertEqual(data["code_registry"], CODE_REGISTRY)
+        self.assertEqual(set(data["error_codes"]), set(ERROR_CODES))
+        warning_codes = {
+            code for code, entry in data["code_registry"].items()
+            if "warnings" in entry["appears_in"]
+        }
+        self.assertEqual(warning_codes, set(WARNING_CODES))
 
     def test_env_vars_documented(self):
         data = capabilities_data()

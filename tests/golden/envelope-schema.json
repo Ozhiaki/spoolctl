@@ -17,6 +17,19 @@
             "additionalProperties": false,
             "properties": {
               "code": {
+                "enum": [
+                  "INVALID_INPUT",
+                  "MISSING_REQUIRED",
+                  "UNKNOWN_FLAG",
+                  "UNKNOWN_COMMAND",
+                  "NOT_FOUND",
+                  "CONFLICT",
+                  "IDEMPOTENCY_CONFLICT",
+                  "SAFETY_BLOCK",
+                  "LOCKED",
+                  "TIMEOUT",
+                  "INTERNAL"
+                ],
                 "type": "string"
               },
               "did_you_mean": {
@@ -123,6 +136,11 @@
             "additionalProperties": false,
             "properties": {
               "code": {
+                "enum": [
+                  "KILL_ASYNC",
+                  "NO_ATTEMPTS_YET",
+                  "IDEMPOTENCY_METADATA_DIFFERS"
+                ],
                 "type": "string"
               },
               "message": {
@@ -302,6 +320,532 @@
             },
             "type": "array"
           },
+          "code_registry": {
+            "additionalProperties": false,
+            "properties": {
+              "CONFLICT": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "IDEMPOTENCY_CONFLICT": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "IDEMPOTENCY_METADATA_DIFFERS": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "INTERNAL": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "INVALID_INPUT": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "KILL_ASYNC": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "LOCKED": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "MISSING_REQUIRED": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "NOT_FOUND": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "NO_ATTEMPTS_YET": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "SAFETY_BLOCK": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "TIMEOUT": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "UNKNOWN_COMMAND": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "UNKNOWN_FLAG": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "IDEMPOTENCY_METADATA_DIFFERS",
+              "INTERNAL",
+              "INVALID_INPUT",
+              "KILL_ASYNC",
+              "LOCKED",
+              "MISSING_REQUIRED",
+              "NOT_FOUND",
+              "NO_ATTEMPTS_YET",
+              "SAFETY_BLOCK",
+              "TIMEOUT",
+              "UNKNOWN_COMMAND",
+              "UNKNOWN_FLAG"
+            ],
+            "type": "object"
+          },
           "contract_policy": {
             "type": "string"
           },
@@ -316,6 +860,19 @@
           },
           "error_codes": {
             "items": {
+              "enum": [
+                "INVALID_INPUT",
+                "MISSING_REQUIRED",
+                "UNKNOWN_FLAG",
+                "UNKNOWN_COMMAND",
+                "NOT_FOUND",
+                "CONFLICT",
+                "IDEMPOTENCY_CONFLICT",
+                "SAFETY_BLOCK",
+                "LOCKED",
+                "TIMEOUT",
+                "INTERNAL"
+              ],
               "type": "string"
             },
             "type": "array"
@@ -386,6 +943,7 @@
         },
         "required": [
           "attempt_states",
+          "code_registry",
           "contract_policy",
           "contract_version",
           "env",

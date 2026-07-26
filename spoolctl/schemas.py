@@ -11,10 +11,13 @@ from typing import Any
 
 from spoolctl.models import (
     ATTEMPT_STATES,
+    CODE_REGISTRY,
     EXIT_CODES,
     FAILURE_REASONS,
     JOB_EVENT_TYPES,
     JOB_STATES,
+    ERROR_CODES,
+    WARNING_CODES,
 )
 
 DIALECT = "https://json-schema.org/draft/2020-12/schema"
@@ -43,7 +46,7 @@ def obj(properties: dict, required: list[str] | None = None, additional=False) -
 
 
 ERROR_SCHEMA = obj({
-    "code": {"type": "string"},
+    "code": {"type": "string", "enum": list(ERROR_CODES)},
     "message": {"type": "string"},
     "remediation": {"type": "string"},
     "exit_code": {"type": "integer"},
@@ -51,9 +54,17 @@ ERROR_SCHEMA = obj({
 }, required=["code", "message", "remediation", "exit_code"])
 
 WARNING_SCHEMA = obj({
-    "code": {"type": "string"},
+    "code": {"type": "string", "enum": list(WARNING_CODES)},
     "message": {"type": "string"},
 }, required=["code", "message"])
+
+CODE_REGISTRY_ENTRY_SCHEMA = obj({
+    "appears_in": array_of({"type": "string", "enum": ["errors", "warnings"]}),
+    "summary": {"type": "string"},
+    "exit_code": {"type": "integer"},
+    "retryable": {"type": ["boolean", "null"]},
+    "example": {"type": "string"},
+}, required=["appears_in", "summary", "retryable"], additional=False)
 
 PAGINATION_SCHEMA = obj({
     "cursor": {"type": "integer"},
@@ -263,8 +274,14 @@ VERB_SCHEMAS = {
         "attempt_states": array_of({"type": "string"}),
         "contract_policy": {"type": "string"},
         "contract_version": {"type": "string"},
+        "code_registry": {
+            "type": "object",
+            "properties": {code: CODE_REGISTRY_ENTRY_SCHEMA for code in CODE_REGISTRY},
+            "required": sorted(CODE_REGISTRY),
+            "additionalProperties": False,
+        },
         "env": {"type": "object", "additionalProperties": {"type": "string"}},
-        "error_codes": array_of({"type": "string"}),
+        "error_codes": array_of({"type": "string", "enum": list(ERROR_CODES)}),
         "events": array_of({"type": "string"}),
         "execution": {"type": "object", "additionalProperties": {}},
         "exit_codes": {
