@@ -138,10 +138,19 @@ class TestHumanMode(unittest.TestCase):
         _, out, err = run_cli("statu")
         self.assertNotIn("\x1b[", out + err)
 
-    def test_no_verb_prints_help_exit_zero(self):
-        code, out, _ = run_cli()
-        self.assertEqual(code, 0)
-        self.assertIn("VERB", out)
+    def test_no_verb_fails_on_stderr(self):
+        code, out, err = run_cli()
+        self.assertEqual(code, 1)
+        self.assertEqual(out, "")
+        self.assertIn("missing required verb", err)
+
+    def test_json_without_verb_returns_envelope(self):
+        code, out, err = run_cli("--json")
+        self.assertEqual(code, 1)
+        env = json.loads(out)
+        self.assertFalse(env["ok"])
+        self.assertEqual(env["errors"][0]["code"], "MISSING_REQUIRED")
+        self.assertIn(env["errors"][0]["message"], err)
 
 
 if __name__ == "__main__":

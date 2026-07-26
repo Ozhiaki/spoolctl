@@ -250,18 +250,10 @@
       "data_schema": "{text: str, approx_tokens: int, budget_tokens: 700}",
       "flags": [
         {
-          "default": null,
-          "flag": "--db",
-          "type": "str"
-        },
-        {
           "default": false,
           "flag": "--json",
           "type": "bool"
         }
-      ],
-      "ignores": [
-        "--db"
       ],
       "positionals": [],
       "summary": "compact db-free usage brief for agent context injection"
@@ -296,11 +288,6 @@
     "capabilities": {
       "data_schema": "{attempt_states, contract_policy, contract_version, env, error_codes, events, exit_codes, failure_reasons, job_states, scheduling, verbs}",
       "flags": [
-        {
-          "default": null,
-          "flag": "--db",
-          "type": "str"
-        },
         {
           "default": false,
           "flag": "--json",
@@ -521,11 +508,6 @@
       "data_schema": "{dialect: str, envelope_schema: object, verbs: {<name>: schema}, streams: {events_follow: schema}}",
       "flags": [
         {
-          "default": null,
-          "flag": "--db",
-          "type": "str"
-        },
-        {
           "default": false,
           "flag": "--json",
           "type": "bool"
@@ -535,9 +517,6 @@
           "flag": "--verb",
           "type": "str"
         }
-      ],
-      "ignores": [
-        "--db"
       ],
       "positionals": [],
       "summary": "export JSON Schemas for the envelope, verb data payloads, and streams"

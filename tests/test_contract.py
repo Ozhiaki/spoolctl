@@ -143,12 +143,12 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assert_golden("events-empty", out)
 
     def test_brief(self):
-        code, out, _ = run_cli("brief", "--db", self.db, "--json")
+        code, out, _ = run_cli("brief", "--json")
         self.assertEqual(code, 0)
         self.assert_golden("brief", out)
 
     def test_schema(self):
-        code, out, _ = run_cli("schema", "--db", self.db, "--json")
+        code, out, _ = run_cli("schema", "--json")
         self.assertEqual(code, 0)
         self.assert_golden("schema", out)
 

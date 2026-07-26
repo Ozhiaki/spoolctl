@@ -53,8 +53,17 @@ class TestArgvForm(AddTestCase):
         job_id = json.loads(out)["data"]["job_id"]
         self.assertEqual(self.stored_argv(job_id), ["echo", "hi"])
 
-    def test_job_flags_after_command_stay_with_job(self):
-        code, out, _ = run_cli("add", "--db", self.db, "--json", "ls", "--color=never")
+    def test_flag_looking_tokens_require_double_dash_boundary(self):
+        code, out, _ = run_cli(
+            "add", "--db", self.db, "--json", "ls", "--color=never"
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_job_flags_after_explicit_boundary_stay_with_job(self):
+        code, out, _ = run_cli(
+            "add", "--db", self.db, "--json", "--", "ls", "--color=never"
+        )
         self.assertEqual(code, 0)
         job_id = json.loads(out)["data"]["job_id"]
         self.assertEqual(self.stored_argv(job_id), ["ls", "--color=never"])

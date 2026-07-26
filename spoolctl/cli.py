@@ -8,6 +8,7 @@ that teach the corrected invocation.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -113,6 +114,20 @@ class _Parser(argparse.ArgumentParser):
         raise _ParserExit(message, self)
 
 
+def _int_token(raw: str) -> str:
+    return raw
+
+
+_int_token.__name__ = "int"
+
+
+def _float_token(raw: str) -> str:
+    return raw
+
+
+_float_token.__name__ = "float"
+
+
 def _levenshtein_leq1(a: str, b: str) -> bool:
     if a == b:
         return True
@@ -192,6 +207,8 @@ def make_envelope(
 
 VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
          "output", "events", "brief", "schema", "capabilities")
+SQLITE_INT64_MIN = -(2 ** 63)
+SQLITE_INT64_MAX = 2 ** 63 - 1
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -204,15 +221,19 @@ def build_parser() -> _Parser:
         description="Local job queue with retries, backoff, and crash recovery.",
         epilog=HELP_EPILOG,
         formatter_class=argparse.RawDescriptionHelpFormatter,
+        allow_abbrev=False,
     )
     parser.add_argument("--version", action="version", version=f"spoolctl {TOOL_VERSION}")
     sub = parser.add_subparsers(dest="verb", metavar="VERB", parser_class=_Parser)
 
-    common = _Parser(add_help=False)
-    common.add_argument("--db", metavar="PATH", help="queue database path")
-    common.add_argument("--json", action="store_true", help="emit the JSON envelope")
+    common_db = _Parser(add_help=False, allow_abbrev=False)
+    common_db.add_argument("--db", metavar="PATH", help="queue database path")
+    common_db.add_argument("--json", action="store_true", help="emit the JSON envelope")
+    common_nodb = _Parser(add_help=False, allow_abbrev=False)
+    common_nodb.add_argument("--json", action="store_true", help="emit the JSON envelope")
 
-    add = sub.add_parser("add", parents=[common], help="enqueue a command")
+    add = sub.add_parser("add", parents=[common_db], help="enqueue a command",
+                         allow_abbrev=False)
     add.add_argument("-c", dest="shell_string", metavar="STRING", help="run STRING via sh -c")
     add.add_argument("--key", default=None, metavar="K",
                      help="idempotency key for active queued/running jobs")
@@ -228,37 +249,41 @@ def build_parser() -> _Parser:
                      help="claim priority, signed 32-bit integer; higher runs first")
     add.add_argument("--queue", default="default", metavar="NAME",
                      help="lane name, default 'default'")
-    add.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS, metavar="SECONDS")
-    add.add_argument("--max-retries", type=int, default=DEFAULT_MAX_RETRIES, metavar="N")
-    add.add_argument("--max-crashes", type=int, default=None, metavar="N")
+    add.add_argument("--timeout", type=_int_token, default=DEFAULT_TIMEOUT_SECONDS, metavar="SECONDS")
+    add.add_argument("--max-retries", type=_int_token, default=DEFAULT_MAX_RETRIES, metavar="N")
+    add.add_argument("--max-crashes", type=_int_token, default=None, metavar="N")
     add.add_argument("--cwd", default=None, metavar="DIR",
                      help="working directory for the job, resolved to absolute at submit")
     add.add_argument("--env", action="append", default=[], metavar="K=V",
                      help="environment override for the job; repeatable")
     add.add_argument("argv", nargs=argparse.REMAINDER, metavar="[--] ARGV...")
 
-    work = sub.add_parser("work", parents=[common], help="run jobs until stopped")
+    work = sub.add_parser("work", parents=[common_db], help="run jobs until stopped",
+                          allow_abbrev=False)
     work.add_argument("--once", action="store_true", help="run at most one job, then exit")
     work.add_argument("--drain", action="store_true",
                       help="run until the queue settles (no queued or running jobs), then exit")
-    work.add_argument("--poll-interval", type=float, default=None, metavar="SECONDS")
+    work.add_argument("--poll-interval", type=_float_token, default=None, metavar="SECONDS")
     work.add_argument("--worker-id", default=None, metavar="NAME")
     work.add_argument("--queue", default="default", metavar="NAME",
                       help="serve one lane; default 'default'")
-    work.add_argument("--slots", type=int, default=None, metavar="N",
+    work.add_argument("--slots", type=_int_token, default=None, metavar="N",
                       help="optional fleet-wide running-job ceiling for the served lane")
 
-    wait = sub.add_parser("wait", parents=[common],
-                          help="block until jobs settle; exit 6 if any failed")
+    wait = sub.add_parser("wait", parents=[common_db],
+                          help="block until jobs settle; exit 6 if any failed",
+                          allow_abbrev=False)
     wait.add_argument("ids", nargs="+", metavar="ID")
-    wait.add_argument("--timeout", type=float, default=None, metavar="SECONDS",
+    wait.add_argument("--timeout", type=_float_token, default=None, metavar="SECONDS",
                       help="give up after SECONDS (exit 4); default: wait forever")
-    wait.add_argument("--poll-interval", type=float, default=0.5, metavar="SECONDS")
+    wait.add_argument("--poll-interval", type=_float_token, default=0.5, metavar="SECONDS")
 
-    status = sub.add_parser("status", parents=[common], help="queue counts and recent dead jobs")
-    status.add_argument("--limit", type=int, default=10, metavar="N")
+    status = sub.add_parser("status", parents=[common_db], help="queue counts and recent dead jobs",
+                            allow_abbrev=False)
+    status.add_argument("--limit", type=_int_token, default=10, metavar="N")
 
-    list_ = sub.add_parser("list", parents=[common], help="enumerate jobs, newest first")
+    list_ = sub.add_parser("list", parents=[common_db], help="enumerate jobs, newest first",
+                           allow_abbrev=False)
     list_.add_argument("--state", default=None, metavar="CSV",
                        help="comma-separated states to include")
     list_.add_argument("--tag", action="append", default=[], metavar="KEY[=VALUE]",
@@ -267,25 +292,29 @@ def build_parser() -> _Parser:
                        help="filter to one lane")
     list_.add_argument("--priority-min", default=None, metavar="N",
                        help="minimum priority to include")
-    list_.add_argument("--limit", type=int, default=50, metavar="N",
+    list_.add_argument("--limit", type=_int_token, default=50, metavar="N",
                        help="max jobs (0 = unlimited)")
 
-    show = sub.add_parser("show", parents=[common], help="one job in full detail")
+    show = sub.add_parser("show", parents=[common_db], help="one job in full detail",
+                          allow_abbrev=False)
     show.add_argument("id", metavar="ID")
 
-    retry = sub.add_parser("retry", parents=[common], help="requeue a dead or failed job")
+    retry = sub.add_parser("retry", parents=[common_db], help="requeue a dead or failed job",
+                           allow_abbrev=False)
     retry.add_argument("id", metavar="ID")
     retry.add_argument("--force", action="store_true", help="also requeue a running job (unsafe)")
 
-    cancel = sub.add_parser("cancel", parents=[common],
-                            help="withdraw a queued job (or stop a running one)")
+    cancel = sub.add_parser("cancel", parents=[common_db],
+                            help="withdraw a queued job (or stop a running one)",
+                            allow_abbrev=False)
     cancel.add_argument("id", metavar="ID")
     cancel.add_argument("--running", action="store_true",
                         help="also cancel a running job (its process group is"
                              " killed by the owning worker within a heartbeat)")
 
-    prune = sub.add_parser("prune", parents=[common],
-                           help="delete old terminal jobs and their output files")
+    prune = sub.add_parser("prune", parents=[common_db],
+                           help="delete old terminal jobs and their output files",
+                           allow_abbrev=False)
     prune.add_argument("--older-than", required=True, metavar="DURATION",
                        help="age of finished_at to prune, e.g. 30d, 12h, 90 (seconds)")
     prune.add_argument("--state", default="done", metavar="CSV",
@@ -293,35 +322,40 @@ def build_parser() -> _Parser:
     prune.add_argument("--dry-run", action="store_true",
                        help="report what would be deleted without deleting")
 
-    output = sub.add_parser("output", parents=[common], help="show a job's captured output")
+    output = sub.add_parser("output", parents=[common_db], help="show a job's captured output",
+                            allow_abbrev=False)
     output.add_argument("id", metavar="ID")
     output.add_argument("--stream", choices=["stdout", "stderr", "both"], default="both")
     output.add_argument("--raw", action="store_true", help="raw bytes, single stream, no headers")
-    output.add_argument("--attempt", type=int, default=None, metavar="N")
+    output.add_argument("--attempt", type=_int_token, default=None, metavar="N")
 
-    events = sub.add_parser("events", parents=[common],
-                            help="read or follow the global job event stream")
-    events.add_argument("--job", type=int, default=None, metavar="ID",
+    events = sub.add_parser("events", parents=[common_db],
+                            help="read or follow the global job event stream",
+                            allow_abbrev=False)
+    events.add_argument("--job", type=_int_token, default=None, metavar="ID",
                         help="filter to one job id; no existence check is performed")
-    events.add_argument("--since-id", type=int, default=None, metavar="N",
+    events.add_argument("--since-id", type=_int_token, default=None, metavar="N",
                         help="return events with id > N")
-    events.add_argument("--limit", type=int, default=None, metavar="N",
+    events.add_argument("--limit", type=_int_token, default=None, metavar="N",
                         help="one-shot max events; default 1000, 0 = unlimited")
     events.add_argument("--wait", action="store_true",
                         help="long-poll for the next matching event, then return an envelope")
-    events.add_argument("--wait-timeout", type=float, default=30.0, metavar="SECONDS",
+    events.add_argument("--wait-timeout", type=_float_token, default=30.0, metavar="SECONDS",
                         help="budget for --wait; default 30")
     events.add_argument("--follow", action="store_true", help="tail events until interrupted")
-    events.add_argument("--poll-interval", type=float, default=0.5, metavar="SECONDS",
+    events.add_argument("--poll-interval", type=_float_token, default=0.5, metavar="SECONDS",
                         help="poll rate for --wait/--follow; default 0.5")
 
-    brief = sub.add_parser("brief", parents=[common], help="compact usage brief")
+    brief = sub.add_parser("brief", parents=[common_nodb], help="compact usage brief",
+                           allow_abbrev=False)
 
-    schema = sub.add_parser("schema", parents=[common], help="export JSON Schemas")
+    schema = sub.add_parser("schema", parents=[common_nodb], help="export JSON Schemas",
+                            allow_abbrev=False)
     schema.add_argument("--verb", dest="schema_verb", default=None, metavar="NAME",
                         help="export only one verb data schema")
 
-    caps = sub.add_parser("capabilities", parents=[common], help="machine-readable contract")
+    caps = sub.add_parser("capabilities", parents=[common_nodb], help="machine-readable contract",
+                          allow_abbrev=False)
 
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
@@ -346,6 +380,26 @@ def _parser_exit_to_error(exc: _ParserExit, argv: list[str]) -> CliError:
     """Translate an argparse failure into a contract error with did_you_mean
     sourced from the parser's own verb/flag tables."""
     message = str(exc)
+    if message.startswith("argument VERB:") and "invalid choice" in message and argv:
+        bad = argv[0]
+        suggestion = _suggest(bad, list(VERBS))
+        remediation = (
+            f"try: spoolctl {suggestion}" if suggestion else "run: spoolctl --help"
+        )
+        return CliError(
+            "UNKNOWN_COMMAND",
+            f"unknown verb: {bad!r}",
+            remediation,
+            exit_code=EXIT_INPUT,
+            did_you_mean=suggestion,
+        )
+    if message.startswith("argument ") and "invalid choice" in message:
+        return CliError(
+            "INVALID_INPUT",
+            message,
+            f"run: spoolctl {argv[0]} --help" if argv else "run: spoolctl --help",
+            exit_code=EXIT_INPUT,
+        )
     if "invalid choice" in message and argv:
         bad = argv[0]
         suggestion = _suggest(bad, list(VERBS))
@@ -397,7 +451,32 @@ BOTH_ADD_FORMS = "try: spoolctl add -- <cmd> [args...]   or: spoolctl add -c '<s
 
 
 def _open_db(args: argparse.Namespace) -> "sqlite3.Connection":
-    return store.connect(store.resolve_db_path(args.db))
+    db_path = store.resolve_db_path(args.db)
+    try:
+        return store.connect(db_path)
+    except OSError as exc:
+        if exc.errno in {
+            errno.EACCES,
+            errno.EEXIST,
+            errno.ENOENT,
+            errno.ENOTDIR,
+            errno.EROFS,
+        }:
+            raise CliError(
+                "INVALID_INPUT",
+                f"cannot open queue database at {db_path!r}: {exc.strerror or exc}",
+                "choose a writable database path with --db or SPOOLCTL_DB",
+            ) from None
+        raise
+    except sqlite3.OperationalError as exc:
+        text = str(exc)
+        if "unable to open database file" in text or "readonly" in text:
+            raise CliError(
+                "INVALID_INPUT",
+                f"cannot open queue database at {db_path!r}: {text}",
+                "choose a writable database path with --db or SPOOLCTL_DB",
+            ) from None
+        raise
 
 
 def _normalize_key(raw: str | None) -> str | None:
@@ -431,6 +510,51 @@ DECIMAL_RE = re.compile(r"^(?:\d+(?:\.\d*)?|\.\d+)$")
 SIGNED_DECIMAL_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
 PRIORITY_MIN = -2_147_483_648
 PRIORITY_MAX = 2_147_483_647
+INT_RE = re.compile(r"^[+-]?\d+$")
+
+
+def _parse_int_bound(
+    raw: str | int,
+    *,
+    flag: str,
+    minimum: int = SQLITE_INT64_MIN,
+    maximum: int = SQLITE_INT64_MAX,
+) -> int:
+    if isinstance(raw, int):
+        value = raw
+    else:
+        if not INT_RE.fullmatch(raw):
+            raise CliError(
+                "INVALID_INPUT",
+                f"{flag} must be an integer (got {raw!r})",
+                f"try: {flag} {max(minimum, 0)}",
+            )
+        value = int(raw, 10)
+    if value < minimum or value > maximum:
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} must be in [{minimum}, {maximum}] (got {value})",
+            f"try: {flag} {max(minimum, 0)}",
+        )
+    return value
+
+
+def _parse_positive_float(raw: str | float, *, flag: str) -> float:
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} must be a finite number (got {raw!r})",
+            f"try: {flag} 0.5",
+        ) from None
+    if not math.isfinite(value) or value <= 0:
+        raise CliError(
+            "INVALID_INPUT",
+            f"{flag} must be finite and > 0 (got {raw!r})",
+            f"try: {flag} 0.5",
+        )
+    return value
 
 
 def _parse_tag_key(raw: str, *, flag: str) -> str:
@@ -599,21 +723,7 @@ def _parse_at(raw: str) -> float:
 
 
 def _parse_priority(raw: str, *, flag: str = "--priority") -> int:
-    try:
-        value = int(raw, 10)
-    except ValueError:
-        raise CliError(
-            "INVALID_INPUT",
-            f"{flag} must be an integer (got {raw!r})",
-            f"try: {flag} 0",
-        ) from None
-    if value < PRIORITY_MIN or value > PRIORITY_MAX:
-        raise CliError(
-            "INVALID_INPUT",
-            f"{flag} must be in [{PRIORITY_MIN}, {PRIORITY_MAX}] (got {value})",
-            f"try: {flag} 0",
-        )
-    return value
+    return _parse_int_bound(raw, flag=flag, minimum=PRIORITY_MIN, maximum=PRIORITY_MAX)
 
 
 def _parse_queue(raw: str, *, flag: str = "--queue") -> str:
@@ -643,7 +753,9 @@ def _tags_match(tags: dict[str, str], predicates: list[tuple[str, str | None]]) 
 
 def cmd_add(args: argparse.Namespace) -> VerbResult:
     argv = list(args.argv)
+    explicit_boundary = getattr(args, "_explicit_command_boundary", False)
     if argv and argv[0] == "--":
+        explicit_boundary = True
         argv = argv[1:]
 
     if args.shell_string is not None and argv:
@@ -658,26 +770,38 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
             raise CliError("MISSING_REQUIRED", "empty -c command string", BOTH_ADD_FORMS)
         job_argv = ["sh", "-c", args.shell_string]
     elif argv:
+        if not explicit_boundary and any(tok.startswith("-") for tok in argv):
+            raise CliError(
+                "INVALID_INPUT",
+                "flag-looking token in add command argv without explicit -- boundary",
+                "try: spoolctl add [spoolctl flags] -- <cmd> [args...]",
+            )
         job_argv = argv
     else:
         raise CliError("MISSING_REQUIRED", "no command given", BOTH_ADD_FORMS)
 
-    if args.timeout <= 0:
+    timeout = _parse_int_bound(args.timeout, flag="--timeout", minimum=1)
+    max_retries = _parse_int_bound(args.max_retries, flag="--max-retries", minimum=0)
+    max_crashes = (
+        _parse_int_bound(args.max_crashes, flag="--max-crashes", minimum=0)
+        if args.max_crashes is not None else None
+    )
+    if timeout <= 0:
         raise CliError(
             "INVALID_INPUT",
-            f"--timeout must be > 0 (got {args.timeout})",
+            f"--timeout must be > 0 (got {timeout})",
             "try: spoolctl add --timeout 300 -- <cmd>",
         )
-    if args.max_retries < 0:
+    if max_retries < 0:
         raise CliError(
             "INVALID_INPUT",
-            f"--max-retries must be >= 0 (got {args.max_retries})",
+            f"--max-retries must be >= 0 (got {max_retries})",
             "try: spoolctl add --max-retries 3 -- <cmd>",
         )
-    if args.max_crashes is not None and args.max_crashes < 0:
+    if max_crashes is not None and max_crashes < 0:
         raise CliError(
             "INVALID_INPUT",
-            f"--max-crashes must be >= 0 (got {args.max_crashes})",
+            f"--max-crashes must be >= 0 (got {max_crashes})",
             "try: spoolctl add --max-crashes 3 -- <cmd>",
         )
     if args.after is not None and args.at is not None:
@@ -709,9 +833,9 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
     conn = _open_db(args)
     try:
         job_id, state, deduplicated = store.add_job_checked(
-            conn, job_argv, args.timeout, args.max_retries, now, key,
+            conn, job_argv, timeout, max_retries, now, key,
             tags, args.note, priority=priority, queue=queue, next_run_at=next_run_at,
-            cwd=cwd, env=env, max_crashes=args.max_crashes)
+            cwd=cwd, env=env, max_crashes=max_crashes)
         job = store.get_job(conn, job_id)
     finally:
         conn.close()
@@ -735,12 +859,10 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
 
 
 def cmd_work(args: argparse.Namespace) -> VerbResult:
-    if args.poll_interval is not None and args.poll_interval <= 0:
-        raise CliError(
-            "INVALID_INPUT",
-            f"--poll-interval must be > 0 (got {args.poll_interval})",
-            "try: spoolctl work --poll-interval 1.0",
-        )
+    poll_interval = (
+        _parse_positive_float(args.poll_interval, flag="--poll-interval")
+        if args.poll_interval is not None else None
+    )
     if args.drain and args.once:
         raise CliError(
             "INVALID_INPUT",
@@ -748,12 +870,10 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
             "try: spoolctl work --drain   or: spoolctl work --once",
         )
     lane = _parse_queue(args.queue)
-    if args.slots is not None and args.slots < 1:
-        raise CliError(
-            "INVALID_INPUT",
-            f"--slots must be >= 1 (got {args.slots})",
-            "try: spoolctl work --queue gpu --slots 1",
-        )
+    slots = (
+        _parse_int_bound(args.slots, flag="--slots", minimum=1)
+        if args.slots is not None else None
+    )
     from spoolctl import worker
 
     worker_id = args.worker_id or worker.default_worker_id()
@@ -761,7 +881,7 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
     if args.once:
         conn = store.connect(db_path)
         try:
-            summary = worker.process_one(conn, db_path, worker_id, lane=lane, slots=args.slots)
+            summary = worker.process_one(conn, db_path, worker_id, lane=lane, slots=slots)
         finally:
             conn.close()
         if summary is None:
@@ -772,9 +892,9 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
             f" {summary['result']} -> {summary['job_state'] or 'discarded'}"
         )
         return VerbResult(data=data, human=human)
-    poll = args.poll_interval if args.poll_interval is not None else DEFAULT_POLL_INTERVAL
+    poll = poll_interval if poll_interval is not None else DEFAULT_POLL_INTERVAL
     outcome = worker.work_loop(db_path, worker_id, poll, drain=args.drain,
-                               lane=lane, slots=args.slots)
+                               lane=lane, slots=slots)
     if args.drain:
         executed = outcome["executed"]
         human = (
@@ -792,16 +912,11 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
 
 # Each handler takes parsed args and returns a VerbResult or raises CliError.
 def cmd_status(args: argparse.Namespace) -> VerbResult:
-    if args.limit < 0:
-        raise CliError(
-            "INVALID_INPUT",
-            f"--limit must be >= 0 (got {args.limit})",
-            "try: spoolctl status --limit 10",
-        )
+    limit = _parse_int_bound(args.limit, flag="--limit", minimum=0)
     conn = _open_db(args)
     try:
         counts, scheduled, queues = store.status_counts(conn, time.time())
-        dead = store.recent_dead(conn, args.limit)
+        dead = store.recent_dead(conn, limit)
     finally:
         conn.close()
     lines = ["  ".join(f"{k} {v}" for k, v in counts.items())]
@@ -859,23 +974,18 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
         _parse_priority(args.priority_min, flag="--priority-min")
         if args.priority_min is not None else None
     )
-    if args.limit < 0:
-        raise CliError(
-            "INVALID_INPUT",
-            f"--limit must be >= 0 (got {args.limit})",
-            "try: spoolctl list --limit 50  (0 = unlimited)",
-        )
+    limit = _parse_int_bound(args.limit, flag="--limit", minimum=0)
     conn = _open_db(args)
     try:
         jobs = store.list_jobs(
-            conn, states, 0 if tag_predicates else args.limit,
+            conn, states, 0 if tag_predicates else limit,
             queue=queue, priority_min=priority_min,
         )
     finally:
         conn.close()
     if tag_predicates:
         filtered = [j for j in jobs if _tags_match(j.tags or {}, tag_predicates)]
-        jobs = filtered if args.limit == 0 else filtered[:args.limit]
+        jobs = filtered if limit == 0 else filtered[:limit]
     rows = [
         {
             "argv": j.argv,
@@ -921,14 +1031,7 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
 
 
 def _job_id_arg(raw: str) -> int:
-    try:
-        return int(raw)
-    except ValueError:
-        raise CliError(
-            "INVALID_INPUT",
-            f"job id must be an integer (got {raw!r})",
-            "try: spoolctl status  (to list job ids)",
-        ) from None
+    return _parse_int_bound(raw, flag="job id", minimum=1)
 
 
 def current_job_failure_reason(job: store.Job, attempts: list[store.Attempt]) -> str | None:
@@ -1102,18 +1205,11 @@ _WAIT_TERMINAL = ("canceled", "dead", "done")
 
 def cmd_wait(args: argparse.Namespace) -> VerbResult:
     ids = [_job_id_arg(raw) for raw in args.ids]
-    if args.timeout is not None and args.timeout <= 0:
-        raise CliError(
-            "INVALID_INPUT",
-            f"--timeout must be > 0 (got {args.timeout})",
-            "try: spoolctl wait --timeout 60 <id...>",
-        )
-    if args.poll_interval <= 0:
-        raise CliError(
-            "INVALID_INPUT",
-            f"--poll-interval must be > 0 (got {args.poll_interval})",
-            "try: spoolctl wait --poll-interval 0.5 <id...>",
-        )
+    timeout = (
+        _parse_positive_float(args.timeout, flag="--timeout")
+        if args.timeout is not None else None
+    )
+    poll_interval = _parse_positive_float(args.poll_interval, flag="--poll-interval")
     id_list = " ".join(str(i) for i in ids)
     conn = _open_db(args)
     try:
@@ -1124,7 +1220,7 @@ def cmd_wait(args: argparse.Namespace) -> VerbResult:
                 "no job(s) with id(s): " + ", ".join(str(i) for i in missing),
                 "run: spoolctl list  (to see job ids)",
             )
-        deadline = None if args.timeout is None else time.monotonic() + args.timeout
+        deadline = None if timeout is None else time.monotonic() + timeout
         while True:
             jobs = {i: store.get_job(conn, i) for i in ids}
             if all(j.state in _WAIT_TERMINAL for j in jobs.values()):
@@ -1132,11 +1228,11 @@ def cmd_wait(args: argparse.Namespace) -> VerbResult:
             if deadline is not None and time.monotonic() >= deadline:
                 raise CliError(
                     "TIMEOUT",
-                    f"jobs not settled after {args.timeout}s",
-                    f"inspect crash counts with: spoolctl list --json  or: spoolctl show {ids[0]} --json; retry: spoolctl wait --timeout {args.timeout} {id_list}",
+                    f"jobs not settled after {timeout}s",
+                    f"inspect crash counts with: spoolctl list --json  or: spoolctl show {ids[0]} --json; retry: spoolctl wait --timeout {timeout} {id_list}",
                     exit_code=EXIT_TRANSIENT,
                 )
-            time.sleep(args.poll_interval)
+            time.sleep(poll_interval)
     finally:
         conn.close()
     all_succeeded = all(j.state == "done" for j in jobs.values())
@@ -1235,7 +1331,14 @@ def _parse_duration(raw: str) -> int:
             f"bad duration: {raw!r} (integer with optional s/m/h/d suffix)",
             "try: spoolctl prune --older-than 30d",
         )
-    return int(m.group(1)) * _DURATION_UNITS[m.group(2)]
+    value = int(m.group(1)) * _DURATION_UNITS[m.group(2)]
+    if value > SQLITE_INT64_MAX:
+        raise CliError(
+            "INVALID_INPUT",
+            f"duration must be <= {SQLITE_INT64_MAX} seconds (got {value})",
+            "use a shorter duration",
+        )
+    return value
 
 
 def _parse_prune_states(raw: str) -> list[str]:
@@ -1325,6 +1428,20 @@ def cmd_prune(args: argparse.Namespace) -> VerbResult:
 
 
 def _validate_events_args(args: argparse.Namespace) -> None:
+    args.job = (
+        _parse_int_bound(args.job, flag="--job", minimum=1)
+        if args.job is not None else None
+    )
+    args.since_id = (
+        _parse_int_bound(args.since_id, flag="--since-id", minimum=0)
+        if args.since_id is not None else None
+    )
+    args.limit = (
+        _parse_int_bound(args.limit, flag="--limit", minimum=0)
+        if args.limit is not None else None
+    )
+    args.poll_interval = _parse_positive_float(args.poll_interval, flag="--poll-interval")
+    args.wait_timeout = _parse_positive_float(args.wait_timeout, flag="--wait-timeout")
     if args.job is not None and args.job <= 0:
         raise CliError(
             "INVALID_INPUT",
@@ -1501,6 +1618,10 @@ def _read_stream(path: str) -> bytes:
 
 def cmd_output(args: argparse.Namespace) -> VerbResult:
     job_id = _job_id_arg(args.id)
+    attempt_no = (
+        _parse_int_bound(args.attempt, flag="--attempt", minimum=1)
+        if args.attempt is not None else None
+    )
     if args.raw and args.json:
         raise CliError(
             "INVALID_INPUT",
@@ -1534,13 +1655,13 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
                 "message": f"job {job_id} has not been executed yet",
             }],
         )
-    if args.attempt is not None:
-        matching = [a for a in attempts if a.attempt_no == args.attempt]
+    if attempt_no is not None:
+        matching = [a for a in attempts if a.attempt_no == attempt_no]
         if not matching:
             available = ", ".join(str(a.attempt_no) for a in attempts)
             raise CliError(
                 "NOT_FOUND",
-                f"job {job_id} has no attempt {args.attempt}",
+                f"job {job_id} has no attempt {attempt_no}",
                 f"available attempts: {available}",
             )
         attempt = matching[0]
@@ -1735,8 +1856,6 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
             "when": "--follow --json",
         }
         description["since_cursor_alias"] = "--since-id"
-    if name in {"brief", "schema"}:
-        description["ignores"] = ["--db"]
     return description
 
 
@@ -1925,9 +2044,49 @@ def _json_requested(argv: list[str]) -> bool:
     for tok in argv:
         if tok == "--":
             return False
-        if tok == "--json":
+        if tok == "--json" or tok.startswith("--json="):
             return True
     return False
+
+
+def _explicit_add_boundary(argv: list[str]) -> bool:
+    try:
+        add_index = argv.index("add")
+    except ValueError:
+        return False
+    return "--" in argv[add_index + 1:]
+
+
+def _verbless_error(argv: list[str]) -> CliError | None:
+    if not argv:
+        return CliError(
+            "MISSING_REQUIRED",
+            "missing required verb",
+            "run: spoolctl --help",
+            exit_code=EXIT_INPUT,
+        )
+    if argv in (["--help"], ["-h"], ["--version"]):
+        return None
+    if any(tok in VERBS for tok in argv):
+        return None
+    for tok in argv:
+        if tok.startswith("-") and tok not in {"--json"} and not tok.startswith("--json="):
+            suggestion = _suggest(tok, ["--help", "--version", "--json"])
+            return CliError(
+                "UNKNOWN_FLAG",
+                f"unknown flag: {tok}",
+                "run: spoolctl --help",
+                exit_code=EXIT_INPUT,
+                did_you_mean=suggestion,
+            )
+    if all(tok == "--json" or tok.startswith("--json=") for tok in argv):
+        return CliError(
+            "MISSING_REQUIRED",
+            "missing required verb",
+            "run: spoolctl --help",
+            exit_code=EXIT_INPUT,
+        )
+    return None
 
 
 def _emit_failure(err: CliError, json_mode: bool, started: float) -> int:
@@ -1947,15 +2106,24 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     json_mode = _json_requested(argv)
     try:
+        verbless = _verbless_error(argv)
+        if verbless is not None:
+            return _emit_failure(verbless, json_mode, started)
         parser = build_parser()
         try:
             args = parser.parse_args(argv)
         except _ParserExit as exc:
             raise _parser_exit_to_error(exc, argv) from None
         if args.verb is None:
-            parser.print_help()
-            return EXIT_OK
+            raise CliError(
+                "MISSING_REQUIRED",
+                "missing required verb",
+                "run: spoolctl --help",
+                exit_code=EXIT_INPUT,
+            )
         json_mode = getattr(args, "json", json_mode)
+        if args.verb == "add":
+            args._explicit_command_boundary = _explicit_add_boundary(argv)
         handler = HANDLERS.get(args.verb, _not_implemented)
         result = handler(args)
         if result.stdout_silent:
@@ -1998,6 +2166,17 @@ def main(argv: list[str] | None = None) -> int:
         return _emit_failure(
             CliError("INTERNAL", f"database error: {exc}", "check the queue database",
                      exit_code=EXIT_ENVIRONMENT),
+            json_mode,
+            started,
+        )
+    except Exception as exc:
+        return _emit_failure(
+            CliError(
+                "INTERNAL",
+                f"unexpected internal error: {exc}",
+                "retry with --json and file a bug if the problem persists",
+                exit_code=EXIT_ENVIRONMENT,
+            ),
             json_mode,
             started,
         )

@@ -45,11 +45,13 @@ class TestBrief(unittest.TestCase):
         self.assertEqual(code, 0, err)
         self.assertEqual(out, data["text"] + "\n")
 
-    def test_works_without_existing_database_and_ignores_db_flag(self):
+    def test_db_flag_is_not_accepted_on_db_free_verb(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = os.path.join(tmp, "missing", "queue.db")
-            data = self.brief_data("--db", db)
-            self.assertIn("spoolctl quick brief", data["text"])
+            code, out, err = run_cli("brief", "--json", "--db", db)
+            self.assertEqual(code, 1)
+            self.assertEqual(json.loads(out)["errors"][0]["code"], "UNKNOWN_FLAG")
+            self.assertIn("--db", err)
             self.assertFalse(os.path.exists(db))
             self.assertFalse(os.path.exists(os.path.dirname(db)))
 
@@ -70,11 +72,11 @@ class TestBrief(unittest.TestCase):
         ]:
             self.assertIn(required, text)
 
-    def test_capabilities_marks_db_ignored(self):
+    def test_capabilities_omits_db_from_brief_surface(self):
         code, out, err = run_cli("capabilities", "--json")
         self.assertEqual(code, 0, err)
         brief = json.loads(out)["data"]["verbs"]["brief"]
-        self.assertEqual(brief["ignores"], ["--db"])
+        self.assertNotIn("--db", {f["flag"] for f in brief["flags"]})
 
     def test_text_matches_golden(self):
         text = self.brief_data()["text"]
