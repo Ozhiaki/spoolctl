@@ -878,6 +878,22 @@
             ],
             "type": "object"
           },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "reason",
+              "supported"
+            ],
+            "type": "object"
+          },
           "contract_policy": {
             "type": "string"
           },
@@ -887,6 +903,87 @@
           "env": {
             "additionalProperties": {
               "type": "string"
+            },
+            "type": "object"
+          },
+          "env_vars": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "properties": {
+                "consumed_by": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "default": {},
+                "description": {
+                  "type": "string"
+                },
+                "grammar": {
+                  "type": "string"
+                },
+                "malformed_expectations": {
+                  "additionalProperties": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "type": "string"
+                      },
+                      "exit_code": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "exit_code"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "object"
+                },
+                "maximum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "minimum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "shadowed_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "unbounded": {
+                  "type": "boolean"
+                },
+                "unbounded_reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "consumed_by",
+                "default",
+                "description",
+                "malformed_expectations",
+                "required",
+                "shadowed_by",
+                "type",
+                "unbounded"
+              ],
+              "type": "object"
             },
             "type": "object"
           },
@@ -958,34 +1055,635 @@
             },
             "type": "array"
           },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "global_flags": {
+            "additionalProperties": false,
+            "properties": {
+              "db_scope": {
+                "type": "string"
+              },
+              "flags": {
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "aliases": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "charset": {
+                      "type": "string"
+                    },
+                    "choices": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "default": {},
+                    "flag": {
+                      "type": "string"
+                    },
+                    "grammar": {
+                      "type": "string"
+                    },
+                    "key_maximum": {
+                      "type": "integer"
+                    },
+                    "malformed_expectations": {
+                      "additionalProperties": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "exit_code": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "exit_code"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "object"
+                    },
+                    "maximum": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "maximum_items": {
+                      "type": "integer"
+                    },
+                    "minimum": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "repeatable": {
+                      "type": "boolean"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "unbounded": {
+                      "type": "boolean"
+                    },
+                    "unbounded_reason": {
+                      "type": "string"
+                    },
+                    "value_maximum": {
+                      "type": "integer"
+                    },
+                    "value_required": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "aliases",
+                    "choices",
+                    "default",
+                    "flag",
+                    "malformed_expectations",
+                    "name",
+                    "repeatable",
+                    "required",
+                    "type",
+                    "unbounded",
+                    "value_required"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "db_scope",
+              "flags"
+            ],
+            "type": "object"
+          },
           "job_states": {
             "items": {
               "type": "string"
             },
             "type": "array"
           },
+          "limits": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "properties": {
+                "charset": {
+                  "type": "string"
+                },
+                "grammar": {
+                  "type": "string"
+                },
+                "maximum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "minimum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "unbounded": {
+                  "type": "boolean"
+                },
+                "unbounded_reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "unbounded"
+              ],
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "output_modes": {
+            "items": {
+              "enum": [
+                "envelope",
+                "frames",
+                "raw",
+                "text"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "probe_vocabularies": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "robot_docs_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "scheduling": {
             "additionalProperties": {},
             "type": "object"
           },
-          "verbs": {
+          "schemas_uri": {
+            "type": "string"
+          },
+          "tool_name": {
+            "const": "spoolctl",
+            "type": "string"
+          },
+          "tool_version": {
+            "type": "string"
+          },
+          "totality": {
             "additionalProperties": {},
+            "type": "object"
+          },
+          "verbs": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "properties": {
+                "args": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "choices": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "malformed_expectations": {
+                        "additionalProperties": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "exit_code": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "exit_code"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "object"
+                      },
+                      "maximum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "minimum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "nargs": {
+                        "enum": [
+                          "1",
+                          "+",
+                          "*",
+                          "remainder"
+                        ],
+                        "type": "string"
+                      },
+                      "repeatable": {
+                        "type": "boolean"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "unbounded": {
+                        "type": "boolean"
+                      },
+                      "unbounded_reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "choices",
+                      "malformed_expectations",
+                      "name",
+                      "nargs",
+                      "repeatable",
+                      "required",
+                      "type",
+                      "unbounded"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "data_schema": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "destructive": {},
+                "examples": {
+                  "items": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "exit_codes": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "flags": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "aliases": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "charset": {
+                        "type": "string"
+                      },
+                      "choices": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "default": {},
+                      "flag": {
+                        "type": "string"
+                      },
+                      "grammar": {
+                        "type": "string"
+                      },
+                      "key_maximum": {
+                        "type": "integer"
+                      },
+                      "malformed_expectations": {
+                        "additionalProperties": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "exit_code": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "exit_code"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "object"
+                      },
+                      "maximum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "maximum_items": {
+                        "type": "integer"
+                      },
+                      "minimum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "repeatable": {
+                        "type": "boolean"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "unbounded": {
+                        "type": "boolean"
+                      },
+                      "unbounded_reason": {
+                        "type": "string"
+                      },
+                      "value_maximum": {
+                        "type": "integer"
+                      },
+                      "value_required": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "aliases",
+                      "choices",
+                      "default",
+                      "flag",
+                      "malformed_expectations",
+                      "name",
+                      "repeatable",
+                      "required",
+                      "type",
+                      "unbounded",
+                      "value_required"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "idempotent": {},
+                "json": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "mutates": {
+                  "type": "boolean"
+                },
+                "mutually_exclusive": {
+                  "items": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "output_modes": {
+                  "items": {
+                    "enum": [
+                      "envelope",
+                      "frames",
+                      "raw",
+                      "text"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "output_schema": {},
+                "positionals": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "choices": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "malformed_expectations": {
+                        "additionalProperties": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "exit_code": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "exit_code"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "object"
+                      },
+                      "maximum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "minimum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "nargs": {
+                        "enum": [
+                          "1",
+                          "+",
+                          "*",
+                          "remainder"
+                        ],
+                        "type": "string"
+                      },
+                      "repeatable": {
+                        "type": "boolean"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "unbounded": {
+                        "type": "boolean"
+                      },
+                      "unbounded_reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "choices",
+                      "malformed_expectations",
+                      "name",
+                      "nargs",
+                      "repeatable",
+                      "required",
+                      "type",
+                      "unbounded"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "probe_hints": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "raw": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "safety": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "schema_ref": {
+                  "type": "string"
+                },
+                "since_cursor_alias": {
+                  "type": "string"
+                },
+                "stdin": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "text": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              },
+              "required": [
+                "args",
+                "data_schema",
+                "description",
+                "destructive",
+                "examples",
+                "exit_codes",
+                "flags",
+                "idempotent",
+                "json",
+                "mutates",
+                "mutually_exclusive",
+                "output_modes",
+                "output_schema",
+                "positionals",
+                "probe_hints",
+                "schema_ref",
+                "stdin",
+                "summary",
+                "text"
+              ],
+              "type": "object"
+            },
             "type": "object"
           }
         },
         "required": [
           "attempt_states",
           "code_registry",
+          "config",
           "contract_policy",
           "contract_version",
           "env",
+          "env_vars",
           "error_codes",
           "events",
           "execution",
           "exit_codes",
           "failure_reasons",
+          "features",
+          "global_flags",
           "job_states",
+          "limits",
+          "output_modes",
+          "probe_vocabularies",
+          "robot_docs_uri",
           "scheduling",
+          "schemas_uri",
+          "tool_name",
+          "tool_version",
+          "totality",
           "verbs"
         ],
         "type": "object"

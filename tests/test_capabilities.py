@@ -99,10 +99,16 @@ class TestParserParity(unittest.TestCase):
             {"SPOOLCTL_DB", "SPOOLCTL_TEST_HEARTBEAT_INTERVAL",
              "SPOOLCTL_TEST_REAP_THRESHOLD"},
         )
+        self.assertEqual(set(data["env_vars"]), set(data["env"]))
+        for name, entry in data["env_vars"].items():
+            self.assertIn("type", entry, name)
+            self.assertIn("malformed_expectations", entry, name)
+            self.assertIn("consumed_by", entry, name)
+            self.assertTrue(entry["consumed_by"], name)
 
     def test_events_declares_raw_follow_mode(self):
         events = capabilities_data()["verbs"]["events"]
-        self.assertEqual(events["output_modes"], ["envelope", "raw"])
+        self.assertEqual(events["output_modes"], ["envelope", "raw", "text"])
         self.assertEqual(events["raw"]["stream"], "events_follow")
         self.assertIn("no control frames", events["raw"]["record"])
         self.assertEqual(events["since_cursor_alias"], "--since-id")
@@ -149,6 +155,86 @@ class TestParserParity(unittest.TestCase):
         retry = verbs["retry"]
         self.assertEqual(retry["safety"]["force_required_for"], "running_job")
         self.assertFalse(retry["safety"]["also_requires_yes"])
+
+    def test_make_cli_contract_shape_documented(self):
+        data = capabilities_data()
+        required = {
+            "config",
+            "env_vars",
+            "features",
+            "global_flags",
+            "limits",
+            "output_modes",
+            "probe_vocabularies",
+            "robot_docs_uri",
+            "schemas_uri",
+            "tool_name",
+            "tool_version",
+            "totality",
+        }
+        self.assertLessEqual(required, set(data))
+        self.assertEqual(data["tool_name"], "spoolctl")
+        self.assertIn("probeable_surface", data["features"])
+        self.assertEqual(data["output_modes"], ["envelope", "frames", "raw", "text"])
+        self.assertFalse(data["config"]["supported"])
+        self.assertIn("--db is verb-local", data["global_flags"]["db_scope"])
+        self.assertEqual(
+            {f["name"] for f in data["global_flags"]["flags"]},
+            {"--help", "--version"},
+        )
+
+    def test_every_verb_has_probeable_fields(self):
+        data = capabilities_data()
+        for name, verb in data["verbs"].items():
+            with self.subTest(verb=name):
+                self.assertIn("description", verb)
+                self.assertIn("mutates", verb)
+                self.assertIn("destructive", verb)
+                self.assertIn("idempotent", verb)
+                self.assertIn("json", verb)
+                self.assertIn("output_modes", verb)
+                self.assertIn("stdin", verb)
+                self.assertIn("args", verb)
+                self.assertIn("flags", verb)
+                self.assertIn("mutually_exclusive", verb)
+                self.assertIn("exit_codes", verb)
+                self.assertIn("schema_ref", verb)
+                self.assertIn("examples", verb)
+                self.assertIn("probe_hints", verb)
+                self.assertEqual(verb["stdin"], "none")
+                self.assertIn("text", verb["output_modes"])
+                self.assertIn("envelope", verb["output_modes"])
+                for flag in verb["flags"]:
+                    self.assertEqual(flag["name"], flag["flag"])
+                    self.assertIn("value_required", flag)
+                    self.assertIn("malformed_expectations", flag)
+                    if flag["type"] in {"integer", "float", "duration", "timestamp"}:
+                        self.assertIn("minimum", flag)
+                        self.assertIn("maximum", flag)
+                for arg in verb["args"]:
+                    self.assertIn(arg["nargs"], {"1", "+", "*", "remainder"})
+                    self.assertEqual(
+                        arg["repeatable"],
+                        arg["nargs"] in {"+", "*", "remainder"},
+                    )
+                    if arg["type"] == "integer":
+                        self.assertIn("minimum", arg)
+                        self.assertIn("maximum", arg)
+
+    def test_length_constrained_strings_declare_rules(self):
+        data = capabilities_data()
+        for limit_name in [
+            "idempotency_key_length",
+            "note_length",
+            "queue_name",
+            "tag_key_length",
+            "tag_value_length",
+        ]:
+            entry = data["limits"][limit_name]
+            self.assertIn("maximum", entry, limit_name)
+            self.assertFalse(entry["unbounded"], limit_name)
+        self.assertIn("charset", data["limits"]["queue_name"])
+        self.assertIn("charset", data["limits"]["tag_key_length"])
 
 
 if __name__ == "__main__":

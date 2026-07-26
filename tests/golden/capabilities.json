@@ -132,12 +132,88 @@
       "summary": "A flag is not accepted by the selected command surface."
     }
   },
+  "config": {
+    "reason": "no config file surface in v0.4.5",
+    "supported": false
+  },
   "contract_policy": "additive under contract_version 1: consumers must tolerate new verbs, new enum members (states, events), and new exit codes reachable only via new verbs; a breaking change to an existing verb's data shape or exit mapping is what bumps contract_version",
   "contract_version": "1",
   "env": {
     "SPOOLCTL_DB": "queue database path (overridden by --db; default ./.spoolctl/queue.db)",
     "SPOOLCTL_TEST_HEARTBEAT_INTERVAL": "test-only: seconds between worker heartbeats (default 5)",
     "SPOOLCTL_TEST_REAP_THRESHOLD": "test-only: seconds of heartbeat staleness before a running job becomes a reap candidate (default 30)"
+  },
+  "env_vars": {
+    "SPOOLCTL_DB": {
+      "consumed_by": [
+        "add",
+        "cancel",
+        "events",
+        "list",
+        "output",
+        "prune",
+        "retry",
+        "show",
+        "status",
+        "wait",
+        "work"
+      ],
+      "default": "./.spoolctl/queue.db",
+      "description": "queue database path (overridden by --db; default ./.spoolctl/queue.db)",
+      "malformed_expectations": {
+        "bad_path": {
+          "code": "INVALID_INPUT",
+          "exit_code": 1
+        }
+      },
+      "maximum": null,
+      "minimum": 1,
+      "required": false,
+      "shadowed_by": "--db",
+      "type": "path",
+      "unbounded": true,
+      "unbounded_reason": "path length is governed by the host filesystem"
+    },
+    "SPOOLCTL_TEST_HEARTBEAT_INTERVAL": {
+      "consumed_by": [
+        "work"
+      ],
+      "default": 5.0,
+      "description": "test-only: seconds between worker heartbeats (default 5)",
+      "grammar": "finite float > 0",
+      "malformed_expectations": {
+        "bad_type": {
+          "code": "INVALID_INPUT",
+          "exit_code": 1
+        }
+      },
+      "maximum": 1e+308,
+      "minimum": 0,
+      "required": false,
+      "shadowed_by": null,
+      "type": "float",
+      "unbounded": false
+    },
+    "SPOOLCTL_TEST_REAP_THRESHOLD": {
+      "consumed_by": [
+        "work"
+      ],
+      "default": 30.0,
+      "description": "test-only: seconds of heartbeat staleness before a running job becomes a reap candidate (default 30)",
+      "grammar": "finite float > 0",
+      "malformed_expectations": {
+        "bad_type": {
+          "code": "INVALID_INPUT",
+          "exit_code": 1
+        }
+      },
+      "maximum": 1e+308,
+      "minimum": 0,
+      "required": false,
+      "shadowed_by": null,
+      "type": "float",
+      "unbounded": false
+    }
   },
   "error_codes": [
     "CONFLICT",
@@ -233,6 +309,61 @@
     "canceled",
     "unknown"
   ],
+  "features": [
+    "json_envelope",
+    "schema_export",
+    "did_you_mean",
+    "event_ledger",
+    "raw_output",
+    "idempotency_keys",
+    "destructive_gates",
+    "probeable_surface"
+  ],
+  "global_flags": {
+    "db_scope": "--db is verb-local on database-reading verbs, not global",
+    "flags": [
+      {
+        "aliases": [
+          "--help"
+        ],
+        "choices": null,
+        "default": false,
+        "flag": "--help",
+        "malformed_expectations": {},
+        "maximum": null,
+        "minimum": null,
+        "name": "--help",
+        "output_modes": [
+          "text"
+        ],
+        "repeatable": false,
+        "required": false,
+        "type": "boolean",
+        "unbounded": false,
+        "value_required": false
+      },
+      {
+        "aliases": [
+          "--version"
+        ],
+        "choices": null,
+        "default": false,
+        "flag": "--version",
+        "malformed_expectations": {},
+        "maximum": null,
+        "minimum": null,
+        "name": "--version",
+        "output_modes": [
+          "text"
+        ],
+        "repeatable": false,
+        "required": false,
+        "type": "boolean",
+        "unbounded": false,
+        "value_required": false
+      }
+    ]
+  },
   "job_states": [
     "canceled",
     "dead",
@@ -241,6 +372,202 @@
     "queued",
     "running"
   ],
+  "limits": {
+    "attempt_number": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer",
+      "unbounded": false
+    },
+    "cwd_length": {
+      "maximum": null,
+      "minimum": 1,
+      "type": "path",
+      "unbounded": true,
+      "unbounded_reason": "no explicit CLI length cap beyond OS path limits"
+    },
+    "duration_seconds": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "duration",
+      "unbounded": false
+    },
+    "env_key_length": {
+      "maximum": null,
+      "minimum": 1,
+      "type": "string",
+      "unbounded": true,
+      "unbounded_reason": "no explicit CLI length cap; NUL and empty keys are rejected"
+    },
+    "id": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer",
+      "unbounded": false
+    },
+    "idempotency_key_length": {
+      "charset": "printable after trim; no control characters",
+      "maximum": 256,
+      "minimum": 1,
+      "type": "string",
+      "unbounded": false
+    },
+    "limit": {
+      "maximum": 9223372036854775807,
+      "minimum": 0,
+      "type": "integer",
+      "unbounded": false
+    },
+    "note_length": {
+      "maximum": 10000,
+      "minimum": 0,
+      "type": "string",
+      "unbounded": false
+    },
+    "poll_interval_seconds": {
+      "grammar": "finite float > 0",
+      "maximum": 1e+308,
+      "minimum": 0,
+      "type": "float",
+      "unbounded": false
+    },
+    "priority": {
+      "maximum": 2147483647,
+      "minimum": -2147483648,
+      "type": "integer",
+      "unbounded": false
+    },
+    "queue_name": {
+      "charset": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+      "maximum": 64,
+      "minimum": 1,
+      "type": "queue",
+      "unbounded": false
+    },
+    "tag_count": {
+      "maximum": 16,
+      "minimum": 0,
+      "type": "integer",
+      "unbounded": false
+    },
+    "tag_key_length": {
+      "charset": "^[A-Za-z0-9_.:-]+$",
+      "maximum": 128,
+      "minimum": 1,
+      "type": "string",
+      "unbounded": false
+    },
+    "tag_value_length": {
+      "maximum": 1024,
+      "minimum": 0,
+      "type": "string",
+      "unbounded": false
+    },
+    "timeout_seconds": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer",
+      "unbounded": false
+    },
+    "timestamp_epoch_seconds": {
+      "grammar": "finite signed decimal epoch seconds or ISO-8601 timestamp",
+      "maximum": 1e+308,
+      "minimum": -1e+308,
+      "type": "timestamp",
+      "unbounded": false
+    },
+    "worker_slots": {
+      "maximum": 9223372036854775807,
+      "minimum": 1,
+      "type": "integer",
+      "unbounded": false
+    }
+  },
+  "output_modes": [
+    "envelope",
+    "frames",
+    "raw",
+    "text"
+  ],
+  "probe_vocabularies": {
+    "boolean": {
+      "invalid": [],
+      "notes": "bool flags are presence-only; missing-value probes do not apply"
+    },
+    "duration": {
+      "invalid": [
+        "-1",
+        "1D",
+        "1e308",
+        ""
+      ],
+      "valid": "1s"
+    },
+    "float": {
+      "invalid": [
+        "nan",
+        "-nan",
+        "inf",
+        "-inf",
+        "",
+        "abc"
+      ],
+      "valid": "0.1"
+    },
+    "integer": {
+      "invalid": [
+        "1_000",
+        "0x10",
+        "",
+        " 1",
+        "1.0"
+      ],
+      "out_of_range_high": "9223372036854775808",
+      "out_of_range_low": "-9223372036854775809",
+      "valid": "1"
+    },
+    "key_value": {
+      "invalid": [
+        "missing-equals",
+        "=value",
+        "bad key=value"
+      ],
+      "valid": "k=v"
+    },
+    "path": {
+      "invalid": [
+        "",
+        "bad\u0000path"
+      ],
+      "valid": "."
+    },
+    "queue": {
+      "invalid": [
+        "",
+        " bad",
+        "bad name",
+        "-bad"
+      ],
+      "valid": "default"
+    },
+    "string": {
+      "invalid": [
+        "",
+        "\n"
+      ],
+      "valid": "x"
+    },
+    "timestamp": {
+      "invalid": [
+        "not-a-time",
+        "nan",
+        "inf",
+        "1e9999"
+      ],
+      "valid": "1700000000"
+    }
+  },
+  "robot_docs_uri": null,
   "scheduling": {
     "at_timestamp": "epoch seconds or ISO-8601; naive ISO timestamps use the local process timezone",
     "drain": {
@@ -284,138 +611,1016 @@
       "scope": "served lane"
     }
   },
+  "schemas_uri": "spoolctl schema --json",
+  "tool_name": "spoolctl",
+  "tool_version": "0.4.2",
+  "totality": {
+    "envelope": {
+      "failure_stderr": "human mirror of the first error",
+      "failure_stdout": "one parseable JSON envelope",
+      "selector": "--json",
+      "traceback_allowed": false
+    },
+    "frames": {
+      "failure_stdout": "valid NDJSON frames when a frames surface exists",
+      "implemented": false,
+      "traceback_allowed": false
+    },
+    "raw": {
+      "failure_stdout": "empty or raw payload only; diagnostics stay on stderr",
+      "traceback_allowed": false
+    },
+    "text": {
+      "failure_stderr": "human diagnostic",
+      "failure_stdout": "not a machine surface",
+      "selector": "default",
+      "traceback_allowed": false
+    }
+  },
   "verbs": {
     "add": {
+      "args": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "argv",
+          "nargs": "remainder",
+          "repeatable": true,
+          "required": true,
+          "type": "string",
+          "unbounded": true,
+          "unbounded_reason": "command argv is stored as JSON and bounded by OS/SQLite limits"
+        }
+      ],
       "data_schema": "{job_id: int, state: 'queued'|'running', deduplicated: bool, next_run_at: float, priority: int, queue: str, cwd: str|null, env_keys: [str], idempotency?: {key, metadata_differs, metadata_differences}}",
+      "description": "enqueue a command; --key deduplicates active queued/running jobs",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "add",
+          "--json",
+          "--key",
+          "run-1",
+          "--",
+          "true"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--after"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--after",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "name": "--after",
+          "repeatable": false,
+          "required": false,
+          "type": "duration",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--at"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--at",
-          "type": "str"
+          "grammar": "finite signed decimal epoch seconds or ISO-8601 timestamp",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 1e+308,
+          "minimum": -1e+308,
+          "name": "--at",
+          "repeatable": false,
+          "required": false,
+          "type": "timestamp",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--cwd"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--cwd",
-          "type": "str"
+          "malformed_expectations": {
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 0,
+          "name": "--cwd",
+          "repeatable": false,
+          "required": false,
+          "type": "string",
+          "unbounded": true,
+          "unbounded_reason": "no explicit CLI length cap",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--env"
+          ],
+          "choices": null,
           "default": [],
           "flag": "--env",
-          "type": "str"
+          "grammar": "K=V split on first '='; key non-empty; NUL rejected",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "empty_string": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "name": "--env",
+          "repeatable": true,
+          "required": false,
+          "type": "key_value",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--key"
+          ],
+          "charset": "printable after trim; no control characters",
+          "choices": null,
           "default": null,
           "flag": "--key",
-          "type": "str"
+          "malformed_expectations": {
+            "empty_string": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 256,
+          "minimum": 1,
+          "name": "--key",
+          "repeatable": false,
+          "required": false,
+          "type": "string",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--max-crashes"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--max-crashes",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "name": "--max-crashes",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--max-retries"
+          ],
+          "choices": null,
           "default": 3,
           "flag": "--max-retries",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "name": "--max-retries",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--note"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--note",
-          "type": "str"
+          "malformed_expectations": {
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "too_long": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 10000,
+          "minimum": 0,
+          "name": "--note",
+          "repeatable": false,
+          "required": false,
+          "type": "string",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--priority"
+          ],
+          "choices": null,
           "default": "0",
           "flag": "--priority",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 2147483647,
+          "minimum": -2147483648,
+          "name": "--priority",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--queue"
+          ],
+          "charset": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "choices": null,
           "default": "default",
           "flag": "--queue",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 64,
+          "minimum": 1,
+          "name": "--queue",
+          "repeatable": false,
+          "required": false,
+          "type": "queue",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--tag"
+          ],
+          "choices": null,
           "default": [],
           "flag": "--tag",
-          "type": "str"
+          "grammar": "KEY=VALUE for add; KEY or KEY=VALUE for list; key matches [A-Za-z0-9_.:-]+",
+          "key_maximum": 128,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum_items": 16,
+          "name": "--tag",
+          "repeatable": true,
+          "required": false,
+          "type": "key_value",
+          "unbounded": false,
+          "value_maximum": 1024,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--timeout"
+          ],
+          "choices": null,
           "default": 300,
           "flag": "--timeout",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "--timeout",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "-c"
+          ],
+          "choices": null,
           "default": null,
           "flag": "-c",
-          "type": "str"
+          "malformed_expectations": {
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 0,
+          "name": "-c",
+          "repeatable": false,
+          "required": false,
+          "type": "string",
+          "unbounded": true,
+          "unbounded_reason": "no explicit CLI length cap",
+          "value_required": true
         }
       ],
+      "idempotent": "when --key is supplied",
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb add"
+      },
+      "mutates": true,
+      "mutually_exclusive": [
+        [
+          "--after",
+          "--at"
+        ]
+      ],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "deduplicated": {
+            "type": "boolean"
+          },
+          "env_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "idempotency": {
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "metadata_differences": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "existing": {},
+                    "submitted": {}
+                  },
+                  "required": [
+                    "existing",
+                    "submitted"
+                  ],
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              "metadata_differs": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "key",
+              "metadata_differences",
+              "metadata_differs"
+            ],
+            "type": "object"
+          },
+          "job_id": {
+            "type": "integer"
+          },
+          "next_run_at": {
+            "type": "number"
+          },
+          "priority": {
+            "type": "integer"
+          },
+          "queue": {
+            "type": "string"
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "cwd",
+          "deduplicated",
+          "env_keys",
+          "job_id",
+          "next_run_at",
+          "priority",
+          "queue",
+          "state"
+        ],
+        "type": "object"
+      },
       "positionals": [
         {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
           "name": "argv",
-          "repeatable": true
+          "nargs": "remainder",
+          "repeatable": true,
+          "required": true,
+          "type": "string",
+          "unbounded": true,
+          "unbounded_reason": "command argv is stored as JSON and bounded by OS/SQLite limits"
         }
       ],
-      "summary": "enqueue a command; --key deduplicates active queued/running jobs"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb add",
+      "stdin": "none",
+      "summary": "enqueue a command; --key deduplicates active queued/running jobs",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "brief": {
+      "args": [],
       "data_schema": "{text: str, approx_tokens: int, budget_tokens: 700}",
+      "description": "compact db-free usage brief for agent context injection",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "brief",
+          "--json"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         }
       ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb brief"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "approx_tokens": {
+            "type": "integer"
+          },
+          "budget_tokens": {
+            "const": 700,
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "approx_tokens",
+          "budget_tokens",
+          "text"
+        ],
+        "type": "object"
+      },
       "positionals": [],
-      "summary": "compact db-free usage brief for agent context injection"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb brief",
+      "stdin": "none",
+      "summary": "compact db-free usage brief for agent context injection",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "cancel": {
+      "args": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "id",
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
+        }
+      ],
       "data_schema": "{job_id: int, state: 'canceled', was_running: bool}",
+      "description": "cancel a queued job; --running also stops a running one (killed by its owning worker within a heartbeat)",
       "destructive": "only with --running",
+      "examples": [
+        [
+          "spoolctl",
+          "cancel",
+          "--json",
+          "1"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--running"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--running",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--running",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--yes",
+            "-y"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--yes",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--yes",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         }
       ],
+      "idempotent": false,
       "interrupts_process": "only with --running",
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb cancel"
+      },
+      "mutates": true,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "type": "integer"
+          },
+          "state": {
+            "const": "canceled",
+            "type": "string"
+          },
+          "was_running": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "job_id",
+          "state",
+          "was_running"
+        ],
+        "type": "object"
+      },
       "positionals": [
         {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
           "name": "id",
-          "repeatable": false
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
         }
       ],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
       "safety": {
         "confirmation_flag": "--yes",
         "queued_cancel": {
@@ -429,74 +1634,1823 @@
           "--yes"
         ]
       },
-      "summary": "cancel a queued job; --running also stops a running one (killed by its owning worker within a heartbeat)"
+      "schema_ref": "spoolctl schema --json --verb cancel",
+      "stdin": "none",
+      "summary": "cancel a queued job; --running also stops a running one (killed by its owning worker within a heartbeat)",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "capabilities": {
+      "args": [],
       "data_schema": "{attempt_states, contract_policy, contract_version, env, error_codes, events, exit_codes, failure_reasons, job_states, scheduling, verbs}",
+      "description": "this machine-readable contract",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "capabilities",
+          "--json"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         }
       ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb capabilities"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "attempt_states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "code_registry": {
+            "additionalProperties": false,
+            "properties": {
+              "CONFLICT": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "IDEMPOTENCY_CONFLICT": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "IDEMPOTENCY_METADATA_DIFFERS": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "INTERNAL": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "INVALID_INPUT": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "KILL_ASYNC": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "LOCKED": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "MISSING_REQUIRED": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "NOT_FOUND": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "NO_ATTEMPTS_YET": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "SAFETY_BLOCK": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "TIMEOUT": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "UNKNOWN_COMMAND": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "UNKNOWN_FLAG": {
+                "additionalProperties": false,
+                "properties": {
+                  "appears_in": {
+                    "items": {
+                      "enum": [
+                        "errors",
+                        "warnings"
+                      ],
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "example": {
+                    "type": "string"
+                  },
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "appears_in",
+                  "summary",
+                  "retryable"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "CONFLICT",
+              "IDEMPOTENCY_CONFLICT",
+              "IDEMPOTENCY_METADATA_DIFFERS",
+              "INTERNAL",
+              "INVALID_INPUT",
+              "KILL_ASYNC",
+              "LOCKED",
+              "MISSING_REQUIRED",
+              "NOT_FOUND",
+              "NO_ATTEMPTS_YET",
+              "SAFETY_BLOCK",
+              "TIMEOUT",
+              "UNKNOWN_COMMAND",
+              "UNKNOWN_FLAG"
+            ],
+            "type": "object"
+          },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "supported": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "reason",
+              "supported"
+            ],
+            "type": "object"
+          },
+          "contract_policy": {
+            "type": "string"
+          },
+          "contract_version": {
+            "type": "string"
+          },
+          "env": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "env_vars": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "properties": {
+                "consumed_by": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "default": {},
+                "description": {
+                  "type": "string"
+                },
+                "grammar": {
+                  "type": "string"
+                },
+                "malformed_expectations": {
+                  "additionalProperties": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "code": {
+                        "type": "string"
+                      },
+                      "exit_code": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "exit_code"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "object"
+                },
+                "maximum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "minimum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "shadowed_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "unbounded": {
+                  "type": "boolean"
+                },
+                "unbounded_reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "consumed_by",
+                "default",
+                "description",
+                "malformed_expectations",
+                "required",
+                "shadowed_by",
+                "type",
+                "unbounded"
+              ],
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "error_codes": {
+            "items": {
+              "enum": [
+                "INVALID_INPUT",
+                "MISSING_REQUIRED",
+                "UNKNOWN_FLAG",
+                "UNKNOWN_COMMAND",
+                "NOT_FOUND",
+                "CONFLICT",
+                "IDEMPOTENCY_CONFLICT",
+                "SAFETY_BLOCK",
+                "LOCKED",
+                "TIMEOUT",
+                "INTERNAL"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "execution": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "exit_codes": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "meaning": {
+                  "type": "string"
+                },
+                "note": {
+                  "type": "string"
+                },
+                "retryable": {
+                  "type": [
+                    "boolean",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "meaning",
+                "retryable"
+              ],
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "failure_reasons": {
+            "items": {
+              "enum": [
+                "process_exit",
+                "timeout",
+                "spawn_failed",
+                "worker_crash",
+                "canceled",
+                "unknown"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "features": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "global_flags": {
+            "additionalProperties": false,
+            "properties": {
+              "db_scope": {
+                "type": "string"
+              },
+              "flags": {
+                "items": {
+                  "additionalProperties": true,
+                  "properties": {
+                    "aliases": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "charset": {
+                      "type": "string"
+                    },
+                    "choices": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": [
+                        "array",
+                        "null"
+                      ]
+                    },
+                    "default": {},
+                    "flag": {
+                      "type": "string"
+                    },
+                    "grammar": {
+                      "type": "string"
+                    },
+                    "key_maximum": {
+                      "type": "integer"
+                    },
+                    "malformed_expectations": {
+                      "additionalProperties": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "code": {
+                            "type": "string"
+                          },
+                          "exit_code": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "code",
+                          "exit_code"
+                        ],
+                        "type": "object"
+                      },
+                      "type": "object"
+                    },
+                    "maximum": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "maximum_items": {
+                      "type": "integer"
+                    },
+                    "minimum": {
+                      "type": [
+                        "number",
+                        "null"
+                      ]
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "repeatable": {
+                      "type": "boolean"
+                    },
+                    "required": {
+                      "type": "boolean"
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "unbounded": {
+                      "type": "boolean"
+                    },
+                    "unbounded_reason": {
+                      "type": "string"
+                    },
+                    "value_maximum": {
+                      "type": "integer"
+                    },
+                    "value_required": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "aliases",
+                    "choices",
+                    "default",
+                    "flag",
+                    "malformed_expectations",
+                    "name",
+                    "repeatable",
+                    "required",
+                    "type",
+                    "unbounded",
+                    "value_required"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "db_scope",
+              "flags"
+            ],
+            "type": "object"
+          },
+          "job_states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "limits": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "properties": {
+                "charset": {
+                  "type": "string"
+                },
+                "grammar": {
+                  "type": "string"
+                },
+                "maximum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "minimum": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "type": {
+                  "type": "string"
+                },
+                "unbounded": {
+                  "type": "boolean"
+                },
+                "unbounded_reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "unbounded"
+              ],
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "output_modes": {
+            "items": {
+              "enum": [
+                "envelope",
+                "frames",
+                "raw",
+                "text"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "probe_vocabularies": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "robot_docs_uri": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "scheduling": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "schemas_uri": {
+            "type": "string"
+          },
+          "tool_name": {
+            "const": "spoolctl",
+            "type": "string"
+          },
+          "tool_version": {
+            "type": "string"
+          },
+          "totality": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "verbs": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "properties": {
+                "args": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "choices": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "malformed_expectations": {
+                        "additionalProperties": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "exit_code": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "exit_code"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "object"
+                      },
+                      "maximum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "minimum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "nargs": {
+                        "enum": [
+                          "1",
+                          "+",
+                          "*",
+                          "remainder"
+                        ],
+                        "type": "string"
+                      },
+                      "repeatable": {
+                        "type": "boolean"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "unbounded": {
+                        "type": "boolean"
+                      },
+                      "unbounded_reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "choices",
+                      "malformed_expectations",
+                      "name",
+                      "nargs",
+                      "repeatable",
+                      "required",
+                      "type",
+                      "unbounded"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "data_schema": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "destructive": {},
+                "examples": {
+                  "items": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "exit_codes": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                },
+                "flags": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "aliases": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      },
+                      "charset": {
+                        "type": "string"
+                      },
+                      "choices": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "default": {},
+                      "flag": {
+                        "type": "string"
+                      },
+                      "grammar": {
+                        "type": "string"
+                      },
+                      "key_maximum": {
+                        "type": "integer"
+                      },
+                      "malformed_expectations": {
+                        "additionalProperties": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "exit_code": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "exit_code"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "object"
+                      },
+                      "maximum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "maximum_items": {
+                        "type": "integer"
+                      },
+                      "minimum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "repeatable": {
+                        "type": "boolean"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "unbounded": {
+                        "type": "boolean"
+                      },
+                      "unbounded_reason": {
+                        "type": "string"
+                      },
+                      "value_maximum": {
+                        "type": "integer"
+                      },
+                      "value_required": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "aliases",
+                      "choices",
+                      "default",
+                      "flag",
+                      "malformed_expectations",
+                      "name",
+                      "repeatable",
+                      "required",
+                      "type",
+                      "unbounded",
+                      "value_required"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "idempotent": {},
+                "json": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "mutates": {
+                  "type": "boolean"
+                },
+                "mutually_exclusive": {
+                  "items": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "type": "array"
+                },
+                "output_modes": {
+                  "items": {
+                    "enum": [
+                      "envelope",
+                      "frames",
+                      "raw",
+                      "text"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "output_schema": {},
+                "positionals": {
+                  "items": {
+                    "additionalProperties": true,
+                    "properties": {
+                      "choices": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": [
+                          "array",
+                          "null"
+                        ]
+                      },
+                      "malformed_expectations": {
+                        "additionalProperties": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "code": {
+                              "type": "string"
+                            },
+                            "exit_code": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "code",
+                            "exit_code"
+                          ],
+                          "type": "object"
+                        },
+                        "type": "object"
+                      },
+                      "maximum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "minimum": {
+                        "type": [
+                          "number",
+                          "null"
+                        ]
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "nargs": {
+                        "enum": [
+                          "1",
+                          "+",
+                          "*",
+                          "remainder"
+                        ],
+                        "type": "string"
+                      },
+                      "repeatable": {
+                        "type": "boolean"
+                      },
+                      "required": {
+                        "type": "boolean"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "unbounded": {
+                        "type": "boolean"
+                      },
+                      "unbounded_reason": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "choices",
+                      "malformed_expectations",
+                      "name",
+                      "nargs",
+                      "repeatable",
+                      "required",
+                      "type",
+                      "unbounded"
+                    ],
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "probe_hints": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "raw": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "safety": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "schema_ref": {
+                  "type": "string"
+                },
+                "since_cursor_alias": {
+                  "type": "string"
+                },
+                "stdin": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "text": {
+                  "additionalProperties": {},
+                  "type": "object"
+                }
+              },
+              "required": [
+                "args",
+                "data_schema",
+                "description",
+                "destructive",
+                "examples",
+                "exit_codes",
+                "flags",
+                "idempotent",
+                "json",
+                "mutates",
+                "mutually_exclusive",
+                "output_modes",
+                "output_schema",
+                "positionals",
+                "probe_hints",
+                "schema_ref",
+                "stdin",
+                "summary",
+                "text"
+              ],
+              "type": "object"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "attempt_states",
+          "code_registry",
+          "config",
+          "contract_policy",
+          "contract_version",
+          "env",
+          "env_vars",
+          "error_codes",
+          "events",
+          "execution",
+          "exit_codes",
+          "failure_reasons",
+          "features",
+          "global_flags",
+          "job_states",
+          "limits",
+          "output_modes",
+          "probe_vocabularies",
+          "robot_docs_uri",
+          "scheduling",
+          "schemas_uri",
+          "tool_name",
+          "tool_version",
+          "totality",
+          "verbs"
+        ],
+        "type": "object"
+      },
       "positionals": [],
-      "summary": "this machine-readable contract"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb capabilities",
+      "stdin": "none",
+      "summary": "this machine-readable contract",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "events": {
+      "args": [],
       "data_schema": "{count: int, events: [{id, job_id, at, event, worker_id, detail}]}; meta.pagination:{cursor, first_id}; --wait also adds meta.wait:{reason, waited_ms}",
+      "description": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "events",
+          "--json",
+          "--limit",
+          "10"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--follow"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--follow",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--follow",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--job"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--job",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "name": "--job",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--limit"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--limit",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "name": "--limit",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--poll-interval"
+          ],
+          "choices": null,
           "default": 0.5,
           "flag": "--poll-interval",
-          "type": "float"
+          "grammar": "finite float > 0",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 1e+308,
+          "minimum": 0,
+          "name": "--poll-interval",
+          "repeatable": false,
+          "required": false,
+          "type": "float",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--since-id"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--since-id",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "name": "--since-id",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--wait"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--wait",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--wait",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--wait-timeout"
+          ],
+          "choices": null,
           "default": 30.0,
           "flag": "--wait-timeout",
-          "type": "float"
+          "grammar": "finite float > 0",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 1e+308,
+          "minimum": 0,
+          "name": "--wait-timeout",
+          "repeatable": false,
+          "required": false,
+          "type": "float",
+          "unbounded": false,
+          "value_required": true
         }
+      ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb events"
+      },
+      "mutates": false,
+      "mutually_exclusive": [
+        [
+          "--wait",
+          "--follow"
+        ],
+        [
+          "--limit",
+          "--follow"
+        ]
       ],
       "output_modes": [
         "envelope",
-        "raw"
+        "raw",
+        "text"
       ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "events": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "type": "number"
+                },
+                "detail": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "event": {
+                  "enum": [
+                    "added",
+                    "claimed",
+                    "succeeded",
+                    "failed",
+                    "timed_out",
+                    "reaped",
+                    "dead",
+                    "retried",
+                    "canceled"
+                  ],
+                  "type": "string"
+                },
+                "id": {
+                  "type": "integer"
+                },
+                "job_id": {
+                  "type": "integer"
+                },
+                "worker_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "at",
+                "detail",
+                "event",
+                "id",
+                "job_id",
+                "worker_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "events"
+        ],
+        "type": "object"
+      },
       "positionals": [],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
       "raw": {
         "delivery_class": "best-effort-tail over replayable-from-cursor ledger",
         "mode": "ndjson",
@@ -504,75 +3458,582 @@
         "stream": "events_follow",
         "when": "--follow --json"
       },
+      "schema_ref": "spoolctl schema --json --verb events",
       "since_cursor_alias": "--since-id",
-      "summary": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames"
+      "stdin": "none",
+      "summary": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "list": {
+      "args": [],
       "data_schema": "{count: int, jobs: [{id, argv, state, attempts, crashes, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, cwd, last_exit_code, last_error, idempotency_key, tags, note}]}",
+      "description": "enumerate jobs, newest first, optionally filtered by state/tag/queue/priority",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "list",
+          "--json",
+          "--limit",
+          "10"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--limit"
+          ],
+          "choices": null,
           "default": 50,
           "flag": "--limit",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "name": "--limit",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--priority-min"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--priority-min",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 2147483647,
+          "minimum": -2147483648,
+          "name": "--priority-min",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--queue"
+          ],
+          "charset": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "choices": null,
           "default": null,
           "flag": "--queue",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 64,
+          "minimum": 1,
+          "name": "--queue",
+          "repeatable": false,
+          "required": false,
+          "type": "queue",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--state"
+          ],
+          "choices": [
+            "canceled",
+            "dead",
+            "done",
+            "failed",
+            "queued",
+            "running"
+          ],
           "default": null,
           "flag": "--state",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "name": "--state",
+          "repeatable": false,
+          "required": false,
+          "type": "enum_csv",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--tag"
+          ],
+          "choices": null,
           "default": [],
           "flag": "--tag",
-          "type": "str"
+          "grammar": "KEY=VALUE for add; KEY or KEY=VALUE for list; key matches [A-Za-z0-9_.:-]+",
+          "key_maximum": 128,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum_items": 16,
+          "name": "--tag",
+          "repeatable": true,
+          "required": false,
+          "type": "key_value",
+          "unbounded": false,
+          "value_maximum": 1024,
+          "value_required": true
         }
       ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb list"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "count": {
+            "type": "integer"
+          },
+          "jobs": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "argv": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "attempts": {
+                  "type": "integer"
+                },
+                "crashes": {
+                  "type": "integer"
+                },
+                "created_at": {
+                  "type": "number"
+                },
+                "cwd": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "finished_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "integer"
+                },
+                "idempotency_key": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_exit_code": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "max_retries": {
+                  "type": "integer"
+                },
+                "next_run_at": {
+                  "type": "number"
+                },
+                "note": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "priority": {
+                  "type": "integer"
+                },
+                "queue": {
+                  "type": "string"
+                },
+                "started_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "enum": [
+                    "queued",
+                    "running",
+                    "done",
+                    "failed",
+                    "dead",
+                    "canceled"
+                  ],
+                  "type": "string"
+                },
+                "tags": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "timeout_seconds": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "argv",
+                "attempts",
+                "crashes",
+                "created_at",
+                "cwd",
+                "finished_at",
+                "id",
+                "idempotency_key",
+                "last_error",
+                "last_exit_code",
+                "max_retries",
+                "next_run_at",
+                "note",
+                "priority",
+                "queue",
+                "started_at",
+                "state",
+                "tags",
+                "timeout_seconds"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "count",
+          "jobs"
+        ],
+        "type": "object"
+      },
       "positionals": [],
-      "summary": "enumerate jobs, newest first, optionally filtered by state/tag/queue/priority"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb list",
+      "stdin": "none",
+      "summary": "enumerate jobs, newest first, optionally filtered by state/tag/queue/priority",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "output": {
+      "args": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "id",
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
+        }
+      ],
       "data_schema": "{attempt_no, attempt_state, attempts_total, job_id, streams: {stdout|stderr: {path, preview, preview_truncated, size_bytes}}} or {attempts: []}",
+      "description": "captured stdout/stderr for any attempt of a job",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "output",
+          "--json",
+          "1",
+          "--stream",
+          "stdout"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--attempt"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--attempt",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "--attempt",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--raw"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--raw",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--raw",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--stream"
+          ],
           "choices": [
             "both",
             "stderr",
@@ -580,53 +4041,421 @@
           ],
           "default": "both",
           "flag": "--stream",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "name": "--stream",
+          "repeatable": false,
+          "required": false,
+          "type": "enum",
+          "unbounded": false,
+          "value_required": true
         }
       ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb output"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "raw",
+        "text"
+      ],
+      "output_schema": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attempts": {
+                "items": {},
+                "type": "array"
+              }
+            },
+            "required": [
+              "attempts"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attempt_no": {
+                "type": "integer"
+              },
+              "attempt_state": {
+                "enum": [
+                  "running",
+                  "succeeded",
+                  "failed",
+                  "timed_out",
+                  "abandoned",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              "attempts_total": {
+                "type": "integer"
+              },
+              "job_id": {
+                "type": "integer"
+              },
+              "streams": {
+                "additionalProperties": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "path": {
+                      "type": "string"
+                    },
+                    "preview": {
+                      "type": "string"
+                    },
+                    "preview_truncated": {
+                      "type": "boolean"
+                    },
+                    "size_bytes": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "preview",
+                    "preview_truncated",
+                    "size_bytes"
+                  ],
+                  "type": "object"
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "attempt_no",
+              "attempt_state",
+              "attempts_total",
+              "job_id",
+              "streams"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "positionals": [
         {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
           "name": "id",
-          "repeatable": false
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
         }
       ],
-      "summary": "captured stdout/stderr for any attempt of a job"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb output",
+      "stdin": "none",
+      "summary": "captured stdout/stderr for any attempt of a job",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "prune": {
+      "args": [],
       "data_schema": "{matched: int, deleted_jobs: int, deleted_attempts: int, deleted_events: int, freed_bytes: int, dry_run: bool, actual: bool, irreversible?: bool}",
+      "description": "delete terminal jobs older than a duration, files first then rows; requires --yes unless --dry-run reports without deleting",
       "destructive": true,
+      "examples": [
+        [
+          "spoolctl",
+          "prune",
+          "--json",
+          "--older-than",
+          "30d",
+          "--dry-run"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--dry-run"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--dry-run",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--dry-run",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--older-than"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--older-than",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "name": "--older-than",
+          "repeatable": false,
+          "required": true,
+          "type": "duration",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--state"
+          ],
+          "choices": [
+            "canceled",
+            "dead",
+            "done"
+          ],
           "default": "done",
           "flag": "--state",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "name": "--state",
+          "repeatable": false,
+          "required": false,
+          "type": "enum_csv",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--yes",
+            "-y"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--yes",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--yes",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         }
       ],
+      "idempotent": false,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb prune"
+      },
+      "mutates": true,
+      "mutually_exclusive": [
+        [
+          "--yes",
+          "--dry-run"
+        ]
+      ],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actual": {
+            "type": "boolean"
+          },
+          "deleted_attempts": {
+            "type": "integer"
+          },
+          "deleted_events": {
+            "type": "integer"
+          },
+          "deleted_jobs": {
+            "type": "integer"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "freed_bytes": {
+            "type": "integer"
+          },
+          "irreversible": {
+            "type": "boolean"
+          },
+          "matched": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "actual",
+          "deleted_attempts",
+          "deleted_events",
+          "deleted_jobs",
+          "dry_run",
+          "freed_bytes",
+          "matched"
+        ],
+        "type": "object"
+      },
       "positionals": [],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
       "safety": {
         "confirmation_flag": "--yes",
         "dry_run_flag": "--dry-run",
@@ -642,33 +4471,203 @@
         "refusal_code": "SAFETY_BLOCK",
         "refusal_exit_code": 2
       },
-      "summary": "delete terminal jobs older than a duration, files first then rows; requires --yes unless --dry-run reports without deleting"
+      "schema_ref": "spoolctl schema --json --verb prune",
+      "stdin": "none",
+      "summary": "delete terminal jobs older than a duration, files first then rows; requires --yes unless --dry-run reports without deleting",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "retry": {
+      "args": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "id",
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
+        }
+      ],
       "data_schema": "{job_id: int, state: 'queued'}",
+      "description": "requeue a dead or failed job with a fresh retry budget",
+      "destructive": "only with --force on running jobs",
+      "examples": [
+        [
+          "spoolctl",
+          "retry",
+          "--json",
+          "1"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--force"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--force",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--force",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         }
       ],
+      "idempotent": false,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb retry"
+      },
+      "mutates": true,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "job_id": {
+            "type": "integer"
+          },
+          "state": {
+            "const": "queued",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "state"
+        ],
+        "type": "object"
+      },
       "positionals": [
         {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
           "name": "id",
-          "repeatable": false
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
         }
       ],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
       "safety": {
         "also_requires_yes": false,
         "force_flag": "--force",
@@ -676,147 +4675,1580 @@
         "refusal_code": "SAFETY_BLOCK",
         "refusal_exit_code": 2
       },
-      "summary": "requeue a dead or failed job with a fresh retry budget"
+      "schema_ref": "spoolctl schema --json --verb retry",
+      "stdin": "none",
+      "summary": "requeue a dead or failed job with a fresh retry budget",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "schema": {
+      "args": [],
       "data_schema": "{dialect: str, envelope_schema: object, verbs: {<name>: schema}, streams: {events_follow: schema}}",
+      "description": "export JSON Schemas for the envelope, verb data payloads, and streams",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "schema",
+          "--json"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--verb"
+          ],
+          "choices": [
+            "add",
+            "brief",
+            "cancel",
+            "capabilities",
+            "events",
+            "list",
+            "output",
+            "prune",
+            "retry",
+            "schema",
+            "show",
+            "status",
+            "wait",
+            "work"
+          ],
           "default": null,
           "flag": "--verb",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "name": "--verb",
+          "repeatable": false,
+          "required": false,
+          "type": "enum",
+          "unbounded": false,
+          "value_required": true
         }
       ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb schema"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "dialect": {
+            "const": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string"
+          },
+          "envelope_schema": {},
+          "streams": {
+            "additionalProperties": {},
+            "type": "object"
+          },
+          "verbs": {
+            "additionalProperties": {},
+            "type": "object"
+          }
+        },
+        "required": [
+          "dialect",
+          "envelope_schema",
+          "streams",
+          "verbs"
+        ],
+        "type": "object"
+      },
       "positionals": [],
-      "summary": "export JSON Schemas for the envelope, verb data payloads, and streams"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb schema",
+      "stdin": "none",
+      "summary": "export JSON Schemas for the envelope, verb data payloads, and streams",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "show": {
+      "args": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "id",
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
+        }
+      ],
       "data_schema": "{job: {id, argv, state, attempts, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, cwd, env, crashes, max_crashes, locked_by, locked_pid, locked_at, heartbeat_at, last_exit_code, last_error, last_failure_reason, idempotency_key, tags, note}, attempts: [{attempt_no, state, worker_id, worker_pid, started_at, finished_at, exit_code, error, failure_reason, stdout_path, stderr_path}], events: [{at, event, worker_id, detail}]}",
+      "description": "one job in full detail: row, attempts, event trail",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "show",
+          "--json",
+          "1"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         }
       ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb show"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "attempt_no": {
+                  "type": "integer"
+                },
+                "error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "exit_code": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "failure_reason": {
+                  "enum": [
+                    "process_exit",
+                    "timeout",
+                    "spawn_failed",
+                    "worker_crash",
+                    "canceled",
+                    "unknown",
+                    null
+                  ],
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "finished_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "started_at": {
+                  "type": "number"
+                },
+                "state": {
+                  "enum": [
+                    "running",
+                    "succeeded",
+                    "failed",
+                    "timed_out",
+                    "abandoned",
+                    "canceled"
+                  ],
+                  "type": "string"
+                },
+                "stderr_path": {
+                  "type": "string"
+                },
+                "stdout_path": {
+                  "type": "string"
+                },
+                "worker_id": {
+                  "type": "string"
+                },
+                "worker_pid": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "attempt_no",
+                "error",
+                "exit_code",
+                "failure_reason",
+                "finished_at",
+                "started_at",
+                "state",
+                "stderr_path",
+                "stdout_path",
+                "worker_id",
+                "worker_pid"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "events": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "at": {
+                  "type": "number"
+                },
+                "detail": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "event": {
+                  "enum": [
+                    "added",
+                    "claimed",
+                    "succeeded",
+                    "failed",
+                    "timed_out",
+                    "reaped",
+                    "dead",
+                    "retried",
+                    "canceled"
+                  ],
+                  "type": "string"
+                },
+                "worker_id": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "at",
+                "detail",
+                "event",
+                "worker_id"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "job": {
+            "additionalProperties": false,
+            "properties": {
+              "argv": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "attempts": {
+                "type": "integer"
+              },
+              "crashes": {
+                "type": "integer"
+              },
+              "created_at": {
+                "type": "number"
+              },
+              "cwd": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "env": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "finished_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "heartbeat_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "integer"
+              },
+              "idempotency_key": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_error": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "last_exit_code": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "last_failure_reason": {
+                "enum": [
+                  "process_exit",
+                  "timeout",
+                  "spawn_failed",
+                  "worker_crash",
+                  "canceled",
+                  "unknown",
+                  null
+                ],
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "locked_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "locked_by": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "locked_pid": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_crashes": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "max_retries": {
+                "type": "integer"
+              },
+              "next_run_at": {
+                "type": "number"
+              },
+              "note": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "priority": {
+                "type": "integer"
+              },
+              "queue": {
+                "type": "string"
+              },
+              "started_at": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "state": {
+                "enum": [
+                  "queued",
+                  "running",
+                  "done",
+                  "failed",
+                  "dead",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              "tags": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "timeout_seconds": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "argv",
+              "attempts",
+              "crashes",
+              "created_at",
+              "cwd",
+              "env",
+              "finished_at",
+              "heartbeat_at",
+              "id",
+              "idempotency_key",
+              "last_error",
+              "last_exit_code",
+              "last_failure_reason",
+              "locked_at",
+              "locked_by",
+              "locked_pid",
+              "max_crashes",
+              "max_retries",
+              "next_run_at",
+              "note",
+              "priority",
+              "queue",
+              "started_at",
+              "state",
+              "tags",
+              "timeout_seconds"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "attempts",
+          "events",
+          "job"
+        ],
+        "type": "object"
+      },
       "positionals": [
         {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
           "name": "id",
-          "repeatable": false
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
         }
       ],
-      "summary": "one job in full detail: row, attempts, event trail"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb show",
+      "stdin": "none",
+      "summary": "one job in full detail: row, attempts, event trail",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "status": {
+      "args": [],
       "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, scheduled: int, queues: {<queue>: {counts, scheduled}}, recent_dead: [{id, command, attempts, crashes, last_error, finished_at, stdout_path, stderr_path}]}",
+      "description": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "status",
+          "--json"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--limit"
+          ],
+          "choices": null,
           "default": 10,
           "flag": "--limit",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 0,
+          "name": "--limit",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         }
       ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb status"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "counts": {
+            "additionalProperties": false,
+            "properties": {
+              "canceled": {
+                "type": "integer"
+              },
+              "dead": {
+                "type": "integer"
+              },
+              "done": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              },
+              "queued": {
+                "type": "integer"
+              },
+              "running": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "canceled",
+              "dead",
+              "done",
+              "failed",
+              "queued",
+              "running"
+            ],
+            "type": "object"
+          },
+          "queues": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "counts": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "canceled": {
+                      "type": "integer"
+                    },
+                    "dead": {
+                      "type": "integer"
+                    },
+                    "done": {
+                      "type": "integer"
+                    },
+                    "failed": {
+                      "type": "integer"
+                    },
+                    "queued": {
+                      "type": "integer"
+                    },
+                    "running": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": [
+                    "canceled",
+                    "dead",
+                    "done",
+                    "failed",
+                    "queued",
+                    "running"
+                  ],
+                  "type": "object"
+                },
+                "scheduled": {
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "counts",
+                "scheduled"
+              ],
+              "type": "object"
+            },
+            "type": "object"
+          },
+          "recent_dead": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "attempts": {
+                  "type": "integer"
+                },
+                "command": {
+                  "type": "string"
+                },
+                "crashes": {
+                  "type": "integer"
+                },
+                "finished_at": {
+                  "type": [
+                    "number",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "integer"
+                },
+                "last_error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "stderr_path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "stdout_path": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "attempts",
+                "command",
+                "crashes",
+                "finished_at",
+                "id",
+                "last_error",
+                "stderr_path",
+                "stdout_path"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "scheduled": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "counts",
+          "queues",
+          "recent_dead",
+          "scheduled"
+        ],
+        "type": "object"
+      },
       "positionals": [],
-      "summary": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb status",
+      "stdin": "none",
+      "summary": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "wait": {
+      "args": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "ids",
+          "nargs": "+",
+          "repeatable": true,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
+        }
+      ],
       "data_schema": "{all_succeeded: bool, jobs: {'<id>': {state, attempts, last_exit_code, last_error}}}",
+      "description": "block until every given job settles (done/dead/canceled); exit 0 all done, exit 6 any failed (envelope stays ok:true)",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "wait",
+          "--json",
+          "1"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--poll-interval"
+          ],
+          "choices": null,
           "default": 0.5,
           "flag": "--poll-interval",
-          "type": "float"
+          "grammar": "finite float > 0",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 1e+308,
+          "minimum": 0,
+          "name": "--poll-interval",
+          "repeatable": false,
+          "required": false,
+          "type": "float",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--timeout"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--timeout",
-          "type": "float"
+          "grammar": "finite float > 0",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 1e+308,
+          "minimum": 0,
+          "name": "--timeout",
+          "repeatable": false,
+          "required": false,
+          "type": "float",
+          "unbounded": false,
+          "value_required": true
         }
       ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb wait"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "all_succeeded": {
+            "type": "boolean"
+          },
+          "jobs": {
+            "additionalProperties": {
+              "additionalProperties": false,
+              "properties": {
+                "attempts": {
+                  "type": "integer"
+                },
+                "last_error": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "last_exit_code": {
+                  "type": [
+                    "integer",
+                    "null"
+                  ]
+                },
+                "state": {
+                  "enum": [
+                    "queued",
+                    "running",
+                    "done",
+                    "failed",
+                    "dead",
+                    "canceled"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "attempts",
+                "last_error",
+                "last_exit_code",
+                "state"
+              ],
+              "type": "object"
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "all_succeeded",
+          "jobs"
+        ],
+        "type": "object"
+      },
       "positionals": [
         {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
           "name": "ids",
-          "repeatable": false
+          "nargs": "+",
+          "repeatable": true,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
         }
       ],
-      "summary": "block until every given job settles (done/dead/canceled); exit 0 all done, exit 6 any failed (envelope stays ok:true)"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb wait",
+      "stdin": "none",
+      "summary": "block until every given job settles (done/dead/canceled); exit 0 all done, exit 6 any failed (envelope stays ok:true)",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     },
     "work": {
+      "args": [],
       "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?, job_state?}; --drain: {drained: bool, executed: int}; loop mode writes nothing to stdout; claimed:false means no job runnable by this worker right now, including a full slot ceiling",
+      "description": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "work",
+          "--json",
+          "--once"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
       "flags": [
         {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--db",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": true,
+          "unbounded_reason": "path length is governed by the host filesystem",
+          "value_required": true
         },
         {
+          "aliases": [
+            "--drain"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--drain",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--drain",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--json",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--once"
+          ],
+          "choices": null,
           "default": false,
           "flag": "--once",
-          "type": "bool"
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--once",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
         },
         {
+          "aliases": [
+            "--poll-interval"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--poll-interval",
-          "type": "float"
+          "grammar": "finite float > 0",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 1e+308,
+          "minimum": 0,
+          "name": "--poll-interval",
+          "repeatable": false,
+          "required": false,
+          "type": "float",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--queue"
+          ],
+          "charset": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "choices": null,
           "default": "default",
           "flag": "--queue",
-          "type": "str"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 64,
+          "minimum": 1,
+          "name": "--queue",
+          "repeatable": false,
+          "required": false,
+          "type": "queue",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--slots"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--slots",
-          "type": "int"
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": -9223372036854775808,
+          "name": "--slots",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
         },
         {
+          "aliases": [
+            "--worker-id"
+          ],
+          "choices": null,
           "default": null,
           "flag": "--worker-id",
-          "type": "str"
+          "malformed_expectations": {
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 1,
+          "name": "--worker-id",
+          "repeatable": false,
+          "required": false,
+          "type": "string",
+          "unbounded": true,
+          "unbounded_reason": "worker ids are stored as text without an explicit CLI cap",
+          "value_required": true
         }
       ],
+      "idempotent": false,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb work"
+      },
+      "mutates": true,
+      "mutually_exclusive": [
+        [
+          "--once",
+          "--drain"
+        ]
+      ],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "claimed": {
+                "const": false,
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "claimed"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "attempt_no": {
+                "type": "integer"
+              },
+              "claimed": {
+                "const": true,
+                "type": "boolean"
+              },
+              "job_id": {
+                "type": "integer"
+              },
+              "job_state": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "result": {
+                "enum": [
+                  "succeeded",
+                  "failed",
+                  "timed_out"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "attempt_no",
+              "claimed",
+              "job_id",
+              "job_state",
+              "result"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "drained": {
+                "type": "boolean"
+              },
+              "executed": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "drained",
+              "executed"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "stopped": {
+                "const": true,
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "stopped"
+            ],
+            "type": "object"
+          }
+        ]
+      },
       "positionals": [],
-      "summary": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane"
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb work",
+      "stdin": "none",
+      "summary": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
     }
   }
 }
