@@ -312,6 +312,8 @@ def build_parser() -> _Parser:
     cancel.add_argument("--running", action="store_true",
                         help="also cancel a running job (its process group is"
                              " killed by the owning worker within a heartbeat)")
+    cancel.add_argument("-y", "--yes", action="store_true",
+                        help="confirm interruption when used with --running")
 
     prune = sub.add_parser("prune", parents=[common_db],
                            help="delete old terminal jobs and their output files",
@@ -322,6 +324,8 @@ def build_parser() -> _Parser:
                        help="terminal states to prune (done, dead, canceled); default done")
     prune.add_argument("--dry-run", action="store_true",
                        help="report what would be deleted without deleting")
+    prune.add_argument("-y", "--yes", action="store_true",
+                       help="confirm irreversible deletion")
 
     output = sub.add_parser("output", parents=[common_db], help="show a job's captured output",
                             allow_abbrev=False)
@@ -1260,6 +1264,14 @@ def cmd_wait(args: argparse.Namespace) -> VerbResult:
 
 def cmd_cancel(args: argparse.Namespace) -> VerbResult:
     job_id = _job_id_arg(args.id)
+    if args.running and not args.yes:
+        raise CliError(
+            "SAFETY_BLOCK",
+            f"job {job_id} may be running; canceling a running job kills its process",
+            f"preview state with: spoolctl show {job_id}; confirm with:"
+            f" spoolctl cancel --running --yes {job_id}",
+            exit_code=EXIT_SAFETY,
+        )
     conn = _open_db(args)
     try:
         outcome, state = store.cancel_job(conn, job_id, args.running, time.time())
@@ -1292,7 +1304,7 @@ def cmd_cancel(args: argparse.Namespace) -> VerbResult:
             "SAFETY_BLOCK",
             f"job {job_id} is running; canceling it kills its process",
             "let it finish, or force with:"
-            f" spoolctl cancel --running {job_id}",
+            f" spoolctl cancel --running --yes {job_id}",
             exit_code=EXIT_SAFETY,
         )
     if outcome == "raced":
@@ -1364,6 +1376,19 @@ def _parse_prune_states(raw: str) -> list[str]:
 def cmd_prune(args: argparse.Namespace) -> VerbResult:
     seconds = _parse_duration(args.older_than)
     states = _parse_prune_states(args.state)
+    if args.yes and args.dry_run:
+        raise CliError(
+            "INVALID_INPUT",
+            "--yes and --dry-run are mutually exclusive",
+            "preview with: spoolctl prune --older-than 30d --dry-run; confirm with: spoolctl prune --older-than 30d --yes",
+        )
+    if not args.yes and not args.dry_run:
+        raise CliError(
+            "SAFETY_BLOCK",
+            "prune deletes jobs, attempts, events, and captured output files",
+            "preview with: spoolctl prune --older-than 30d --dry-run; confirm with: spoolctl prune --older-than 30d --yes",
+            exit_code=EXIT_SAFETY,
+        )
     cutoff = time.time() - seconds
     conn = _open_db(args)
     try:
@@ -1381,6 +1406,7 @@ def cmd_prune(args: argparse.Namespace) -> VerbResult:
                 "deleted_attempts": sum(m["n_attempts"] for m in matches),
                 "deleted_events": sum(m["n_events"] for m in matches),
                 "deleted_jobs": len(matches),
+                "actual": False,
                 "dry_run": True,
                 "freed_bytes": freed,
                 "matched": len(matches),
@@ -1418,8 +1444,10 @@ def cmd_prune(args: argparse.Namespace) -> VerbResult:
         "deleted_attempts": attempts,
         "deleted_events": events,
         "deleted_jobs": jobs,
+        "actual": True,
         "dry_run": False,
         "freed_bytes": freed,
+        "irreversible": True,
         "matched": len(matches),
     }
     return VerbResult(
@@ -1772,10 +1800,10 @@ VERB_SUMMARIES = {
     },
     "prune": {
         "summary": "delete terminal jobs older than a duration, files first"
-                   " then rows; --dry-run reports without deleting",
+                   " then rows; requires --yes unless --dry-run reports without deleting",
         "data_schema": "{matched: int, deleted_jobs: int, deleted_attempts:"
                        " int, deleted_events: int, freed_bytes: int,"
-                       " dry_run: bool}",
+                       " dry_run: bool, actual: bool, irreversible?: bool}",
     },
     "output": {
         "summary": "captured stdout/stderr for any attempt of a job",
@@ -1857,6 +1885,38 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
             "when": "--follow --json",
         }
         description["since_cursor_alias"] = "--since-id"
+    if name == "prune":
+        description["destructive"] = True
+        description["safety"] = {
+            "confirmation_flag": "--yes",
+            "dry_run_flag": "--dry-run",
+            "refusal_code": "SAFETY_BLOCK",
+            "refusal_exit_code": EXIT_SAFETY,
+            "invalid_combinations": [
+                {"flags": ["--yes", "--dry-run"], "code": "INVALID_INPUT"}
+            ],
+        }
+    if name == "cancel":
+        description["destructive"] = "only with --running"
+        description["interrupts_process"] = "only with --running"
+        description["safety"] = {
+            "confirmation_flag": "--yes",
+            "requires": ["--running", "--yes"],
+            "refusal_code": "SAFETY_BLOCK",
+            "refusal_exit_code": EXIT_SAFETY,
+            "queued_cancel": {
+                "destructive": False,
+                "interrupts_process": False,
+            },
+        }
+    if name == "retry":
+        description["safety"] = {
+            "force_flag": "--force",
+            "force_required_for": "running_job",
+            "refusal_code": "SAFETY_BLOCK",
+            "refusal_exit_code": EXIT_SAFETY,
+            "also_requires_yes": False,
+        }
     return description
 
 

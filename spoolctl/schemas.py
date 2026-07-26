@@ -236,13 +236,23 @@ VERB_SCHEMAS = {
         "was_running": {"type": "boolean"},
     }),
     "prune": obj({
+        "actual": {"type": "boolean"},
         "deleted_attempts": {"type": "integer"},
         "deleted_events": {"type": "integer"},
         "deleted_jobs": {"type": "integer"},
         "dry_run": {"type": "boolean"},
         "freed_bytes": {"type": "integer"},
+        "irreversible": {"type": "boolean"},
         "matched": {"type": "integer"},
-    }),
+    }, required=[
+        "actual",
+        "deleted_attempts",
+        "deleted_events",
+        "deleted_jobs",
+        "dry_run",
+        "freed_bytes",
+        "matched",
+    ]),
     "output": {
         "oneOf": [
             obj({"attempts": array_of({})}),

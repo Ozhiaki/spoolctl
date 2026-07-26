@@ -93,24 +93,48 @@ class TestStateGate(PruneTestCase):
     def test_default_state_is_done_only(self):
         done = self.make_finished("done", 100.0)
         dead = self.make_finished("dead", 100.0)
-        code, env = self.prune("--older-than", "0")
+        code, env = self.prune("--older-than", "0", "--yes")
         self.assertEqual(code, 0)
         self.assertEqual(env["data"]["deleted_jobs"], 1)
+        self.assertTrue(env["data"]["actual"])
+        self.assertTrue(env["data"]["irreversible"])
         self.assertEqual(self.job_ids(), [dead])
         _ = done
 
 
 class TestPruneBehavior(PruneTestCase):
-    def test_zero_matches_is_success(self):
+    def test_without_yes_or_dry_run_is_safety_block_before_db(self):
+        db = os.path.join(self.tmp.name, "missing", "queue.db")
+        code, out, _ = run_cli("prune", "--older-than", "0", "--db", db, "--json")
+        self.assertEqual(code, 2)
+        env = json.loads(out)
+        self.assertEqual(env["errors"][0]["code"], "SAFETY_BLOCK")
+        self.assertIn("--dry-run", env["errors"][0]["remediation"])
+        self.assertIn("--yes", env["errors"][0]["remediation"])
+        self.assertFalse(os.path.exists(db))
+
+    def test_yes_dry_run_conflict(self):
+        code, env = self.prune("--older-than", "0", "--yes", "--dry-run")
+        self.assertEqual(code, 1)
+        self.assertEqual(env["errors"][0]["code"], "INVALID_INPUT")
+        self.assertIn("--dry-run", env["errors"][0]["remediation"])
+        self.assertIn("--yes", env["errors"][0]["remediation"])
+
+    def test_zero_matches_is_success_with_yes(self):
         code, env = self.prune("--older-than", "0")
+        self.assertEqual(code, 2)
+        self.assertEqual(env["errors"][0]["code"], "SAFETY_BLOCK")
+
+        code, env = self.prune("--older-than", "0", "--yes")
         self.assertEqual(code, 0)
         self.assertEqual(env["data"]["matched"], 0)
+        self.assertTrue(env["data"]["actual"])
 
     def test_age_filter_uses_finished_at(self):
         import time
         old = self.make_finished("done", time.time() - 3600)
         recent = self.make_finished("done", time.time() - 5)
-        code, env = self.prune("--older-than", "10m")
+        code, env = self.prune("--older-than", "10m", "--yes")
         self.assertEqual(code, 0)
         self.assertEqual(env["data"]["deleted_jobs"], 1)
         self.assertEqual(self.job_ids(), [recent])
@@ -121,7 +145,7 @@ class TestPruneBehavior(PruneTestCase):
         conn = store.connect(self.db)
         attempt = store.get_attempts(conn, job_id)[0]
         conn.close()
-        code, env = self.prune("--older-than", "0")
+        code, env = self.prune("--older-than", "0", "--yes")
         self.assertEqual(code, 0)
         data = env["data"]
         self.assertEqual(data["deleted_jobs"], 1)
@@ -140,9 +164,10 @@ class TestPruneBehavior(PruneTestCase):
         code, env = self.prune("--older-than", "0", "--state", "dead", "--dry-run")
         self.assertEqual(code, 0)
         data = env["data"]
-        self.assertEqual(data, {"deleted_attempts": 1, "deleted_events": 4,
-                                "deleted_jobs": 1, "dry_run": True,
-                                "freed_bytes": 20, "matched": 1})
+        self.assertEqual(data, {"actual": False, "deleted_attempts": 1,
+                                "deleted_events": 4, "deleted_jobs": 1,
+                                "dry_run": True, "freed_bytes": 20,
+                                "matched": 1})
         self.assertEqual(self.job_ids(), [job_id])
         self.assertTrue(os.path.exists(attempt.stdout_path))
 
@@ -154,7 +179,7 @@ class TestPruneBehavior(PruneTestCase):
         conn.close()
         os.unlink(attempt.stdout_path)
         os.unlink(attempt.stderr_path)
-        code, env = self.prune("--older-than", "0")
+        code, env = self.prune("--older-than", "0", "--yes")
         self.assertEqual(code, 0)
         data = env["data"]
         self.assertEqual((data["deleted_jobs"], data["freed_bytes"]), (1, 0))

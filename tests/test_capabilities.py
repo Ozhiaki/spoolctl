@@ -132,6 +132,24 @@ class TestParserParity(unittest.TestCase):
         self.assertIn("attempts - crashes", retry["job_owned_failures"])
         self.assertEqual(retry["max_crashes"]["zero"], "first crash dead-letters")
 
+    def test_safety_contract_documented(self):
+        verbs = capabilities_data()["verbs"]
+        prune = verbs["prune"]
+        self.assertIs(prune["destructive"], True)
+        self.assertEqual(prune["safety"]["confirmation_flag"], "--yes")
+        self.assertEqual(prune["safety"]["dry_run_flag"], "--dry-run")
+        self.assertEqual(prune["safety"]["refusal_code"], "SAFETY_BLOCK")
+
+        cancel = verbs["cancel"]
+        self.assertEqual(cancel["destructive"], "only with --running")
+        self.assertEqual(cancel["interrupts_process"], "only with --running")
+        self.assertEqual(cancel["safety"]["requires"], ["--running", "--yes"])
+        self.assertFalse(cancel["safety"]["queued_cancel"]["destructive"])
+
+        retry = verbs["retry"]
+        self.assertEqual(retry["safety"]["force_required_for"], "running_job")
+        self.assertFalse(retry["safety"]["also_requires_yes"])
+
 
 if __name__ == "__main__":
     unittest.main()

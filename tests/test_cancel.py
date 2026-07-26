@@ -94,13 +94,27 @@ class TestCancelRunning(CancelTestCase):
         self.assertEqual(code, 2)
         e = json.loads(out)["errors"][0]
         self.assertEqual(e["code"], "SAFETY_BLOCK")
-        self.assertIn(f"cancel --running {job_id}", e["remediation"])
+        self.assertIn(f"cancel --running --yes {job_id}", e["remediation"])
         self.assertEqual(self.job_row(job_id)["state"], "running")
         self.assertTrue(err.strip())
 
-    def test_forced_cancels_with_kill_async_warning(self):
+    def test_running_flag_without_yes_blocks_before_missing_lookup(self):
+        code, out, _ = run_cli(
+            "cancel", "999999", "--running", "--db", self.db, "--json"
+        )
+        self.assertEqual(code, 2)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "SAFETY_BLOCK")
+
+    def test_confirmed_missing_running_cancel_reaches_not_found(self):
+        code, out, _ = run_cli(
+            "cancel", "999999", "--running", "--yes", "--db", self.db, "--json"
+        )
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "NOT_FOUND")
+
+    def test_confirmed_running_cancels_with_kill_async_warning(self):
         job_id = self.add_running()
-        code, out, _ = run_cli("cancel", str(job_id), "--running",
+        code, out, _ = run_cli("cancel", str(job_id), "--running", "--yes",
                                "--db", self.db, "--json")
         self.assertEqual(code, 0)
         env = json.loads(out)
@@ -128,7 +142,7 @@ class TestCancelRunning(CancelTestCase):
         job_id = self.add_running()
         conn = store.connect(self.db)
         attempt = store.get_attempts(conn, job_id)[-1]
-        run_cli("cancel", str(job_id), "--running", "--db", self.db, "--json")
+        run_cli("cancel", str(job_id), "--running", "--yes", "--db", self.db, "--json")
         outcome = store.record_success(conn, job_id, attempt.id, "w1", 42, 99.0)
         conn.close()
         self.assertIsNone(outcome)  # ownership guard rejects the stale result
@@ -168,7 +182,7 @@ class TestCancelTerminalAndMissing(CancelTestCase):
 
     def test_canceled_is_conflict_nothing_to_do(self):
         job_id = self.make_state("canceled")
-        code, out, _ = run_cli("cancel", str(job_id), "--running",
+        code, out, _ = run_cli("cancel", str(job_id), "--running", "--yes",
                                "--db", self.db, "--json")
         self.assertEqual(code, 5)
         self.assertIn("already canceled",
@@ -179,7 +193,7 @@ class TestCancelTerminalAndMissing(CancelTestCase):
         # re-check runs inside BEGIN IMMEDIATE), so pin the CLI mapping.
         job_id = self.add_running()
         with mock.patch.object(store, "cancel_job", return_value=("raced", "done")):
-            code, out, _ = run_cli("cancel", str(job_id), "--running",
+            code, out, _ = run_cli("cancel", str(job_id), "--running", "--yes",
                                    "--db", self.db, "--json")
         self.assertEqual(code, 5)
         e = json.loads(out)["errors"][0]

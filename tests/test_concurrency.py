@@ -346,7 +346,7 @@ class TestCancelKillDelivery(ConcurrencyTestCase):
         self.spawn_worker("owner")
         child_pid = self.child_pid_of(pid_file)
 
-        out = self.cli("cancel", str(job_id), "--running")
+        out = self.cli("cancel", str(job_id), "--running", "--yes")
         env = json.loads(out)
         self.assertTrue(env["data"]["was_running"])
         self.assertEqual(env["warnings"][0]["code"], "KILL_ASYNC")
@@ -455,7 +455,7 @@ class TestPruneSafety(ConcurrencyTestCase):
         live_prunes = 0
         while True:
             out = self.cli("prune", "--older-than", "0",
-                           "--state", "done,dead,canceled")
+                           "--state", "done,dead,canceled", "--yes")
             job = self.job(hold_id)
             if job is None or job.state != "running":
                 break  # settled (or racing settle); the unit suite covers it
@@ -476,7 +476,7 @@ class TestPruneSafety(ConcurrencyTestCase):
                 "SELECT COUNT(*) AS n FROM jobs WHERE state IN"
                 " ('queued','running')")[0]["n"] == 0,
             timeout=30, message="queue to settle")
-        self.cli("prune", "--older-than", "0", "--state", "done,dead,canceled")
+        self.cli("prune", "--older-than", "0", "--state", "done,dead,canceled", "--yes")
         self.assertEqual(self.query("SELECT COUNT(*) AS n FROM jobs")[0]["n"], 0)
 
 

@@ -179,7 +179,7 @@ CODE_REGISTRY = {
         "appears_in": ["warnings"],
         "summary": "A running cancel has been recorded; process-group termination is asynchronous.",
         "retryable": None,
-        "example": "spoolctl cancel --running 1 --json",
+        "example": "spoolctl cancel --running --yes 1 --json",
     },
     "NO_ATTEMPTS_YET": {
         "appears_in": ["warnings"],

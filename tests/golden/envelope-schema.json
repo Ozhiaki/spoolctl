@@ -1238,6 +1238,9 @@
       "prune": {
         "additionalProperties": false,
         "properties": {
+          "actual": {
+            "type": "boolean"
+          },
           "deleted_attempts": {
             "type": "integer"
           },
@@ -1253,11 +1256,15 @@
           "freed_bytes": {
             "type": "integer"
           },
+          "irreversible": {
+            "type": "boolean"
+          },
           "matched": {
             "type": "integer"
           }
         },
         "required": [
+          "actual",
           "deleted_attempts",
           "deleted_events",
           "deleted_jobs",

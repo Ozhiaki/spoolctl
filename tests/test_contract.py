@@ -116,7 +116,9 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assert_golden("wait-mixed", out)
 
     def test_prune_empty(self):
-        code, out, _ = run_cli("prune", "--older-than", "0", "--db", self.db, "--json")
+        code, out, _ = run_cli(
+            "prune", "--older-than", "0", "--dry-run", "--db", self.db, "--json"
+        )
         self.assertEqual(code, 0)
         self.assert_golden("prune-empty", out)
 

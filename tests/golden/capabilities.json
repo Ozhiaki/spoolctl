@@ -56,7 +56,7 @@
       "appears_in": [
         "warnings"
       ],
-      "example": "spoolctl cancel --running 1 --json",
+      "example": "spoolctl cancel --running --yes 1 --json",
       "retryable": null,
       "summary": "A running cancel has been recorded; process-group termination is asynchronous."
     },
@@ -386,6 +386,7 @@
     },
     "cancel": {
       "data_schema": "{job_id: int, state: 'canceled', was_running: bool}",
+      "destructive": "only with --running",
       "flags": [
         {
           "default": null,
@@ -401,14 +402,33 @@
           "default": false,
           "flag": "--running",
           "type": "bool"
+        },
+        {
+          "default": false,
+          "flag": "--yes",
+          "type": "bool"
         }
       ],
+      "interrupts_process": "only with --running",
       "positionals": [
         {
           "name": "id",
           "repeatable": false
         }
       ],
+      "safety": {
+        "confirmation_flag": "--yes",
+        "queued_cancel": {
+          "destructive": false,
+          "interrupts_process": false
+        },
+        "refusal_code": "SAFETY_BLOCK",
+        "refusal_exit_code": 2,
+        "requires": [
+          "--running",
+          "--yes"
+        ]
+      },
       "summary": "cancel a queued job; --running also stops a running one (killed by its owning worker within a heartbeat)"
     },
     "capabilities": {
@@ -572,7 +592,8 @@
       "summary": "captured stdout/stderr for any attempt of a job"
     },
     "prune": {
-      "data_schema": "{matched: int, deleted_jobs: int, deleted_attempts: int, deleted_events: int, freed_bytes: int, dry_run: bool}",
+      "data_schema": "{matched: int, deleted_jobs: int, deleted_attempts: int, deleted_events: int, freed_bytes: int, dry_run: bool, actual: bool, irreversible?: bool}",
+      "destructive": true,
       "flags": [
         {
           "default": null,
@@ -598,10 +619,30 @@
           "default": "done",
           "flag": "--state",
           "type": "str"
+        },
+        {
+          "default": false,
+          "flag": "--yes",
+          "type": "bool"
         }
       ],
       "positionals": [],
-      "summary": "delete terminal jobs older than a duration, files first then rows; --dry-run reports without deleting"
+      "safety": {
+        "confirmation_flag": "--yes",
+        "dry_run_flag": "--dry-run",
+        "invalid_combinations": [
+          {
+            "code": "INVALID_INPUT",
+            "flags": [
+              "--yes",
+              "--dry-run"
+            ]
+          }
+        ],
+        "refusal_code": "SAFETY_BLOCK",
+        "refusal_exit_code": 2
+      },
+      "summary": "delete terminal jobs older than a duration, files first then rows; requires --yes unless --dry-run reports without deleting"
     },
     "retry": {
       "data_schema": "{job_id: int, state: 'queued'}",
@@ -628,6 +669,13 @@
           "repeatable": false
         }
       ],
+      "safety": {
+        "also_requires_yes": false,
+        "force_flag": "--force",
+        "force_required_for": "running_job",
+        "refusal_code": "SAFETY_BLOCK",
+        "refusal_exit_code": 2
+      },
       "summary": "requeue a dead or failed job with a fresh retry budget"
     },
     "schema": {

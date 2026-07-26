@@ -215,7 +215,9 @@ class TestLiveConformance(unittest.TestCase):
         self.assert_verb("brief", "brief", "--json")
         self.assert_verb("schema", "schema", "--json")
         self.assert_verb("status", "status", "--db", self.db, "--json")
-        self.assert_verb("prune", "prune", "--older-than", "0", "--db", self.db, "--json")
+        self.assert_verb(
+            "prune", "prune", "--older-than", "0", "--dry-run", "--db", self.db, "--json"
+        )
         self.assert_verb("capabilities", "capabilities", "--json")
 
 

@@ -68,6 +68,12 @@ class TestStaticRegistryCoverage(unittest.TestCase):
         for node in ast.walk(tree):
             if not isinstance(node, ast.Dict):
                 continue
+            keys = {
+                key.value for key in node.keys
+                if isinstance(key, ast.Constant) and isinstance(key.value, str)
+            }
+            if "message" not in keys:
+                continue
             for key, value in zip(node.keys, node.values):
                 if (
                     isinstance(key, ast.Constant)
@@ -154,7 +160,9 @@ class TestDynamicRegistryCoverage(unittest.TestCase):
                 store.claim_next(conn, "worker", 123, time.time(), store.output_root(db))
             finally:
                 conn.close()
-            code, out, _ = run_cli("cancel", job_id, "--db", db, "--json", "--running")
+            code, out, _ = run_cli(
+                "cancel", job_id, "--db", db, "--json", "--running", "--yes"
+            )
             self.assertEqual(code, 0)
             self.assert_warning_channel(json.loads(out))
 
