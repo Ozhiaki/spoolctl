@@ -64,9 +64,23 @@ class TestRawFidelity(OutputTestCase):
 
     def test_raw_and_json_mutually_exclusive(self):
         job_id = self.run_job(["echo", "hi"])
-        code, _, err = run_cli("output", str(job_id), "--db", self.db,
-                               "--raw", "--stream", "stdout", "--json")
+        code, out, err = run_cli("output", str(job_id), "--db", self.db,
+                                 "--raw", "--stream", "stdout", "--json")
         self.assertEqual(code, 1)
+        env = json.loads(out)
+        self.assertFalse(env["ok"])
+        self.assertEqual(env["errors"][0]["code"], "INVALID_INPUT")
+        self.assertIn("--raw and --json", err)
+
+    def test_raw_failures_keep_stdout_clean(self):
+        proc = subprocess.run(
+            [sys.executable, "-m", "spoolctl", "output", "999",
+             "--db", self.db, "--raw", "--stream", "stdout"],
+            cwd=REPO, capture_output=True,
+        )
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout, b"")
+        self.assertIn(b"no job with id 999", proc.stderr)
 
 
 class TestDefaultAndJson(OutputTestCase):

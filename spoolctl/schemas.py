@@ -154,6 +154,15 @@ EVENT_RECORD_SCHEMA = obj({
     "detail": NULLABLE_STRING,
 })
 
+EVENT_CONTROL_FRAME_SCHEMA = obj({
+    "control": obj({
+        "exit_code": {"type": "integer"},
+        "message": {"type": "string"},
+        "reason": {"type": "string", "enum": ["max_events", "idle_timeout", "sqlite_error"]},
+        "type": {"type": "string", "enum": ["end", "error"]},
+    }, required=["type", "reason"]),
+})
+
 SHOW_EVENT_SCHEMA = obj({
     "at": {"type": "number"},
     "event": {"type": "string", "enum": list(JOB_EVENT_TYPES)},
@@ -268,6 +277,8 @@ CAP_VERB_SCHEMA = obj({
     "examples": array_of(array_of({"type": "string"})),
     "exit_codes": array_of({"type": "integer"}),
     "flags": array_of(CAP_FLAG_SCHEMA),
+    "frames": {"type": "object", "additionalProperties": {}},
+    "frames_mode": {"type": "object", "additionalProperties": {}},
     "idempotent": {},
     "json": {"type": "object", "additionalProperties": {}},
     "mutates": {"type": "boolean"},
@@ -502,7 +513,8 @@ VERB_SCHEMAS = {
 }
 
 STREAM_SCHEMAS = {
-    "events_follow": EVENT_RECORD_SCHEMA,
+    "events_follow": {"oneOf": [EVENT_RECORD_SCHEMA, EVENT_CONTROL_FRAME_SCHEMA]},
+    "events_follow_data": EVENT_RECORD_SCHEMA,
 }
 
 

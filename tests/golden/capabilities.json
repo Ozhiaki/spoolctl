@@ -2839,6 +2839,14 @@
                   },
                   "type": "array"
                 },
+                "frames": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "frames_mode": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
                 "idempotent": {},
                 "json": {
                   "additionalProperties": {},
@@ -3140,6 +3148,41 @@
         },
         {
           "aliases": [
+            "--idle-timeout"
+          ],
+          "choices": null,
+          "default": null,
+          "flag": "--idle-timeout",
+          "grammar": "finite float > 0",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 1e+308,
+          "minimum": 0,
+          "name": "--idle-timeout",
+          "repeatable": false,
+          "required": false,
+          "type": "float",
+          "unbounded": false,
+          "value_required": true
+        },
+        {
+          "aliases": [
             "--job"
           ],
           "choices": null,
@@ -3225,6 +3268,40 @@
         },
         {
           "aliases": [
+            "--max-events"
+          ],
+          "choices": null,
+          "default": null,
+          "flag": "--max-events",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "--max-events",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
+        },
+        {
+          "aliases": [
             "--poll-interval"
           ],
           "choices": null,
@@ -3260,6 +3337,7 @@
         },
         {
           "aliases": [
+            "--since-cursor",
             "--since-id"
           ],
           "choices": null,
@@ -3345,6 +3423,86 @@
           "value_required": true
         }
       ],
+      "frames": {
+        "control_frames": [
+          "end",
+          "error"
+        ],
+        "control_shape": {
+          "control": {
+            "reason": "max_events|idle_timeout|sqlite_error",
+            "type": "end|error"
+          }
+        },
+        "cursor": {
+          "aliases": [
+            "--since-cursor"
+          ],
+          "field": "id",
+          "flag": "--since-id"
+        },
+        "defaults": {
+          "follow_start": "high-water mark unless --since-id/--since-cursor is supplied",
+          "one_shot_start": "beginning unless --since-id/--since-cursor is supplied"
+        },
+        "delivery": "best-effort-tail-over-replayable-ledger",
+        "enter_with": [
+          "--follow",
+          "--json"
+        ],
+        "frame_discriminator": "data frames carry integer id; control frames carry object control and never carry id",
+        "ordering": "end appears exactly once and is final for graceful bounded termination; signal/EPIPE termination may omit it",
+        "record_schema": "#/streams/events_follow",
+        "termination": {
+          "idle_timeout": "emits final end control frame with reason idle_timeout",
+          "max_events": "emits final end control frame with reason max_events",
+          "signals": [
+            "SIGINT",
+            "SIGTERM",
+            "EPIPE"
+          ]
+        }
+      },
+      "frames_mode": {
+        "control_frames": [
+          "end",
+          "error"
+        ],
+        "control_shape": {
+          "control": {
+            "reason": "max_events|idle_timeout|sqlite_error",
+            "type": "end|error"
+          }
+        },
+        "cursor": {
+          "aliases": [
+            "--since-cursor"
+          ],
+          "field": "id",
+          "flag": "--since-id"
+        },
+        "defaults": {
+          "follow_start": "high-water mark unless --since-id/--since-cursor is supplied",
+          "one_shot_start": "beginning unless --since-id/--since-cursor is supplied"
+        },
+        "delivery": "best-effort-tail-over-replayable-ledger",
+        "enter_with": [
+          "--follow",
+          "--json"
+        ],
+        "frame_discriminator": "data frames carry integer id; control frames carry object control and never carry id",
+        "ordering": "end appears exactly once and is final for graceful bounded termination; signal/EPIPE termination may omit it",
+        "record_schema": "#/streams/events_follow",
+        "termination": {
+          "idle_timeout": "emits final end control frame with reason idle_timeout",
+          "max_events": "emits final end control frame with reason max_events",
+          "signals": [
+            "SIGINT",
+            "SIGTERM",
+            "EPIPE"
+          ]
+        }
+      },
       "idempotent": true,
       "json": {
         "flag": "--json",
@@ -3360,11 +3518,19 @@
         [
           "--limit",
           "--follow"
+        ],
+        [
+          "--max-events",
+          "--wait"
+        ],
+        [
+          "--idle-timeout",
+          "--wait"
         ]
       ],
       "output_modes": [
         "envelope",
-        "raw",
+        "frames",
         "text"
       ],
       "output_schema": {
@@ -3443,6 +3609,10 @@
           "env_var",
           "output_mode_success"
         ],
+        "frames_success": [
+          "seed event ledger and run events --follow --json --since-id 0 --max-events 1",
+          "run events --follow --json --idle-timeout 0.1 on an empty ledger"
+        ],
         "json_failure_verdict": {
           "ok": false,
           "stderr": "non-empty mirror",
@@ -3452,6 +3622,10 @@
         "timeout_seconds": 5
       },
       "raw": {
+        "deprecated": true,
+        "replaced_by": "frames"
+      },
+      "raw_legacy": {
         "delivery_class": "best-effort-tail over replayable-from-cursor ledger",
         "mode": "ndjson",
         "record": "bare event records only; no control frames",
@@ -3459,7 +3633,7 @@
         "when": "--follow --json"
       },
       "schema_ref": "spoolctl schema --json --verb events",
-      "since_cursor_alias": "--since-id",
+      "since_cursor_alias": "--since-cursor",
       "stdin": "none",
       "summary": "read the durable event ledger; verify job ids with spoolctl show; --follow --json is raw bare-record NDJSON with no control frames",
       "text": {
@@ -4197,6 +4371,22 @@
           "traceback_allowed": false
         },
         "timeout_seconds": 5
+      },
+      "raw": {
+        "delivery_class": "raw captured bytes",
+        "enter_with": [
+          "--raw"
+        ],
+        "failure_stdout": "no diagnostic text or JSON",
+        "incompatible_with": [
+          "--json"
+        ],
+        "requires": {
+          "--stream": [
+            "stdout",
+            "stderr"
+          ]
+        }
       },
       "schema_ref": "spoolctl schema --json --verb output",
       "stdin": "none",

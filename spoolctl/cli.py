@@ -341,10 +341,15 @@ def build_parser() -> _Parser:
                             allow_abbrev=False)
     events.add_argument("--job", type=_int_token, default=None, metavar="ID",
                         help="filter to one job id; no existence check is performed")
-    events.add_argument("--since-id", type=_int_token, default=None, metavar="N",
+    events.add_argument("--since-id", "--since-cursor", dest="since_id",
+                        type=_int_token, default=None, metavar="N",
                         help="return events with id > N")
     events.add_argument("--limit", type=_int_token, default=None, metavar="N",
                         help="one-shot max events; default 1000, 0 = unlimited")
+    events.add_argument("--max-events", type=_int_token, default=None, metavar="N",
+                        help="follow mode: stop after N data frames")
+    events.add_argument("--idle-timeout", type=_float_token, default=None, metavar="SECONDS",
+                        help="follow mode: stop after no new events for SECONDS")
     events.add_argument("--wait", action="store_true",
                         help="long-poll for the next matching event, then return an envelope")
     events.add_argument("--wait-timeout", type=_float_token, default=30.0, metavar="SECONDS",
@@ -1506,6 +1511,14 @@ def _validate_events_args(args: argparse.Namespace) -> None:
         _parse_int_bound(args.limit, flag="--limit", minimum=0)
         if args.limit is not None else None
     )
+    args.max_events = (
+        _parse_int_bound(args.max_events, flag="--max-events", minimum=1)
+        if args.max_events is not None else None
+    )
+    args.idle_timeout = (
+        _parse_positive_float(args.idle_timeout, flag="--idle-timeout")
+        if args.idle_timeout is not None else None
+    )
     args.poll_interval = _parse_positive_float(args.poll_interval, flag="--poll-interval")
     args.wait_timeout = _parse_positive_float(args.wait_timeout, flag="--wait-timeout")
     if args.job is not None and args.job <= 0:
@@ -1548,7 +1561,19 @@ def _validate_events_args(args: argparse.Namespace) -> None:
         raise CliError(
             "INVALID_INPUT",
             "--limit cannot be used with --follow",
-            "use --since-id to choose a starting cursor, or omit --follow",
+            "use --max-events for bounded follow, or omit --follow",
+        )
+    if not args.follow and args.max_events is not None:
+        raise CliError(
+            "INVALID_INPUT",
+            "--max-events is only valid with --follow",
+            "use --limit for one-shot events, or add --follow",
+        )
+    if not args.follow and args.idle_timeout is not None:
+        raise CliError(
+            "INVALID_INPUT",
+            "--idle-timeout is only valid with --follow",
+            "use --wait --wait-timeout for one-shot long-poll, or add --follow",
         )
 
 
@@ -1593,9 +1618,17 @@ def _write_event(event: dict, json_mode: bool) -> None:
         print(_format_event_line(event), flush=True)
 
 
+def _write_control_frame(frame_type: str, reason: str, **extra: Any) -> None:
+    control = {"type": frame_type, "reason": reason}
+    control.update(extra)
+    print(json.dumps({"control": control}, ensure_ascii=False), flush=True)
+
+
 def _run_events_follow(args: argparse.Namespace) -> VerbResult:
     conn = _open_db(args)
     stop = False
+    emitted = 0
+    idle_started = time.monotonic()
 
     def on_signal(signum, frame):
         nonlocal stop
@@ -1612,13 +1645,33 @@ def _run_events_follow(args: argparse.Namespace) -> VerbResult:
         while not stop:
             rows = store.list_events(conn, cursor, args.job, 0)
             if not rows:
+                if (
+                    args.idle_timeout is not None
+                    and time.monotonic() - idle_started >= args.idle_timeout
+                ):
+                    if args.json:
+                        _write_control_frame("end", "idle_timeout")
+                    break
                 time.sleep(args.poll_interval)
                 continue
             for event in rows:
                 if stop:
                     break
                 _write_event(event, args.json)
+                emitted += 1
                 cursor = event["id"]
+                idle_started = time.monotonic()
+                if args.max_events is not None and emitted >= args.max_events:
+                    if args.json:
+                        _write_control_frame("end", "max_events")
+                    stop = True
+                    break
+    except sqlite3.Error as exc:
+        message = f"event follow failed: {exc}"
+        if args.json:
+            _write_control_frame("error", "sqlite_error", message=message, exit_code=EXIT_ENVIRONMENT)
+        print(f"spoolctl: error: {message}", file=sys.stderr)
+        return VerbResult(data=None, human="", stdout_silent=True, exit_code=EXIT_ENVIRONMENT)
     except BrokenPipeError:
         try:
             sys.stdout.close()
@@ -2158,6 +2211,8 @@ FLAG_CONTRACTS = {
         "unbounded": False,
     },
     "--limit": {"type": "integer", **LIMITS["limit"]},
+    "--max-events": {"type": "integer", "minimum": 1, "maximum": SQLITE_INT64_MAX, "unbounded": False},
+    "--idle-timeout": {"type": "float", **LIMITS["poll_interval_seconds"]},
     "--max-crashes": {"type": "integer", "minimum": 0, "maximum": SQLITE_INT64_MAX, "unbounded": False},
     "--max-retries": {"type": "integer", "minimum": 0, "maximum": SQLITE_INT64_MAX, "unbounded": False},
     "--note": {
@@ -2248,13 +2303,18 @@ VERB_TRAITS = {
 }
 
 VERB_OUTPUT_MODES = {
-    "events": ["envelope", "raw", "text"],
+    "events": ["envelope", "frames", "text"],
     "output": ["envelope", "raw", "text"],
 }
 
 VERB_MUTEX = {
     "add": [["--after", "--at"]],
-    "events": [["--wait", "--follow"], ["--limit", "--follow"]],
+    "events": [
+        ["--wait", "--follow"],
+        ["--limit", "--follow"],
+        ["--max-events", "--wait"],
+        ["--idle-timeout", "--wait"],
+    ],
     "prune": [["--yes", "--dry-run"]],
     "work": [["--once", "--drain"]],
 }
@@ -2361,6 +2421,11 @@ def _action_base_type(action: argparse.Action) -> str:
     return "string"
 
 
+def _canonical_flag(action: argparse.Action) -> str:
+    long_options = [s for s in action.option_strings if s.startswith("--")]
+    return long_options[0] if long_options else max(action.option_strings, key=len)
+
+
 def _with_flag_contract(verb_name: str, action: argparse.Action, flag: str) -> dict[str, Any]:
     value_required = not isinstance(action, argparse._StoreTrueAction)
     repeatable = isinstance(action, argparse._AppendAction)
@@ -2455,7 +2520,7 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
         if isinstance(action, argparse._HelpAction):
             continue
         if action.option_strings:
-            flag = max(action.option_strings, key=len)
+            flag = _canonical_flag(action)
             flags.append(_with_flag_contract(name, action, flag))
         else:
             args.append(_describe_positional(action))
@@ -2490,14 +2555,61 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
         },
     }
     if name == "events":
+        description["frames"] = {
+            "enter_with": ["--follow", "--json"],
+            "record_schema": "#/streams/events_follow",
+            "frame_discriminator": (
+                "data frames carry integer id; control frames carry object"
+                " control and never carry id"
+            ),
+            "control_frames": ["end", "error"],
+            "control_shape": {
+                "control": {
+                    "type": "end|error",
+                    "reason": "max_events|idle_timeout|sqlite_error",
+                }
+            },
+            "cursor": {
+                "field": "id",
+                "flag": "--since-id",
+                "aliases": ["--since-cursor"],
+            },
+            "delivery": "best-effort-tail-over-replayable-ledger",
+            "defaults": {
+                "follow_start": "high-water mark unless --since-id/--since-cursor is supplied",
+                "one_shot_start": "beginning unless --since-id/--since-cursor is supplied",
+            },
+            "termination": {
+                "signals": ["SIGINT", "SIGTERM", "EPIPE"],
+                "max_events": "emits final end control frame with reason max_events",
+                "idle_timeout": "emits final end control frame with reason idle_timeout",
+            },
+            "ordering": (
+                "end appears exactly once and is final for graceful bounded"
+                " termination; signal/EPIPE termination may omit it"
+            ),
+        }
         description["raw"] = {
+            "deprecated": True,
+            "replaced_by": "frames",
+        }
+        description["frames_mode"] = description["frames"]
+        description["output_modes"] = ["envelope", "frames", "text"]
+        description["probe_hints"] = {
+            **description["probe_hints"],
+            "frames_success": [
+                "seed event ledger and run events --follow --json --since-id 0 --max-events 1",
+                "run events --follow --json --idle-timeout 0.1 on an empty ledger",
+            ],
+        }
+        description["raw_legacy"] = {
             "delivery_class": "best-effort-tail over replayable-from-cursor ledger",
             "mode": "ndjson",
             "record": "bare event records only; no control frames",
             "stream": "events_follow",
             "when": "--follow --json",
         }
-        description["since_cursor_alias"] = "--since-id"
+        description["since_cursor_alias"] = "--since-cursor"
     if name == "prune":
         description["destructive"] = True
         description["safety"] = {
@@ -2529,6 +2641,14 @@ def _describe_verb(name: str, sub: _Parser) -> dict[str, Any]:
             "refusal_code": "SAFETY_BLOCK",
             "refusal_exit_code": EXIT_SAFETY,
             "also_requires_yes": False,
+        }
+    if name == "output":
+        description["raw"] = {
+            "enter_with": ["--raw"],
+            "incompatible_with": ["--json"],
+            "requires": {"--stream": ["stdout", "stderr"]},
+            "delivery_class": "raw captured bytes",
+            "failure_stdout": "no diagnostic text or JSON",
         }
     return description
 

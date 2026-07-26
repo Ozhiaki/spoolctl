@@ -1,4 +1,4 @@
-"""events verb: cursored ledger reads, long-poll, and raw NDJSON follow."""
+"""events verb: cursored ledger reads, long-poll, and NDJSON frames follow."""
 
 from __future__ import annotations
 
@@ -175,6 +175,10 @@ class TestEventsWait(EventsTestCase):
         cases = [
             ("--follow", "--limit", "1"),
             ("--follow", "--wait"),
+            ("--follow", "--max-events", "0"),
+            ("--follow", "--idle-timeout", "0"),
+            ("--max-events", "1"),
+            ("--idle-timeout", "0.1"),
             ("--since-id", "-1"),
             ("--limit", "-1"),
             ("--wait-timeout", "0"),
@@ -189,39 +193,67 @@ class TestEventsWait(EventsTestCase):
 
 
 class TestEventsFollow(EventsTestCase):
-    def test_follow_json_emits_bare_ndjson_records_and_flushes(self):
+    def test_follow_json_emits_data_frames_and_flushes(self):
         self.add()
-        proc = self.start_follow("--since-id", "0")
-        self.addCleanup(self.stop_follow, proc)
+        proc = self.start_follow("--since-id", "0", "--max-events", "2")
         first = json.loads(self.read_follow_line(proc))
         self.assertNotIn("ok", first)
         self.assertNotIn("data", first)
+        self.assertIsInstance(first["id"], int)
+        self.assertNotIn("control", first)
         self.assertEqual(first["id"], 1)
 
         self.add()
         second = json.loads(self.read_follow_line(proc))
         self.assertEqual(second["id"], 2)
         self.assertEqual(second["event"], "added")
+        end = json.loads(self.read_follow_line(proc))
+        self.assertNotIn("id", end)
+        self.assertEqual(end, {"control": {"type": "end", "reason": "max_events"}})
+        self.assertEqual(proc.wait(timeout=3), 0)
+        self.stop_follow(proc)
 
     def test_follow_defaults_to_now_unless_since_id_is_given(self):
         self.add()
-        proc = self.start_follow()
-        self.addCleanup(self.stop_follow, proc)
+        proc = self.start_follow("--max-events", "1")
         time.sleep(0.1)
         self.add()
         event = json.loads(self.read_follow_line(proc))
         self.assertEqual(event["id"], 2)
+        self.assertEqual(json.loads(self.read_follow_line(proc))["control"]["reason"],
+                         "max_events")
+        self.assertEqual(proc.wait(timeout=3), 0)
+        self.stop_follow(proc)
+
+    def test_follow_since_cursor_alias_and_idle_timeout(self):
+        self.add()
+        proc = self.start_follow("--since-cursor", "0", "--max-events", "1")
+        event = json.loads(self.read_follow_line(proc))
+        self.assertEqual(event["id"], 1)
+        self.assertEqual(json.loads(self.read_follow_line(proc))["control"]["reason"],
+                         "max_events")
+        self.assertEqual(proc.wait(timeout=3), 0)
+        self.stop_follow(proc)
+
+        idle = self.start_follow("--idle-timeout", "0.05")
+        end = json.loads(self.read_follow_line(idle))
+        self.assertEqual(end, {"control": {"type": "end", "reason": "idle_timeout"}})
+        self.assertEqual(idle.wait(timeout=3), 0)
+        self.stop_follow(idle)
 
     def test_follow_tolerates_prune_induced_gaps(self):
         self.add("--max-retries", "0")
         run_cli("work", "--once", "--db", self.db, "--json")
         self.add()
         run_cli("prune", "--older-than", "0", "--yes", "--db", self.db, "--json")
-        proc = self.start_follow("--since-id", "0")
-        self.addCleanup(self.stop_follow, proc)
+        proc = self.start_follow("--since-id", "0", "--max-events", "1")
         event = json.loads(self.read_follow_line(proc))
         self.assertEqual(event["id"], 4)
         self.assertEqual(event["event"], "added")
+        self.assertEqual(json.loads(self.read_follow_line(proc))["control"]["reason"],
+                         "max_events")
+        self.assertEqual(proc.wait(timeout=3), 0)
+        self.stop_follow(proc)
 
 
 if __name__ == "__main__":

@@ -154,6 +154,8 @@ def valid_required_options(verb: str, *, exclude: str | None = None) -> list[str
 def setup_for_success(verb: str, mode: str, db: str) -> list[list[str]]:
     if verb == "add":
         return []
+    if verb == "events" and mode == "frames":
+        return [["add", "--db", db, "--json", "--", "true"]]
     if verb == "cancel":
         return [["add", "--db", db, "--json", "--", "sleep", "1"]]
     if verb == "output":
@@ -186,8 +188,10 @@ def success_argv(verb: str, mode: str, caps: dict, db: str) -> list[str]:
     if verb == "cancel":
         return argv + ["1"]
     if verb == "events":
-        if mode == "raw":
-            return base(verb, caps, db, json_mode=True) + ["--follow"]
+        if mode == "frames":
+            return base(verb, caps, db, json_mode=True) + [
+                "--follow", "--since-id", "0", "--max-events", "1",
+            ]
         return argv + ["--limit", "1"]
     if verb == "list":
         return argv + ["--limit", "1"]
@@ -315,7 +319,7 @@ def generated_probes(caps: dict, db: str) -> list[Probe]:
                 expect={"exit_code": 0, "ok": True, "mode": mode},
                 covers={(verb_name, "output_mode", mode)},
                 setup=setup_for_success(verb_name, mode, db),
-                raw_prefix=(verb_name, mode) == ("events", "raw"),
+                raw_prefix=False,
             ))
     for name, env_meta in sorted(caps["env_vars"].items()):
         verb_name = env_meta["consumed_by"][0]
@@ -472,6 +476,19 @@ class TestGeneratedStageBProbes(unittest.TestCase):
             self.assertTrue(proc.stdout.strip(), probe.desc)
         elif probe.expect.get("mode") == "raw":
             self.assertTrue(proc.stdout, probe.desc)
+        elif probe.expect.get("mode") == "frames":
+            lines = [json.loads(line) for line in proc.stdout.splitlines()]
+            self.assertGreaterEqual(len(lines), 2, probe.desc)
+            self.assertIn("id", lines[0], probe.desc)
+            self.assertNotIn("control", lines[0], probe.desc)
+            self.assertNotIn("id", lines[-1], probe.desc)
+            self.assertEqual(lines[-1]["control"]["type"], "end", probe.desc)
+            for line in lines:
+                self.assertNotEqual(
+                    set(line),
+                    {"ok", "tool_version", "data", "meta", "warnings", "commands", "errors"},
+                    probe.desc,
+                )
 
     def test_generated_failure_rows_execute(self):
         for probe in self.probes:

@@ -169,6 +169,99 @@
     },
     "streams": {
       "events_follow": {
+        "oneOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "at": {
+                "type": "number"
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "event": {
+                "enum": [
+                  "added",
+                  "claimed",
+                  "succeeded",
+                  "failed",
+                  "timed_out",
+                  "reaped",
+                  "dead",
+                  "retried",
+                  "canceled"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "integer"
+              },
+              "job_id": {
+                "type": "integer"
+              },
+              "worker_id": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "at",
+              "detail",
+              "event",
+              "id",
+              "job_id",
+              "worker_id"
+            ],
+            "type": "object"
+          },
+          {
+            "additionalProperties": false,
+            "properties": {
+              "control": {
+                "additionalProperties": false,
+                "properties": {
+                  "exit_code": {
+                    "type": "integer"
+                  },
+                  "message": {
+                    "type": "string"
+                  },
+                  "reason": {
+                    "enum": [
+                      "max_events",
+                      "idle_timeout",
+                      "sqlite_error"
+                    ],
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "end",
+                      "error"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "reason"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "control"
+            ],
+            "type": "object"
+          }
+        ]
+      },
+      "events_follow_data": {
         "additionalProperties": false,
         "properties": {
           "at": {
@@ -1487,6 +1580,14 @@
                     "type": "object"
                   },
                   "type": "array"
+                },
+                "frames": {
+                  "additionalProperties": {},
+                  "type": "object"
+                },
+                "frames_mode": {
+                  "additionalProperties": {},
+                  "type": "object"
                 },
                 "idempotent": {},
                 "json": {

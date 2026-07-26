@@ -47,7 +47,8 @@ class TestParserParity(unittest.TestCase):
             for action in sub._actions:
                 if isinstance(action, argparse._HelpAction) or not action.option_strings:
                     continue
-                parser_flags.add(max(action.option_strings, key=len))
+                longs = [s for s in action.option_strings if s.startswith("--")]
+                parser_flags.add(longs[0] if longs else max(action.option_strings, key=len))
             caps_flags = {f["flag"] for f in data["verbs"][verb]["flags"]}
             self.assertEqual(parser_flags, caps_flags, f"flag drift in verb {verb!r}")
 
@@ -106,12 +107,16 @@ class TestParserParity(unittest.TestCase):
             self.assertIn("consumed_by", entry, name)
             self.assertTrue(entry["consumed_by"], name)
 
-    def test_events_declares_raw_follow_mode(self):
+    def test_events_declares_frames_follow_mode(self):
         events = capabilities_data()["verbs"]["events"]
-        self.assertEqual(events["output_modes"], ["envelope", "raw", "text"])
-        self.assertEqual(events["raw"]["stream"], "events_follow")
-        self.assertIn("no control frames", events["raw"]["record"])
-        self.assertEqual(events["since_cursor_alias"], "--since-id")
+        self.assertEqual(events["output_modes"], ["envelope", "frames", "text"])
+        self.assertEqual(events["frames"]["enter_with"], ["--follow", "--json"])
+        self.assertEqual(events["frames"]["record_schema"], "#/streams/events_follow")
+        self.assertIn("integer id", events["frames"]["frame_discriminator"])
+        self.assertEqual(events["frames"]["control_frames"], ["end", "error"])
+        self.assertEqual(events["frames"]["cursor"]["flag"], "--since-id")
+        self.assertEqual(events["frames"]["cursor"]["aliases"], ["--since-cursor"])
+        self.assertEqual(events["since_cursor_alias"], "--since-cursor")
 
     def test_scheduling_contract_documented(self):
         scheduling = capabilities_data()["scheduling"]
