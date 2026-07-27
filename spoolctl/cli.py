@@ -65,6 +65,7 @@ from spoolctl.models import (
     _WAIT_TERMINAL,
     _suggest,
 )
+from spoolctl.operations import StatusInput, status_operation
 from spoolctl.validation import (
     _job_id_arg,
     _normalize_key,
@@ -678,12 +679,11 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
     limit = _parse_int_bound(
         args.limit, flag="--limit", minimum=0, maximum=STATUS_LIMIT_MAX
     )
-    conn = _open_db(args)
-    try:
-        counts, scheduled, queues = store.status_counts(conn, time.time())
-        dead = store.recent_dead(conn, limit)
-    finally:
-        conn.close()
+    data = status_operation(StatusInput(db_path=args.db, limit=limit))
+    counts = data["counts"]
+    scheduled = data["scheduled"]
+    queues = data["queues"]
+    dead = data["recent_dead"]
     lines = ["  ".join(f"{k} {v}" for k, v in counts.items())]
     if scheduled > 0:
         lines.append(f"scheduled {scheduled}")
@@ -692,9 +692,12 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
     }
     if non_default_queues:
         lines.append("queues:")
-        for name, data in queues.items():
-            counts_text = "  ".join(f"{k} {v}" for k, v in data["counts"].items())
-            suffix = f"  scheduled {data['scheduled']}" if data["scheduled"] > 0 else ""
+        for name, queue_data in queues.items():
+            counts_text = "  ".join(f"{k} {v}" for k, v in queue_data["counts"].items())
+            suffix = (
+                f"  scheduled {queue_data['scheduled']}"
+                if queue_data["scheduled"] > 0 else ""
+            )
             lines.append(f"  {name}: {counts_text}{suffix}")
     if dead:
         lines.append("recent dead:")
@@ -705,8 +708,7 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
                 f"{crash_text} error={d['last_error'] or '-'} cmd: {d['command']}"
             )
     return VerbResult(
-        data={"counts": counts, "scheduled": scheduled, "queues": queues,
-              "recent_dead": dead},
+        data=data,
         human="\n".join(lines),
     )
 

@@ -11,6 +11,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
+from spoolctl.operations import StatusInput, status_operation
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -40,6 +41,20 @@ class StatusTestCase(unittest.TestCase):
 
 
 class TestCounts(StatusTestCase):
+    def test_direct_status_operation_returns_counts_shape(self):
+        conn = store.connect(self.db)
+        store.add_job(conn, ["true"], 300, 3, 10.0)
+        store.add_job(conn, ["true"], 300, 3, 10.0, queue="gpu", next_run_at=200.0)
+        conn.close()
+
+        data = status_operation(StatusInput(db_path=self.db, limit=10, now=lambda: 100.0))
+
+        self.assertEqual(data["counts"]["queued"], 2)
+        self.assertEqual(data["scheduled"], 1)
+        self.assertEqual(data["queues"]["gpu"]["counts"]["queued"], 1)
+        self.assertEqual(data["queues"]["gpu"]["scheduled"], 1)
+        self.assertEqual(data["recent_dead"], [])
+
     def test_fresh_directory_no_db_exits_zero_with_zero_counts(self):
         code, out, _ = run_cli("status", "--db", self.db, "--json")
         self.assertEqual(code, 0)
