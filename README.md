@@ -3,6 +3,7 @@
 <div align="center">
 
 ![Status](https://img.shields.io/badge/status-pre--release-orange)
+[![CI](https://github.com/Ozhiaki/spoolctl/actions/workflows/ci.yml/badge.svg)](https://github.com/Ozhiaki/spoolctl/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.10%2B%20·%20stdlib%20only-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
