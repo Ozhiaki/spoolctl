@@ -12,7 +12,6 @@ import errno
 import hashlib
 import json
 import os
-import re
 import math
 import signal
 import shlex
@@ -25,13 +24,16 @@ from datetime import datetime, timezone
 from typing import Any, Callable
 
 from spoolctl import schemas, store
+from spoolctl.errors import CliError
 from spoolctl.models import (
     ATTEMPT_STATES,
     CODE_REGISTRY,
     CONTRACT_VERSION,
+    DECIMAL_RE,
     DEFAULT_MAX_RETRIES,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_TIMEOUT_SECONDS,
+    EVENT_LIMIT_MAX,
     ERROR_CODES,
     EXIT_CODES,
     EXIT_CONFLICT,
@@ -41,12 +43,34 @@ from spoolctl.models import (
     EXIT_OK,
     EXIT_SAFETY,
     EXIT_TRANSIENT,
+    FAILURE_REASONS,
     JOB_EVENT_TYPES,
     JOB_STATES,
-    FAILURE_REASONS,
     HEARTBEAT_INTERVAL,
-    TOOL_VERSION,
+    INT_RE,
+    LIST_LIMIT_MAX,
+    MAX_DURATION_SECONDS,
+    MAX_ENV_KEY_CHARS,
+    MAX_ENV_VALUE_CHARS,
+    MAX_PATH_CHARS,
+    MAX_POLL_INTERVAL_SECONDS,
+    MAX_WAIT_SECONDS,
+    MAX_WORKER_ID_CHARS,
+    PRIORITY_MAX,
+    PRIORITY_MIN,
+    PRUNABLE_STATES,
+    QUEUE_RE,
     REAP_THRESHOLD,
+    SIGNED_DECIMAL_RE,
+    SQLITE_INT64_MAX,
+    SQLITE_INT64_MIN,
+    STATUS_LIMIT_MAX,
+    TAG_FILTER_SCAN_LIMIT,
+    TAG_KEY_RE,
+    TOOL_VERSION,
+    VERBS,
+    _WAIT_TERMINAL,
+    _suggest,
 )
 
 HELP_EPILOG = """\
@@ -55,36 +79,6 @@ AGENT/AUTOMATION:
   verbs, flags, data schemas, exit codes, error codes.
   Run `spoolctl robot-docs guide --json` for workflow guidance.
 """
-
-
-class CliError(Exception):
-    """A contract error: code + message + remediation + exit code."""
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        remediation: str,
-        exit_code: int = EXIT_INPUT,
-        did_you_mean: str | None = None,
-    ):
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.remediation = remediation
-        self.exit_code = exit_code
-        self.did_you_mean = did_you_mean
-
-    def as_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
-            "code": self.code,
-            "message": self.message,
-            "remediation": self.remediation,
-            "exit_code": self.exit_code,
-        }
-        if self.did_you_mean is not None:
-            d["did_you_mean"] = self.did_you_mean
-        return d
 
 
 @dataclass
@@ -130,37 +124,6 @@ def _float_token(raw: str) -> str:
 
 
 _float_token.__name__ = "float"
-
-
-def _levenshtein_leq1(a: str, b: str) -> bool:
-    if a == b:
-        return True
-    la, lb = len(a), len(b)
-    if abs(la - lb) > 1:
-        return False
-    if la == lb:  # one substitution
-        return sum(x != y for x, y in zip(a, b)) <= 1
-    if la > lb:
-        a, b, la, lb = b, a, lb, la
-    # one insertion into a
-    i = j = edits = 0
-    while i < la and j < lb:
-        if a[i] == b[j]:
-            i += 1
-            j += 1
-        else:
-            edits += 1
-            if edits > 1:
-                return False
-            j += 1
-    return True
-
-
-def _suggest(word: str, candidates: list[str]) -> str | None:
-    for c in sorted(candidates):
-        if c != word and _levenshtein_leq1(word, c):
-            return c
-    return None
 
 
 # --- envelope -----------------------------------------------------------
@@ -215,22 +178,6 @@ def make_envelope(
 
 
 # --- parser -------------------------------------------------------------
-
-VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
-         "output", "events", "brief", "schema", "capabilities", "robot-docs")
-SQLITE_INT64_MIN = -(2 ** 63)
-SQLITE_INT64_MAX = 2 ** 63 - 1
-MAX_DURATION_SECONDS = 31_536_000_000.0  # 1000 365-day years
-MAX_POLL_INTERVAL_SECONDS = 3600.0
-MAX_WAIT_SECONDS = 86_400.0
-LIST_LIMIT_MAX = 1000
-TAG_FILTER_SCAN_LIMIT = 1000
-EVENT_LIMIT_MAX = 10_000
-STATUS_LIMIT_MAX = 1000
-MAX_PATH_CHARS = 4096
-MAX_ENV_KEY_CHARS = 128
-MAX_ENV_VALUE_CHARS = 4096
-MAX_WORKER_ID_CHARS = 256
 
 # verb -> subparser, rebuilt by build_parser; did_you_mean reads flag tables
 # from here so suggestions always come from the parser itself.
@@ -539,15 +486,6 @@ def _normalize_key(raw: str | None) -> str | None:
             "remove embedded newlines, tabs, or control characters",
         )
     return key
-
-
-TAG_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
-QUEUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-DECIMAL_RE = re.compile(r"^(?:\d+(?:\.\d*)?|\.\d+)$")
-SIGNED_DECIMAL_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
-PRIORITY_MIN = -2_147_483_648
-PRIORITY_MAX = 2_147_483_647
-INT_RE = re.compile(r"^[+-]?\d+$")
 
 
 def _parse_int_bound(
@@ -1384,9 +1322,6 @@ def cmd_retry(args: argparse.Namespace) -> VerbResult:
     )
 
 
-_WAIT_TERMINAL = ("canceled", "dead", "done")
-
-
 def cmd_wait(args: argparse.Namespace) -> VerbResult:
     ids = [_job_id_arg(raw) for raw in args.ids]
     timeout = (
@@ -1512,7 +1447,6 @@ def cmd_cancel(args: argparse.Namespace) -> VerbResult:
 
 
 _DURATION_UNITS = {"": 1, "s": 1, "m": 60, "h": 3600, "d": 86400}
-PRUNABLE_STATES = ("canceled", "dead", "done")
 
 
 def _parse_duration(raw: str) -> float:

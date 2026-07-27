@@ -11,7 +11,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from spoolctl import cli
-from spoolctl.models import EXIT_CODES
+from spoolctl.models import EXIT_CODES, _levenshtein_leq1
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -97,11 +97,11 @@ class TestDidYouMean(unittest.TestCase):
         self.assertEqual(code, 1)
 
     def test_levenshtein_leq1(self):
-        self.assertTrue(cli._levenshtein_leq1("statu", "status"))
-        self.assertTrue(cli._levenshtein_leq1("statuz", "status"))
-        self.assertTrue(cli._levenshtein_leq1("status", "status"))
-        self.assertFalse(cli._levenshtein_leq1("stat", "status"))
-        self.assertFalse(cli._levenshtein_leq1("wrok", "work"))  # transposition = 2 edits
+        self.assertTrue(_levenshtein_leq1("statu", "status"))
+        self.assertTrue(_levenshtein_leq1("statuz", "status"))
+        self.assertTrue(_levenshtein_leq1("status", "status"))
+        self.assertFalse(_levenshtein_leq1("stat", "status"))
+        self.assertFalse(_levenshtein_leq1("wrok", "work"))  # transposition = 2 edits
 
 
 class TestFailureDiscipline(unittest.TestCase):

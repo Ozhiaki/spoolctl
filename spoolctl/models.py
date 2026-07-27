@@ -6,11 +6,35 @@ contract version, and the exit-code / error-code dictionaries. No I/O here.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 TOOL_VERSION = "0.4.5"
 CONTRACT_VERSION = "2"
 SCHEMA_VERSION = 6
+
+VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
+         "output", "events", "brief", "schema", "capabilities", "robot-docs")
+SQLITE_INT64_MIN = -(2 ** 63)
+SQLITE_INT64_MAX = 2 ** 63 - 1
+MAX_DURATION_SECONDS = 31_536_000_000.0  # 1000 365-day years
+MAX_POLL_INTERVAL_SECONDS = 3600.0
+MAX_WAIT_SECONDS = 86_400.0
+LIST_LIMIT_MAX = 1000
+TAG_FILTER_SCAN_LIMIT = 1000
+EVENT_LIMIT_MAX = 10_000
+STATUS_LIMIT_MAX = 1000
+MAX_PATH_CHARS = 4096
+MAX_ENV_KEY_CHARS = 128
+MAX_ENV_VALUE_CHARS = 4096
+MAX_WORKER_ID_CHARS = 256
+PRIORITY_MIN = -2_147_483_648
+PRIORITY_MAX = 2_147_483_647
+TAG_KEY_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
+QUEUE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+DECIMAL_RE = re.compile(r"^(?:\d+(?:\.\d*)?|\.\d+)$")
+SIGNED_DECIMAL_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$")
+INT_RE = re.compile(r"^[+-]?\d+$")
 
 # Job states
 QUEUED = "queued"
@@ -20,6 +44,8 @@ FAILED = "failed"
 DEAD = "dead"
 CANCELED = "canceled"
 JOB_STATES = (QUEUED, RUNNING, DONE, FAILED, DEAD, CANCELED)
+_WAIT_TERMINAL = (CANCELED, DEAD, DONE)
+PRUNABLE_STATES = (CANCELED, DEAD, DONE)
 
 # Attempt states
 ATT_RUNNING = "running"
@@ -207,6 +233,37 @@ ERROR_CODES = tuple(
 WARNING_CODES = tuple(
     code for code, entry in CODE_REGISTRY.items() if "warnings" in entry["appears_in"]
 )
+
+
+def _levenshtein_leq1(a: str, b: str) -> bool:
+    if a == b:
+        return True
+    la, lb = len(a), len(b)
+    if abs(la - lb) > 1:
+        return False
+    if la == lb:  # one substitution
+        return sum(x != y for x, y in zip(a, b)) <= 1
+    if la > lb:
+        a, b, la, lb = b, a, lb, la
+    # one insertion into a
+    i = j = edits = 0
+    while i < la and j < lb:
+        if a[i] == b[j]:
+            i += 1
+            j += 1
+        else:
+            edits += 1
+            if edits > 1:
+                return False
+            j += 1
+    return True
+
+
+def _suggest(word: str, candidates: list[str]) -> str | None:
+    for c in sorted(candidates):
+        if c != word and _levenshtein_leq1(word, c):
+            return c
+    return None
 
 
 def backoff_seconds(attempts: int) -> float:
