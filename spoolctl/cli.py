@@ -90,9 +90,7 @@ from spoolctl.validation import (
 
 HELP_EPILOG = """\
 AGENT/AUTOMATION:
-  Run `spoolctl capabilities --json` for the full machine-readable contract:
-  verbs, flags, data schemas, exit codes, error codes.
-  Run `spoolctl robot-docs guide --json` for workflow guidance.
+  Contract: `spoolctl capabilities --json`; guide: `spoolctl robot-docs guide --json`.
 """
 
 
