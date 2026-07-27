@@ -1,4 +1,4 @@
-"""v0.4.6 refactor baseline guardrails."""
+"""Refactor baseline guardrails."""
 
 from __future__ import annotations
 

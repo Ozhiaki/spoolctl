@@ -1,4 +1,4 @@
-"""Import-boundary guardrails for the v0.4.6 extraction."""
+"""Import-boundary guardrails for package module ownership."""
 
 from __future__ import annotations
 
