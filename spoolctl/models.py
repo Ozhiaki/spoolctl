@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-TOOL_VERSION = "0.4.5"
+TOOL_VERSION = "0.4.6"
 CONTRACT_VERSION = "2"
 SCHEMA_VERSION = 6
 

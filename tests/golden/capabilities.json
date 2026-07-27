@@ -651,7 +651,7 @@
   },
   "schemas_uri": "spoolctl schema --json",
   "tool_name": "spoolctl",
-  "tool_version": "0.4.5",
+  "tool_version": "0.4.6",
   "totality": {
     "envelope": {
       "failure_stderr": "human mirror of the first error",
