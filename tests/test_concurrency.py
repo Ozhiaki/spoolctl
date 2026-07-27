@@ -330,6 +330,8 @@ class TestCancelKillDelivery(ConcurrencyTestCase):
             try:
                 os.killpg(pgid, 0)
                 return False
+            except PermissionError:
+                return False
             except ProcessLookupError:
                 return True
         return check

@@ -344,7 +344,7 @@ def build_parser() -> _Parser:
                                  allow_abbrev=False)
 
     config_validate = sub.add_parser("config-validate", parents=[common_nodb],
-                                     help="validate project config without opening the queue",
+                                     help="validate project config",
                                      allow_abbrev=False)
     config_validate.add_argument("path", nargs="?", metavar="PATH",
                                  help="config file to validate; defaults to .spoolctl/config.json")
