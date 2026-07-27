@@ -11,6 +11,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from spoolctl import cli, store
+from spoolctl.validation import _parse_duration
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -59,13 +60,13 @@ class PruneTestCase(unittest.TestCase):
 
 class TestDurationGrammar(PruneTestCase):
     def test_suffixes(self):
-        self.assertEqual(cli._parse_duration("90"), 90)
-        self.assertEqual(cli._parse_duration("10s"), 10)
-        self.assertEqual(cli._parse_duration("5m"), 300)
-        self.assertEqual(cli._parse_duration("2h"), 7200)
-        self.assertEqual(cli._parse_duration("1.5h"), 5400)
-        self.assertEqual(cli._parse_duration("1d"), 86400)
-        self.assertEqual(cli._parse_duration("0"), 0)
+        self.assertEqual(_parse_duration("90"), 90)
+        self.assertEqual(_parse_duration("10s"), 10)
+        self.assertEqual(_parse_duration("5m"), 300)
+        self.assertEqual(_parse_duration("2h"), 7200)
+        self.assertEqual(_parse_duration("1.5h"), 5400)
+        self.assertEqual(_parse_duration("1d"), 86400)
+        self.assertEqual(_parse_duration("0"), 0)
 
     def test_garbage_exits_1(self):
         for bad in ("5w", "abc", "-3", "", "d"):
