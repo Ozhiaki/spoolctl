@@ -77,6 +77,18 @@ class TestSignatureHarness(unittest.TestCase):
         missing = [verb for verb in VERBS if signature.base_for(verb, "/tmp/sig.db") is None]
         self.assertEqual(missing, [])
 
+    def test_signature_path_normalization_prefers_realpaths(self):
+        signature = import_script("signature", REPO / "scripts" / "signature.py")
+        roots = signature.normalize_roots(Path("/tmp/spoolctl-x"), REPO)
+        text = f"{os.path.realpath('/tmp/spoolctl-x')}/queue.db {REPO}/spoolctl"
+        normalized = signature.normalize_paths(text, roots)
+        self.assertNotIn(os.path.realpath("/tmp/spoolctl-x"), normalized)
+        self.assertIn("<TMP>/queue.db", normalized)
+        self.assertIn("<CWD>/spoolctl", normalized)
+        signature.assert_no_stray_absolute_path("path-test", ["db=<TMP>/queue.db"])
+        with self.assertRaises(SystemExit):
+            signature.assert_no_stray_absolute_path("path-test", ["db=/tmp/spoolctl-x"])
+
     def test_checked_in_timezone_baselines_are_non_vacuous(self):
         for target in ("source", "single-file"):
             utc = GOLDEN / f"signature-{target}-UTC.txt"

@@ -14,10 +14,11 @@ No broker. No server. No dependencies.
 
 </div>
 
-> **Status: pre-release.** spoolctl v0.4.5 is implemented with contract version
-> `2`, local migrations, schemas, generated conformance probes, and concurrency
-> tests. The CLI surface may still move before a public package release, but the
-> documented interface and guarantees are tested in this repository.
+> **Status: pre-release.** spoolctl v0.4.7 is implemented with contract version
+> `2`, local migrations, schemas, generated conformance probes, readiness
+> diagnostics, and concurrency tests. The CLI surface may still move before a
+> public package release, but the documented interface and guarantees are tested
+> in this repository.
 
 ---
 
@@ -63,7 +64,7 @@ arbitrary shell commands, with less infrastructure than either shelf:
 
 ## Interface Preview
 
-*Pre-release: this is the committed v0.4.5 CLI surface.*
+*Pre-release: this is the committed v0.4.7 CLI surface.*
 
 ```console
 $ spoolctl add -- python fetch.py --all
@@ -102,6 +103,9 @@ Would delete 42 jobs
 $ spoolctl brief                  # compact agent-facing usage reference
 $ spoolctl capabilities --json    # machine-readable verb/flag/mode contract
 $ spoolctl schema --json          # formal envelope, verb, and stream schemas
+$ spoolctl config-show --json     # effective read-only project configuration
+$ spoolctl config-validate --json # validate .spoolctl/config.json without opening DB
+$ spoolctl doctor --json          # bounded readiness check for launchers
 $ spoolctl robot-docs guide --json # longer agent workflow guide
 $ spoolctl events --follow --json --max-events 1 # NDJSON data/control frames
 ```
@@ -177,12 +181,22 @@ keep that market. spoolctl exists for the operator who won't be there when the j
   flags, positionals, output modes, safety gates, idempotency behavior, schemas,
   exit codes, and the `robot-docs` guide entry point. `schema --json` exports the
   envelope, verb payload, and event-frame schemas.
+- **Configuration is explainable** before work starts. `config-show --json`
+  reports the effective database path and whether it came from `--db`,
+  `SPOOLCTL_DB`, `.spoolctl/config.json`, or the project default
+  `./.spoolctl/queue.db`; `config-validate [PATH] --json` validates that config
+  file without opening or creating the queue database.
+- **Readiness is diagnostic, not mutating.** `doctor --json` checks config
+  validity, database path resolution, spool-directory writability, database
+  presence/openability, schema version, and published contract metadata. A
+  failed readiness check exits `3` while keeping the JSON envelope `ok:true`,
+  `errors:[]`, and `data.ready:false`.
 
-## v0.4.5 Contract-V2 Notes
+## v0.4.7 MCP Readiness Notes
 
-v0.4.5 is a contract-hardening release for agent use. It intentionally bumps
-`CONTRACT_VERSION` to `2`; there is no contract-version-1 compatibility shim
-because spoolctl is still pre-release.
+v0.4.7 is an additive MCP-readiness release for agent use. It keeps
+`CONTRACT_VERSION` at `2` and `SCHEMA_VERSION` at `6`; there is still no
+contract-version-1 compatibility shim because spoolctl is pre-release.
 
 - Destructive and interrupting operations now require explicit gates:
   `prune` needs `--yes` unless `--dry-run` is used, `cancel --running` needs
@@ -202,13 +216,31 @@ because spoolctl is still pre-release.
 - Output modes are declared and tested: envelope mode for `--json`, frames mode
   for `events --follow --json`, raw mode for `output --raw`, and text mode for
   human output.
+- Read-only project configuration is now part of the contract. Database
+  resolution order is `--db`, `SPOOLCTL_DB`, project config, then default, and
+  the default is relative to the current project directory.
+- `config-show`, `config-validate`, and `doctor` are published in
+  capabilities, schemas, brief output, robot docs, generated probes, and
+  deterministic signatures.
+- `doctor` is intentionally narrow: it reports readiness checks and remediation
+  text for launchers, but it does not repair, initialize, or mutate config.
 - The generated conformance suite validates live capabilities, live schema data,
   golden envelopes, parser/capabilities parity, event frame records, raw output,
   and text-mode declarations.
 
-Deferred make-cli surfaces are explicit rather than accidental: config-file
-commands, delivery sinks, feedback loopback, broad stdin ingestion, full sparse
-field projection, and a broad `doctor` command remain out of scope for v0.4.5.
+Deferred make-cli surfaces are explicit rather than accidental: delivery sinks,
+feedback loopback, broad stdin ingestion, full sparse field projection, broad
+doctor checks, and mutating config commands remain out of scope for v0.4.7.
+
+## v0.4.7 Handoff
+
+The implemented slice is limited to read-only config discovery and bounded
+readiness diagnostics before MCP lands. Handoff consumers should use
+`config-show --json` to discover the effective queue path, `config-validate
+--json` to validate project config in CI, and `doctor --json` to decide whether
+the local checkout/database is ready. For doctor, shell exit `3` is a readiness
+outcome; JSON consumers should read `data.ready` and `data.checks`, not
+`errors`.
 
 ## Installation
 
@@ -234,7 +266,7 @@ Read these before adopting. They are design decisions, not roadmap gaps:
   positives in one direction, and spoolctl refuses the dangerous direction.
 - **One machine, local filesystem.** Coordination correctness comes from SQLite locking;
   NFS and friends are unsupported. No distributed mode, ever — that's a different tool.
-- **Scheduling is deliberately small.** v0.4.5 has one-shot delays, priorities, and named
+- **Scheduling is deliberately small.** v0.4.7 has one-shot delays, priorities, and named
   lanes with opt-in slot ceilings. It does not have recurring schedules or job
   dependencies.
 - **POSIX only.** macOS and Linux. Process groups and signal semantics are load-bearing;
@@ -272,9 +304,10 @@ Zero-dependency single-file Python is the most installable software artifact tha
 every macOS and Linux box can run it, and an agent can "install" it by writing a file.
 
 **When can I use it?**
-From a checkout now, with the usual pre-release caution. v0.4.5 has a full
+From a checkout now, with the usual pre-release caution. v0.4.7 has a full
 concurrency/crash test suite, JSON contract goldens, schema conformance tests,
-generated conformance probes, and single-file build coverage.
+generated conformance probes, readiness diagnostics, and single-file build
+coverage.
 
 ## About Contributions
 

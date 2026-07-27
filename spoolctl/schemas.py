@@ -636,9 +636,12 @@ def build_brief(
         "events reads the durable job_events ledger: one-shot and --wait"
         " return envelopes with meta.pagination.cursor; --follow --json emits"
         " NDJSON data frames plus end/error control frames.",
+        "config-show explains DB path; config-validate checks JSON without"
+        " opening DB; doctor exits 3 with ok:true/data.ready=false for"
+        " readiness failures.",
         "schema --json exports the envelope, verb data, and raw stream JSON"
         " Schemas. capabilities --json describes contract v2 surfaces: flags,"
-        " modes, states, events, process env, execution, safety gates,"
+        " modes, states, events, process env, config support, safety gates,"
         " idempotency mismatches, exit codes, and robot_docs_uri.",
         "robot-docs guide is the longer paste-ready agent workflow handbook;"
         " use --json for structured sections and token estimate.",

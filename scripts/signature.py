@@ -70,7 +70,31 @@ def parse_envelope(stdout: str) -> tuple[str, dict[str, Any] | None]:
         return "none", None
 
 
-def normalize_text(text: str) -> str:
+def normalize_roots(tmp: Path, cwd: Path) -> list[tuple[str, str]]:
+    roots: list[tuple[str, str]] = []
+    for path, placeholder in ((tmp, "<TMP>"), (cwd, "<CWD>")):
+        for spelling in (os.path.realpath(path), str(path)):
+            if spelling and (spelling, placeholder) not in roots:
+                roots.append((spelling, placeholder))
+    return roots
+
+
+def normalize_paths(text: str, roots: list[tuple[str, str]]) -> str:
+    for spelling, placeholder in roots:
+        text = text.replace(spelling, placeholder)
+    return text
+
+
+def assert_no_stray_absolute_path(label: str, fields: list[str]) -> None:
+    for field in fields:
+        stripped = re.sub(r"<(?:TMP|CWD)>[^ |]*", "", field)
+        if "/" in stripped:
+            raise SystemExit(f"{label} has unnormalized absolute path in signature field: {field}")
+
+
+def normalize_text(text: str, roots: list[tuple[str, str]] | None = None) -> str:
+    if roots:
+        text = normalize_paths(text, roots)
     text = re.sub(r"\b20\d\d-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z\b", "<ISO>", text)
     text = re.sub(r"\b1[6-9]\d{8,}(?:\.\d+)?\b", "<EPOCH>", text)
     text = re.sub(r"\b[12]\.\d+e\+\d+\b", "<EPOCH>", text)
@@ -82,8 +106,8 @@ def normalize_text(text: str) -> str:
     return text
 
 
-def stable_hash(text: str) -> str:
-    return hashlib.sha256(normalize_text(text).encode("utf-8")).hexdigest()[:16]
+def stable_hash(text: str, roots: list[tuple[str, str]] | None = None) -> str:
+    return hashlib.sha256(normalize_text(text, roots).encode("utf-8")).hexdigest()[:16]
 
 
 def one_line(value: Any, normalize_version: bool) -> str:
@@ -253,6 +277,7 @@ def signature(target: str, artifact: Path | None, normalize_version: bool) -> st
     cwd = REPO if target == "source" else Path(tempfile.gettempdir())
     with tempfile.TemporaryDirectory(prefix="spoolctl-signature-") as td:
         tmp = Path(td)
+        roots = normalize_roots(tmp, cwd)
         lines = [
             f"# spoolctl-signature target={target} tz={tz_label()} normalize_version={normalize_version}",
         ]
@@ -283,10 +308,12 @@ def signature(target: str, artifact: Path | None, normalize_version: bool) -> st
                 f"version={one_line(version, normalize_version)}",
             ]
             if case.text_hash:
-                fields.append(f"stdout_sha={stable_hash(out)}")
+                fields.append(f"stdout_sha={stable_hash(out, roots)}")
             fields.extend(detail_for(case, env, prefix, cwd))
             if case.detail:
                 fields.append(f"detail={case.detail}")
+            fields = [normalize_paths(field, roots) for field in fields]
+            assert_no_stray_absolute_path(case.label, fields)
             lines.append(" | ".join(fields))
     return "\n".join(lines) + "\n"
 

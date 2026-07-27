@@ -962,11 +962,12 @@ def _describe_verb(name: str, sub: argparse.ArgumentParser) -> dict[str, Any]:
 
 
 CONTRACT_POLICY = (
-    "contract_version 2 is the v0.4.5 pre-release hardening contract; it"
+    "contract_version 2 is the v0.4.7 pre-release hardening contract; it"
     " intentionally breaks v1 quirks by refusing unsafe destructive operations,"
     " rejecting inert or abbreviated flags, enforcing active idempotency"
     " execution-payload conflicts, making malformed inputs total and"
-    " structured, and declaring envelope, frames, raw, and text modes."
+    " structured, declaring envelope, frames, raw, and text modes, and adding"
+    " read-only project config plus readiness diagnostics for MCP preparation."
     " No contract_version 1 compatibility shim is provided before public release."
 )
 
@@ -1055,6 +1056,16 @@ ROBOT_DOC_SECTIONS = [
             "spoolctl capabilities --json",
             "spoolctl schema --json",
             "spoolctl brief --json",
+            "spoolctl config-show --json",
+            "spoolctl config-validate --json",
+        ],
+    },
+    {
+        "title": "Check local readiness",
+        "bullets": [
+            "spoolctl doctor --json",
+            "doctor exits 3 with ok:true and data.ready:false for readiness failures.",
+            "Use data.checks remediation text; doctor does not repair or mutate config.",
         ],
     },
     {

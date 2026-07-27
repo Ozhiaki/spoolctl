@@ -1,15 +1,25 @@
 {
   "commands": [],
   "data": {
-    "approx_tokens": 195,
+    "approx_tokens": 261,
     "sections": [
       {
         "bullets": [
           "spoolctl capabilities --json",
           "spoolctl schema --json",
-          "spoolctl brief --json"
+          "spoolctl brief --json",
+          "spoolctl config-show --json",
+          "spoolctl config-validate --json"
         ],
         "title": "Discover the contract"
+      },
+      {
+        "bullets": [
+          "spoolctl doctor --json",
+          "doctor exits 3 with ok:true and data.ready:false for readiness failures.",
+          "Use data.checks remediation text; doctor does not repair or mutate config."
+        ],
+        "title": "Check local readiness"
       },
       {
         "bullets": [
@@ -39,7 +49,7 @@
         "title": "Stream and page safely"
       }
     ],
-    "text": "spoolctl robot-docs guide\n\nDiscover the contract\n- spoolctl capabilities --json\n- spoolctl schema --json\n- spoolctl brief --json\n\nSubmit and observe work\n- spoolctl add --json --key run-1 --tag owner=agent -- true\n- spoolctl work --json --once\n- spoolctl wait --json 1\n- spoolctl output --json 1 --stream stdout\n\nHandle conflicts and safety\n- Reuse --key only with the same execution payload.\n- Use prune --dry-run before prune --yes.\n- Use cancel --running --yes only when process interruption is intended.\n- Use retry --force only for a running-job recovery override.\n\nStream and page safely\n- spoolctl events --json --limit 100\n- spoolctl events --follow --json --since-id 0 --max-events 1\n- spoolctl events --follow --json --idle-timeout 0.1\n- spoolctl list --json --limit 50"
+    "text": "spoolctl robot-docs guide\n\nDiscover the contract\n- spoolctl capabilities --json\n- spoolctl schema --json\n- spoolctl brief --json\n- spoolctl config-show --json\n- spoolctl config-validate --json\n\nCheck local readiness\n- spoolctl doctor --json\n- doctor exits 3 with ok:true and data.ready:false for readiness failures.\n- Use data.checks remediation text; doctor does not repair or mutate config.\n\nSubmit and observe work\n- spoolctl add --json --key run-1 --tag owner=agent -- true\n- spoolctl work --json --once\n- spoolctl wait --json 1\n- spoolctl output --json 1 --stream stdout\n\nHandle conflicts and safety\n- Reuse --key only with the same execution payload.\n- Use prune --dry-run before prune --yes.\n- Use cancel --running --yes only when process interruption is intended.\n- Use retry --force only for a running-job recovery override.\n\nStream and page safely\n- spoolctl events --json --limit 100\n- spoolctl events --follow --json --since-id 0 --max-events 1\n- spoolctl events --follow --json --idle-timeout 0.1\n- spoolctl list --json --limit 50"
   },
   "errors": [],
   "meta": {

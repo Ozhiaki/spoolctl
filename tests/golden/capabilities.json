@@ -141,13 +141,24 @@
     }
   },
   "config": {
-    "reason": "no config file surface in v0.4.5",
-    "supported": false
+    "format": "json",
+    "keys": [
+      "db_path"
+    ],
+    "path": ".spoolctl/config.json",
+    "precedence": [
+      "flag",
+      "environment",
+      "project_config",
+      "default"
+    ],
+    "schema_version": 1,
+    "supported": true
   },
-  "contract_policy": "contract_version 2 is the v0.4.5 pre-release hardening contract; it intentionally breaks v1 quirks by refusing unsafe destructive operations, rejecting inert or abbreviated flags, enforcing active idempotency execution-payload conflicts, making malformed inputs total and structured, and declaring envelope, frames, raw, and text modes. No contract_version 1 compatibility shim is provided before public release.",
+  "contract_policy": "contract_version 2 is the v0.4.7 pre-release hardening contract; it intentionally breaks v1 quirks by refusing unsafe destructive operations, rejecting inert or abbreviated flags, enforcing active idempotency execution-payload conflicts, making malformed inputs total and structured, declaring envelope, frames, raw, and text modes, and adding read-only project config plus readiness diagnostics for MCP preparation. No contract_version 1 compatibility shim is provided before public release.",
   "contract_version": "2",
   "env": {
-    "SPOOLCTL_DB": "queue database path (overridden by --db; default ./.spoolctl/queue.db)",
+    "SPOOLCTL_DB": "queue database path (precedence: --db flag, SPOOLCTL_DB, .spoolctl/config.json db_path, ./.spoolctl/queue.db)",
     "SPOOLCTL_TEST_HEARTBEAT_INTERVAL": "test-only: seconds between worker heartbeats (default 5)",
     "SPOOLCTL_TEST_REAP_THRESHOLD": "test-only: seconds of heartbeat staleness before a running job becomes a reap candidate (default 30)"
   },
@@ -156,6 +167,8 @@
       "consumed_by": [
         "add",
         "cancel",
+        "config-show",
+        "doctor",
         "events",
         "list",
         "output",
@@ -167,7 +180,7 @@
         "work"
       ],
       "default": "./.spoolctl/queue.db",
-      "description": "queue database path (overridden by --db; default ./.spoolctl/queue.db)",
+      "description": "queue database path (precedence: --db flag, SPOOLCTL_DB, .spoolctl/config.json db_path, ./.spoolctl/queue.db)",
       "malformed_expectations": {
         "bad_path": {
           "code": "INVALID_INPUT",
@@ -292,6 +305,7 @@
     },
     "3": {
       "meaning": "tool-environment-error",
+      "note": "ordinary tool-environment failures use ok:false with errors; doctor readiness failures use ok:true, empty errors, and data.ready:false, so envelope consumers key off data.ready for doctor",
       "retryable": null
     },
     "4": {
@@ -2307,15 +2321,39 @@
           "config": {
             "additionalProperties": false,
             "properties": {
-              "reason": {
+              "format": {
+                "const": "json",
                 "type": "string"
+              },
+              "keys": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "path": {
+                "type": "string"
+              },
+              "precedence": {
+                "items": {
+                  "enum": [
+                    "flag",
+                    "environment",
+                    "project_config",
+                    "default"
+                  ],
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "schema_version": {
+                "type": "integer"
               },
               "supported": {
                 "type": "boolean"
               }
             },
             "required": [
-              "reason",
               "supported"
             ],
             "type": "object"
@@ -2750,6 +2788,7 @@
                           "1",
                           "+",
                           "*",
+                          "?",
                           "remainder"
                         ],
                         "type": "string"
@@ -3004,6 +3043,7 @@
                           "1",
                           "+",
                           "*",
+                          "?",
                           "remainder"
                         ],
                         "type": "string"
@@ -3144,6 +3184,622 @@
       "schema_ref": "spoolctl schema --json --verb capabilities",
       "stdin": "none",
       "summary": "this machine-readable contract",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
+    },
+    "config-show": {
+      "args": [],
+      "data_schema": "{config_path, config_exists, config_valid, values:{db_path}, sources:{db_path}, precedence, ignored_keys}",
+      "description": "show effective read-only project configuration and DB path source",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "config-show",
+          "--json"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "flags": [
+        {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
+          "default": null,
+          "flag": "--db",
+          "malformed_expectations": {
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 4096,
+          "minimum": 1,
+          "name": "--db",
+          "opens_database": false,
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": false,
+          "unopenable_path": "reported as effective configuration, not an input error",
+          "value_required": true
+        },
+        {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
+          "default": false,
+          "flag": "--json",
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
+        }
+      ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb config-show"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "config_exists": {
+            "type": "boolean"
+          },
+          "config_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "config_valid": {
+            "type": "boolean"
+          },
+          "ignored_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "precedence": {
+            "items": {
+              "enum": [
+                "flag",
+                "environment",
+                "project_config",
+                "default"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sources": {
+            "additionalProperties": false,
+            "properties": {
+              "db_path": {
+                "enum": [
+                  "flag",
+                  "environment",
+                  "project_config",
+                  "default"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "db_path"
+            ],
+            "type": "object"
+          },
+          "values": {
+            "additionalProperties": false,
+            "properties": {
+              "db_path": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "db_path"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "config_exists",
+          "config_path",
+          "config_valid",
+          "ignored_keys",
+          "precedence",
+          "sources",
+          "values"
+        ],
+        "type": "object"
+      },
+      "positionals": [],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb config-show",
+      "stdin": "none",
+      "summary": "show effective read-only project configuration and DB path source",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
+    },
+    "config-validate": {
+      "args": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 0,
+          "name": "path",
+          "nargs": "?",
+          "repeatable": false,
+          "required": false,
+          "type": "string",
+          "unbounded": false,
+          "unbounded_reason": "no explicit CLI length cap"
+        }
+      ],
+      "data_schema": "{config_path, exists, valid, format, schema_version, recognized_keys, unknown_keys}",
+      "description": "validate project config JSON without opening the queue database",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "config-validate",
+          "--json"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "flags": [
+        {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
+          "default": false,
+          "flag": "--json",
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
+        }
+      ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb config-validate"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "config_path": {
+            "type": "string"
+          },
+          "exists": {
+            "type": "boolean"
+          },
+          "format": {
+            "const": "json",
+            "type": "string"
+          },
+          "recognized_keys": {
+            "items": {
+              "enum": [
+                "db_path"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "schema_version": {
+            "const": 1,
+            "type": "integer"
+          },
+          "unknown_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "valid": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "config_path",
+          "exists",
+          "format",
+          "recognized_keys",
+          "schema_version",
+          "unknown_keys",
+          "valid"
+        ],
+        "type": "object"
+      },
+      "positionals": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": null,
+          "minimum": 0,
+          "name": "path",
+          "nargs": "?",
+          "repeatable": false,
+          "required": false,
+          "type": "string",
+          "unbounded": false,
+          "unbounded_reason": "no explicit CLI length cap"
+        }
+      ],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb config-validate",
+      "stdin": "none",
+      "summary": "validate project config JSON without opening the queue database",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
+    },
+    "doctor": {
+      "args": [],
+      "data_schema": "{ready, summary:{passed,warnings,failed,skipped}, config, checks:[{id,status,message,remediation,blocked_by}], versions}",
+      "description": "check local spoolctl readiness without repairs or database mutation",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "doctor",
+          "--json"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "flags": [
+        {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
+          "default": null,
+          "flag": "--db",
+          "malformed_expectations": {
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 4096,
+          "minimum": 1,
+          "name": "--db",
+          "opens_database": "readiness diagnostic with non-creating mode=rw",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": false,
+          "unopenable_path": "readiness outcome: ok:true, errors:[], data.ready:false, exit 3",
+          "value_required": true
+        },
+        {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
+          "default": false,
+          "flag": "--json",
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
+        }
+      ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb doctor"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "blocked_by": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "id": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "remediation": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "pass",
+                    "warn",
+                    "fail",
+                    "skip"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "blocked_by",
+                "id",
+                "message",
+                "remediation",
+                "status"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "config": {
+            "additionalProperties": false,
+            "properties": {
+              "config_exists": {
+                "type": "boolean"
+              },
+              "config_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "config_valid": {
+                "type": "boolean"
+              },
+              "db_path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "db_source": {
+                "enum": [
+                  "flag",
+                  "environment",
+                  "project_config",
+                  "default",
+                  null
+                ],
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "config_exists",
+              "config_path",
+              "config_valid",
+              "db_path",
+              "db_source"
+            ],
+            "type": "object"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "summary": {
+            "additionalProperties": false,
+            "properties": {
+              "failed": {
+                "type": "integer"
+              },
+              "passed": {
+                "type": "integer"
+              },
+              "skipped": {
+                "type": "integer"
+              },
+              "warnings": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "failed",
+              "passed",
+              "skipped",
+              "warnings"
+            ],
+            "type": "object"
+          },
+          "versions": {
+            "additionalProperties": false,
+            "properties": {
+              "contract_version": {
+                "type": "string"
+              },
+              "schema_version": {
+                "type": "integer"
+              },
+              "tool_version": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "contract_version",
+              "schema_version",
+              "tool_version"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "checks",
+          "config",
+          "ready",
+          "summary",
+          "versions"
+        ],
+        "type": "object"
+      },
+      "positionals": [],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb doctor",
+      "stdin": "none",
+      "summary": "check local spoolctl readiness without repairs or database mutation",
       "text": {
         "contract": "human-readable stdout on success; diagnostics on stderr for errors",
         "mode": "text"
@@ -5162,6 +5818,9 @@
             "brief",
             "cancel",
             "capabilities",
+            "config-show",
+            "config-validate",
+            "doctor",
             "events",
             "list",
             "output",

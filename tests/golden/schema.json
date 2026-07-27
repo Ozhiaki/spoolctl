@@ -1022,15 +1022,39 @@
         "config": {
           "additionalProperties": false,
           "properties": {
-            "reason": {
+            "format": {
+              "const": "json",
               "type": "string"
+            },
+            "keys": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "path": {
+              "type": "string"
+            },
+            "precedence": {
+              "items": {
+                "enum": [
+                  "flag",
+                  "environment",
+                  "project_config",
+                  "default"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "schema_version": {
+              "type": "integer"
             },
             "supported": {
               "type": "boolean"
             }
           },
           "required": [
-            "reason",
             "supported"
           ],
           "type": "object"
@@ -1465,6 +1489,7 @@
                         "1",
                         "+",
                         "*",
+                        "?",
                         "remainder"
                       ],
                       "type": "string"
@@ -1719,6 +1744,7 @@
                         "1",
                         "+",
                         "*",
+                        "?",
                         "remainder"
                       ],
                       "type": "string"
@@ -1834,6 +1860,275 @@
         "tool_version",
         "totality",
         "verbs"
+      ],
+      "type": "object"
+    },
+    "config-show": {
+      "additionalProperties": false,
+      "properties": {
+        "config_exists": {
+          "type": "boolean"
+        },
+        "config_path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "config_valid": {
+          "type": "boolean"
+        },
+        "ignored_keys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "precedence": {
+          "items": {
+            "enum": [
+              "flag",
+              "environment",
+              "project_config",
+              "default"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "sources": {
+          "additionalProperties": false,
+          "properties": {
+            "db_path": {
+              "enum": [
+                "flag",
+                "environment",
+                "project_config",
+                "default"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "db_path"
+          ],
+          "type": "object"
+        },
+        "values": {
+          "additionalProperties": false,
+          "properties": {
+            "db_path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "db_path"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "config_exists",
+        "config_path",
+        "config_valid",
+        "ignored_keys",
+        "precedence",
+        "sources",
+        "values"
+      ],
+      "type": "object"
+    },
+    "config-validate": {
+      "additionalProperties": false,
+      "properties": {
+        "config_path": {
+          "type": "string"
+        },
+        "exists": {
+          "type": "boolean"
+        },
+        "format": {
+          "const": "json",
+          "type": "string"
+        },
+        "recognized_keys": {
+          "items": {
+            "enum": [
+              "db_path"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "schema_version": {
+          "const": 1,
+          "type": "integer"
+        },
+        "unknown_keys": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "valid": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "config_path",
+        "exists",
+        "format",
+        "recognized_keys",
+        "schema_version",
+        "unknown_keys",
+        "valid"
+      ],
+      "type": "object"
+    },
+    "doctor": {
+      "additionalProperties": false,
+      "properties": {
+        "checks": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "blocked_by": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "message": {
+                "type": "string"
+              },
+              "remediation": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status": {
+                "enum": [
+                  "pass",
+                  "warn",
+                  "fail",
+                  "skip"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "blocked_by",
+              "id",
+              "message",
+              "remediation",
+              "status"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "config_exists": {
+              "type": "boolean"
+            },
+            "config_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "config_valid": {
+              "type": "boolean"
+            },
+            "db_path": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "db_source": {
+              "enum": [
+                "flag",
+                "environment",
+                "project_config",
+                "default",
+                null
+              ],
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "config_exists",
+            "config_path",
+            "config_valid",
+            "db_path",
+            "db_source"
+          ],
+          "type": "object"
+        },
+        "ready": {
+          "type": "boolean"
+        },
+        "summary": {
+          "additionalProperties": false,
+          "properties": {
+            "failed": {
+              "type": "integer"
+            },
+            "passed": {
+              "type": "integer"
+            },
+            "skipped": {
+              "type": "integer"
+            },
+            "warnings": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "failed",
+            "passed",
+            "skipped",
+            "warnings"
+          ],
+          "type": "object"
+        },
+        "versions": {
+          "additionalProperties": false,
+          "properties": {
+            "contract_version": {
+              "type": "string"
+            },
+            "schema_version": {
+              "type": "integer"
+            },
+            "tool_version": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "contract_version",
+            "schema_version",
+            "tool_version"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "checks",
+        "config",
+        "ready",
+        "summary",
+        "versions"
       ],
       "type": "object"
     },
