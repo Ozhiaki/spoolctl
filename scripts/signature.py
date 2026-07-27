@@ -103,6 +103,9 @@ def base_for(verb: str, db: str) -> list[str] | None:
         "add": ["add", "--json", "--db", db, "--", "true"],
         "cancel": ["cancel", "1", "--json", "--db", db],
         "events": ["events", "--json", "--db", db],
+        "config-show": ["config-show", "--json", "--db", db],
+        "config-validate": ["config-validate", "--json"],
+        "doctor": ["doctor", "--json", "--db", db],
         "list": ["list", "--json", "--db", db],
         "output": ["output", "1", "--json", "--db", db],
         "prune": ["prune", "--dry-run", "--older-than", "30d", "--json", "--db", db],
@@ -152,11 +155,15 @@ def capabilities(prefix: list[str], cwd: Path) -> dict[str, Any]:
 
 def generated_invalid_cases(prefix: list[str], cwd: Path, db: str) -> list[Case]:
     caps = capabilities(prefix, cwd)
+    missing_bases = sorted(set(caps["verbs"]) - {
+        verb for verb in caps["verbs"] if base_for(verb, db) is not None
+    })
+    if missing_bases:
+        raise SystemExit("missing signature base command(s): " + ", ".join(missing_bases))
     cases: list[Case] = []
     for verb, meta in sorted(caps["verbs"].items()):
         base = base_for(verb, db)
-        if not base:
-            continue
+        assert base is not None
         for flag in meta.get("flags", []):
             value = bad_value(flag)
             if value is None:
@@ -177,6 +184,8 @@ def cases(prefix: list[str], cwd: Path, tmp: Path) -> list[Case]:
         Case("meta:schema", ["schema", "--json"]),
         Case("meta:brief-text", ["brief"], text_hash=True),
         Case("meta:robot-docs", ["robot-docs", "guide", "--json"]),
+        Case("meta:config-show", ["config-show", "--json"]),
+        Case("meta:config-validate", ["config-validate", "--json"]),
         Case("invalid:unknown-verb", ["statu", "--json"]),
         Case("invalid:unknown-flag", ["status", "--json", "--bogus", "--db", shared_db]),
         Case("invalid:missing-required", ["--json"]),
@@ -187,6 +196,7 @@ def cases(prefix: list[str], cwd: Path, tmp: Path) -> list[Case]:
         Case("roundtrip:add", ["add", "--db", roundtrip_db, "--json", "--", "printf", "sig-roundtrip"], db_name=roundtrip_db),
         Case("roundtrip:work", ["work", "--once", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
         Case("roundtrip:wait", ["wait", "1", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
+        Case("roundtrip:doctor", ["doctor", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
         Case("roundtrip:output-json", ["output", "1", "--stream", "stdout", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
         Case("roundtrip:show-json", ["show", "1", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
         Case("roundtrip:list-json", ["list", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),

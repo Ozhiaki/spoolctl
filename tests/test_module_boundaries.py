@@ -10,18 +10,33 @@ REPO = Path(__file__).resolve().parent.parent
 PACKAGE = REPO / "spoolctl"
 
 FORBIDDEN_IMPORTS = {
+    "spoolctl.__main__": set(),
+    "spoolctl.cli": set(),
+    "spoolctl.config": {"spoolctl.cli"},
     "spoolctl.contract": {"spoolctl.cli", "spoolctl.validation"},
+    "spoolctl.errors": set(),
     "spoolctl.models": {"spoolctl.cli", "spoolctl.contract", "spoolctl.errors",
                          "spoolctl.operations", "spoolctl.schemas",
                          "spoolctl.store", "spoolctl.validation", "spoolctl.worker"},
     "spoolctl.operations": {"spoolctl.cli"},
+    "spoolctl.schemas": set(),
+    "spoolctl.store": set(),
     "spoolctl.validation": {"spoolctl.cli"},
+    "spoolctl.worker": set(),
 }
 
 FORBIDDEN_REFERENCES = {
+    "spoolctl.__main__": set(),
+    "spoolctl.cli": set(),
+    "spoolctl.config": {"cli.", "spoolctl.cli"},
     "spoolctl.contract": {"cli.", "validation.", "spoolctl.cli", "spoolctl.validation"},
+    "spoolctl.errors": set(),
+    "spoolctl.models": set(),
     "spoolctl.operations": {"cli.", "spoolctl.cli"},
+    "spoolctl.schemas": set(),
+    "spoolctl.store": set(),
     "spoolctl.validation": {"cli.", "spoolctl.cli"},
+    "spoolctl.worker": set(),
 }
 
 
@@ -77,6 +92,20 @@ class TestModuleBoundaries(unittest.TestCase):
                 if any(fragment in text for fragment in forbidden)
             ]
             self.assertFalse(offenders, f"{module} has forbidden string refs: {offenders}")
+
+    def test_boundary_table_keys_resolve_to_modules(self):
+        for table in (FORBIDDEN_IMPORTS, FORBIDDEN_REFERENCES):
+            for module in table:
+                self.assertTrue(module_path(module).exists(), module)
+
+    def test_every_package_module_is_in_a_boundary_table(self):
+        covered = set(FORBIDDEN_IMPORTS) | set(FORBIDDEN_REFERENCES)
+        modules = {
+            "spoolctl." + path.stem
+            for path in PACKAGE.glob("*.py")
+            if path.name != "__init__.py"
+        }
+        self.assertLessEqual(modules, covered)
 
 
 if __name__ == "__main__":

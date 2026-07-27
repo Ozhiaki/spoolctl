@@ -148,8 +148,6 @@ def valid_positionals(verb: str) -> list[str]:
 
 
 def valid_optional_positionals(verb: str) -> list[str]:
-    if verb == "config-validate":
-        return ["missing-config.json"]
     return []
 
 
@@ -307,17 +305,15 @@ def generated_probes(caps: dict, db: str) -> list[Probe]:
                     covers={(verb_name, "arg", arg["name"])},
                 ))
             else:
-                optionals = valid_optional_positionals(verb_name)
-                if optionals:
-                    probes.append(Probe(
-                        desc=f"{verb_name}: optional positional {arg['name']}",
-                        category="optional_positional",
-                        argv=base(verb_name, caps, db)
-                        + valid_required_options(verb_name)
-                        + optionals,
-                        expect={"exit_code": 0, "ok": True},
-                        covers={(verb_name, "arg", arg["name"])},
-                    ))
+                probes.append(Probe(
+                    desc=f"{verb_name}: optional positional {arg['name']} omitted",
+                    category="optional_positional",
+                    argv=base(verb_name, caps, db)
+                    + valid_required_options(verb_name)
+                    + valid_optional_positionals(verb_name),
+                    expect={"exit_code": 0, "ok": True},
+                    covers={(verb_name, "arg", arg["name"])},
+                ))
         for flags in verb["mutually_exclusive"]:
             argv = base(verb_name, caps, db)
             argv += valid_required_options(verb_name)
@@ -344,7 +340,14 @@ def generated_probes(caps: dict, db: str) -> list[Probe]:
                 covers={(verb_name, "output_mode", mode)},
                 setup=setup_for_success(verb_name, mode, db),
                 raw_prefix=False,
-            ))
+        ))
+    probes.append(Probe(
+        desc="doctor: fresh DB path is unready readiness outcome",
+        category="doctor_unready",
+        argv=["doctor", "--db", db, "--json"],
+        expect={"exit_code": 3, "ok": True, "ready": False},
+        covers={("doctor", "readiness", "unready")},
+    ))
     for name, env_meta in sorted(caps["env_vars"].items()):
         verb_name = env_meta["consumed_by"][0]
         env = {name: "nan" if env_meta["type"] == "float" else db}
@@ -496,6 +499,13 @@ class TestGeneratedStageBProbes(unittest.TestCase):
             env = json.loads(proc.stdout)
             validate(env, schemas.ENVELOPE_SCHEMA)
             self.assertTrue(env["ok"], probe.desc)
+        elif probe.expect.get("ok") is True and "mode" not in probe.expect:
+            env = json.loads(proc.stdout)
+            validate(env, schemas.ENVELOPE_SCHEMA)
+            self.assertTrue(env["ok"], probe.desc)
+            if "ready" in probe.expect:
+                self.assertEqual(env["data"]["ready"], probe.expect["ready"], probe.desc)
+                self.assertEqual(env["errors"], [], probe.desc)
         elif probe.expect.get("mode") == "text":
             self.assertTrue(proc.stdout.strip(), probe.desc)
         elif probe.expect.get("mode") == "raw":

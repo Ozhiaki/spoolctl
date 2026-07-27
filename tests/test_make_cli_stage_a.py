@@ -41,6 +41,21 @@ class StageAProbeTestCase(unittest.TestCase):
         self.assertNotIn("Traceback", err, argv)
         return env
 
+    def assert_json_readiness(
+        self,
+        argv: tuple[str, ...],
+        *,
+        exit_code: int = 3,
+    ) -> dict:
+        code, out, err = run_cli(*argv)
+        self.assertEqual(code, exit_code, argv)
+        env = json.loads(out)
+        self.assertTrue(env["ok"], argv)
+        self.assertEqual(env["errors"], [], argv)
+        self.assertFalse(env["data"]["ready"], argv)
+        self.assertNotIn("Traceback", err + out, argv)
+        return env
+
 
 class TestParserStageA(StageAProbeTestCase):
     def test_flag_abbreviations_are_not_accepted(self):
@@ -179,6 +194,19 @@ class TestDbPathStageA(StageAProbeTestCase):
                             os.environ.pop("SPOOLCTL_DB", None)
                         else:
                             os.environ["SPOOLCTL_DB"] = old
+
+    def test_doctor_unopenable_path_is_readiness_outcome(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            parent_file = os.path.join(tmp, "parent-file")
+            with open(parent_file, "w", encoding="utf-8") as f:
+                f.write("not a directory")
+            env = self.assert_json_readiness(
+                ("doctor", "--db", os.path.join(parent_file, "queue.db"), "--json")
+            )
+            self.assertEqual(
+                env["data"]["checks"][2]["id"],
+                "spool_directory_writable",
+            )
 
 
 if __name__ == "__main__":

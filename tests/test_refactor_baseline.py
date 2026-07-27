@@ -18,6 +18,7 @@ def import_script(name: str, path: Path):
     spec = importlib.util.spec_from_file_location(name, path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -53,6 +54,8 @@ class TestSignatureHarness(unittest.TestCase):
         self.assertIn("meta:schema", proc.stdout)
         self.assertIn("meta:brief-text", proc.stdout)
         self.assertIn("meta:robot-docs", proc.stdout)
+        self.assertIn("meta:config-show", proc.stdout)
+        self.assertIn("meta:config-validate", proc.stdout)
         self.assertIn("invalid:unknown-verb", proc.stdout)
         self.assertIn("invalid:unknown-flag", proc.stdout)
         self.assertIn("invalid:missing-required", proc.stdout)
@@ -61,10 +64,18 @@ class TestSignatureHarness(unittest.TestCase):
         self.assertIn("schedule:add-at", proc.stdout)
         self.assertIn("schedule:add-after", proc.stdout)
         self.assertIn("roundtrip:output-json", proc.stdout)
+        self.assertIn("roundtrip:doctor", proc.stdout)
         self.assertIn("text:output", proc.stdout)
         self.assertGreater(proc.stdout.count("detail=generated-invalid"), 20)
         self.assertNotIn("traceback=True", proc.stdout)
         self.assertNotIn("exit=HANG", proc.stdout)
+
+    def test_signature_base_exists_for_every_verb(self):
+        signature = import_script("signature", REPO / "scripts" / "signature.py")
+        from spoolctl.models import VERBS
+
+        missing = [verb for verb in VERBS if signature.base_for(verb, "/tmp/sig.db") is None]
+        self.assertEqual(missing, [])
 
     def test_checked_in_timezone_baselines_are_non_vacuous(self):
         for target in ("source", "single-file"):

@@ -9,9 +9,9 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from spoolctl import cli
+from spoolctl import cli, contract, schemas
 from spoolctl.contract import DB_VERBS
-from spoolctl.models import CODE_REGISTRY, ERROR_CODES, FAILURE_REASONS, WARNING_CODES
+from spoolctl.models import CODE_REGISTRY, ERROR_CODES, FAILURE_REASONS, VERBS, WARNING_CODES
 
 GOLDEN = Path(__file__).resolve().parent / "golden" / "capabilities.json"
 
@@ -56,6 +56,16 @@ class TestParserParity(unittest.TestCase):
     def test_every_verb_present(self):
         data = capabilities_data()
         self.assertEqual(set(data["verbs"]), set(cli.VERBS))
+
+    def test_every_verb_has_required_contract_tables(self):
+        data = capabilities_data()
+        verb_set = set(VERBS)
+        self.assertEqual(set(data["verbs"]), verb_set)
+        self.assertEqual(set(schemas.VERB_SCHEMAS), verb_set)
+        self.assertEqual(set(contract.VERB_TRAITS), verb_set)
+        self.assertEqual(set(contract.VERB_EXAMPLES), verb_set)
+        for name in VERBS:
+            self.assertIsNotNone(data["verbs"][name]["output_schema"], name)
 
     def test_exit_codes_cover_dictionary(self):
         data = capabilities_data()
