@@ -58,6 +58,18 @@ class TestEntryPoints(unittest.TestCase):
 
 
 class TestSingleFileBuild(unittest.TestCase):
+    def test_build_discovers_package_modules_alphabetically(self):
+        import importlib.util
+
+        spec = importlib.util.spec_from_file_location(
+            "build_single_file", REPO / "scripts" / "build_single_file.py"
+        )
+        assert spec and spec.loader
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        expected = sorted(path.stem for path in PACKAGE.glob("*.py"))
+        self.assertEqual(module.discover_modules(), expected)
+
     def test_build_emits_runnable_single_file(self):
         with tempfile.TemporaryDirectory() as td:
             artifact = Path(td) / "spoolctl.py"
@@ -74,6 +86,27 @@ class TestSingleFileBuild(unittest.TestCase):
             )
             self.assertEqual(proc.returncode, 0, proc.stderr)
             self.assertIn("spoolctl", proc.stdout)
+
+            def art_raw(*argv):
+                return subprocess.run(
+                    [sys.executable, str(artifact), *argv],
+                    cwd=td, capture_output=True, text=True,
+                )
+
+            for argv in (
+                ("capabilities", "--json"),
+                ("schema", "--json"),
+                ("brief",),
+                ("robot-docs", "guide", "--json"),
+            ):
+                with self.subTest(argv=argv):
+                    proc = art_raw(*argv)
+                    self.assertEqual(proc.returncode, 0, proc.stderr)
+                    if "--json" in argv:
+                        self.assertTrue(json.loads(proc.stdout)["ok"])
+                    else:
+                        self.assertIn("spoolctl quick brief", proc.stdout)
+
             # One add/work/wait round-trip through the artifact.
             db = str(Path(td) / "queue.db")
             def art(verb, *argv):

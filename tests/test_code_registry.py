@@ -17,6 +17,7 @@ from spoolctl import cli, store
 from spoolctl.models import CODE_REGISTRY, ERROR_CODES, WARNING_CODES
 
 REPO = Path(__file__).resolve().parent.parent
+PACKAGE = REPO / "spoolctl"
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -48,40 +49,52 @@ class TestRegistryShape(unittest.TestCase):
 
 
 class TestStaticRegistryCoverage(unittest.TestCase):
+    def package_trees(self):
+        for path in sorted(PACKAGE.glob("*.py")):
+            yield path, ast.parse(path.read_text(encoding="utf-8"))
+
+    @staticmethod
+    def is_cli_error_call(node: ast.Call) -> bool:
+        if isinstance(node.func, ast.Name):
+            return node.func.id == "CliError"
+        if isinstance(node.func, ast.Attribute):
+            return node.func.attr == "CliError"
+        return False
+
     def test_cli_error_literals_are_registered_for_errors(self):
-        tree = ast.parse((REPO / "spoolctl" / "cli.py").read_text())
         found: set[str] = set()
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Call):
-                continue
-            if not isinstance(node.func, ast.Name) or node.func.id != "CliError":
-                continue
-            if node.args and isinstance(node.args[0], ast.Constant):
-                if isinstance(node.args[0].value, str):
-                    found.add(node.args[0].value)
+        for _, tree in self.package_trees():
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call) or not self.is_cli_error_call(node):
+                    continue
+                if node.args and isinstance(node.args[0], ast.Constant):
+                    if isinstance(node.args[0].value, str):
+                        found.add(node.args[0].value)
+        self.assertGreater(len(found), 5, "CliError static scan found too few codes")
         unknown = found - set(ERROR_CODES)
         self.assertFalse(unknown, f"unregistered error codes: {sorted(unknown)}")
 
     def test_warning_code_literals_are_registered_for_warnings(self):
-        tree = ast.parse((REPO / "spoolctl" / "cli.py").read_text())
         found: set[str] = set()
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.Dict):
-                continue
-            keys = {
-                key.value for key in node.keys
-                if isinstance(key, ast.Constant) and isinstance(key.value, str)
-            }
-            if "message" not in keys:
-                continue
-            for key, value in zip(node.keys, node.values):
-                if (
-                    isinstance(key, ast.Constant)
-                    and key.value == "code"
-                    and isinstance(value, ast.Constant)
-                    and isinstance(value.value, str)
-                ):
-                    found.add(value.value)
+        for _, tree in self.package_trees():
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Dict):
+                    continue
+                keys = {
+                    key.value for key in node.keys
+                    if isinstance(key, ast.Constant) and isinstance(key.value, str)
+                }
+                if "message" not in keys:
+                    continue
+                for key, value in zip(node.keys, node.values):
+                    if (
+                        isinstance(key, ast.Constant)
+                        and key.value == "code"
+                        and isinstance(value, ast.Constant)
+                        and isinstance(value.value, str)
+                    ):
+                        found.add(value.value)
+        self.assertGreater(len(found), 1, "warning static scan found too few codes")
         unknown = found - set(WARNING_CODES)
         self.assertFalse(unknown, f"unregistered warning codes: {sorted(unknown)}")
 

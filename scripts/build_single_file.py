@@ -17,7 +17,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 PACKAGE = REPO / "spoolctl"
 
-MODULES = ["__init__", "models", "schemas", "store", "worker", "cli"]
+def discover_modules() -> list[str]:
+    """Return package module names in deterministic embed order."""
+    return sorted(path.stem for path in PACKAGE.glob("*.py"))
 
 TEMPLATE = '''\
 #!/usr/bin/env python3
@@ -66,7 +68,8 @@ if __name__ == "__main__":
 
 
 def build(out_path: Path) -> None:
-    sources = {name: (PACKAGE / f"{name}.py").read_text(encoding="utf-8") for name in MODULES}
+    modules = discover_modules()
+    sources = {name: (PACKAGE / f"{name}.py").read_text(encoding="utf-8") for name in modules}
 
     version = "unknown"
     for line in sources["models"].splitlines():
