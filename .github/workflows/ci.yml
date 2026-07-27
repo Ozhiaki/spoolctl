@@ -20,9 +20,23 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: Unit and contract suite
         run: python -m unittest discover -s tests -v
+      - name: Docs drift check
+        run: python scripts/build_docs.py --check
       - name: Single-file build smoke test
         run: |
           python scripts/build_single_file.py dist/spoolctl.py
           cd "$RUNNER_TEMP"
           python "$GITHUB_WORKSPACE/dist/spoolctl.py" --help
           python "$GITHUB_WORKSPACE/dist/spoolctl.py" capabilities --json > /dev/null
+
+  docs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install docs extra
+        run: python -m pip install '.[docs]'
+      - name: Strict docs build
+        run: mkdocs build --strict

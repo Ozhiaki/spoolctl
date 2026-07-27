@@ -111,6 +111,17 @@ $ spoolctl robot-docs guide --json # longer agent workflow guide
 $ spoolctl events --follow --json --max-events 1 # NDJSON data/control frames
 ```
 
+## Documentation
+
+The [`docs/`](docs/README.md) directory has the full documentation:
+
+- [Install](docs/install.md) and [Quickstart](docs/quickstart.md) to get started.
+- [Concepts](docs/concepts.md), [Guarantees](docs/guarantees.md), and [Architecture](docs/architecture.md) for the design.
+- [Scheduling](docs/scheduling.md), [Execution](docs/execution.md), [Config](docs/config.md), [Doctor](docs/doctor.md), and [Events](docs/events.md) for usage.
+- [Agent Guide](docs/agent-guide.md) and [JSON Contract](docs/json-contract.md) for machine consumers.
+- [Verb Reference](docs/verbs.md), [Error Reference](docs/errors.md), [Limits](docs/reference/limits.md), and [States](docs/reference/states.md) for lookup.
+- [Comparison](docs/comparison.md), [Landscape](docs/landscape.md), and [FAQ](docs/faq.md) for positioning.
+
 ## Design Philosophy
 
 1. **SQLite is the daemon.** Atomic claims via `BEGIN IMMEDIATE`, WAL for concurrent

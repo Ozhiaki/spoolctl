@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spoolctl"
-version = "0.4.7"
+version = "0.4.8"
 description = "A local job queue built for operators that die: retries, backoff, dead-letter, crash recovery. SQLite, no daemon, stdlib only."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,9 @@ classifiers = [
     "Topic :: System :: Distributed Computing",
 ]
 dependencies = []
+
+[project.optional-dependencies]
+docs = ["mkdocs-material>=9"]
 
 [project.urls]
 Homepage = "https://github.com/Ozhiaki/spoolctl"
