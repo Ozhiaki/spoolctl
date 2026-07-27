@@ -11,7 +11,7 @@ from typing import Any
 
 from spoolctl import store
 from spoolctl.errors import CliError
-from spoolctl.models import EXIT_CONFLICT
+from spoolctl.models import EXIT_CONFLICT, EXIT_TRANSIENT, _WAIT_TERMINAL
 
 PREVIEW_BYTES = 4096
 
@@ -106,6 +106,22 @@ class AddOperationResult:
     deduplicated: bool
     state: str
     warnings: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
+class WaitInput:
+    db_path: str | None
+    ids: list[int]
+    timeout: float | None
+    poll_interval: float
+    monotonic: Callable[[], float] = time.monotonic
+    sleep: Callable[[float], None] = time.sleep
+
+
+@dataclass(frozen=True)
+class WaitOperationResult:
+    data: dict[str, Any]
+    all_succeeded: bool
 
 
 def _read_stream(path: str) -> bytes:
@@ -238,4 +254,48 @@ def add_operation(input: AddInput) -> AddOperationResult:
         deduplicated=deduplicated,
         state=state,
         warnings=warnings,
+    )
+
+
+def wait_operation(input: WaitInput) -> WaitOperationResult:
+    id_list = " ".join(str(i) for i in input.ids)
+    conn = _connect_db(input.db_path)
+    try:
+        missing = sorted({i for i in input.ids if store.get_job(conn, i) is None})
+        if missing:
+            raise CliError(
+                "NOT_FOUND",
+                "no job(s) with id(s): " + ", ".join(str(i) for i in missing),
+                "run: spoolctl list  (to see job ids)",
+            )
+        deadline = None if input.timeout is None else input.monotonic() + input.timeout
+        while True:
+            jobs = {i: store.get_job(conn, i) for i in input.ids}
+            if all(j.state in _WAIT_TERMINAL for j in jobs.values()):
+                break
+            if deadline is not None and input.monotonic() >= deadline:
+                raise CliError(
+                    "TIMEOUT",
+                    f"jobs not settled after {input.timeout}s",
+                    f"inspect crash counts with: spoolctl list --json  or: spoolctl show {input.ids[0]} --json; retry: spoolctl wait --timeout {input.timeout} {id_list}",
+                    exit_code=EXIT_TRANSIENT,
+                )
+            input.sleep(input.poll_interval)
+    finally:
+        conn.close()
+    all_succeeded = all(j.state == "done" for j in jobs.values())
+    return WaitOperationResult(
+        data={
+            "all_succeeded": all_succeeded,
+            "jobs": {
+                str(i): {
+                    "attempts": j.attempts,
+                    "last_error": j.last_error,
+                    "last_exit_code": j.last_exit_code,
+                    "state": j.state,
+                }
+                for i, j in jobs.items()
+            },
+        },
+        all_succeeded=all_succeeded,
     )

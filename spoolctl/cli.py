@@ -62,16 +62,17 @@ from spoolctl.models import (
     TAG_FILTER_SCAN_LIMIT,
     TOOL_VERSION,
     VERBS,
-    _WAIT_TERMINAL,
     _suggest,
 )
 from spoolctl.operations import (
     AddInput,
     OutputInput,
     StatusInput,
+    WaitInput,
     add_operation,
     output_operation,
     status_operation,
+    wait_operation,
 )
 from spoolctl.validation import (
     _job_id_arg,
@@ -970,50 +971,20 @@ def cmd_wait(args: argparse.Namespace) -> VerbResult:
     poll_interval = _parse_positive_float(
         args.poll_interval, flag="--poll-interval", maximum=MAX_POLL_INTERVAL_SECONDS
     )
-    id_list = " ".join(str(i) for i in ids)
-    conn = _open_db(args)
-    try:
-        missing = sorted({i for i in ids if store.get_job(conn, i) is None})
-        if missing:
-            raise CliError(
-                "NOT_FOUND",
-                "no job(s) with id(s): " + ", ".join(str(i) for i in missing),
-                "run: spoolctl list  (to see job ids)",
-            )
-        deadline = None if timeout is None else time.monotonic() + timeout
-        while True:
-            jobs = {i: store.get_job(conn, i) for i in ids}
-            if all(j.state in _WAIT_TERMINAL for j in jobs.values()):
-                break
-            if deadline is not None and time.monotonic() >= deadline:
-                raise CliError(
-                    "TIMEOUT",
-                    f"jobs not settled after {timeout}s",
-                    f"inspect crash counts with: spoolctl list --json  or: spoolctl show {ids[0]} --json; retry: spoolctl wait --timeout {timeout} {id_list}",
-                    exit_code=EXIT_TRANSIENT,
-                )
-            time.sleep(poll_interval)
-    finally:
-        conn.close()
-    all_succeeded = all(j.state == "done" for j in jobs.values())
-    data = {
-        "all_succeeded": all_succeeded,
-        "jobs": {
-            str(i): {
-                "attempts": j.attempts,
-                "last_error": j.last_error,
-                "last_exit_code": j.last_exit_code,
-                "state": j.state,
-            }
-            for i, j in jobs.items()
-        },
-    }
-    lines = [f"#{i}  {j.state}" for i, j in jobs.items()]
-    lines.append("all succeeded" if all_succeeded else "not all succeeded")
+    result = wait_operation(
+        WaitInput(
+            db_path=args.db,
+            ids=ids,
+            timeout=timeout,
+            poll_interval=poll_interval,
+        )
+    )
+    lines = [f"#{i}  {result.data['jobs'][str(i)]['state']}" for i in ids]
+    lines.append("all succeeded" if result.all_succeeded else "not all succeeded")
     return VerbResult(
-        data=data,
+        data=result.data,
         human="\n".join(lines),
-        exit_code=EXIT_OK if all_succeeded else EXIT_JOB_FAILURE,
+        exit_code=EXIT_OK if result.all_succeeded else EXIT_JOB_FAILURE,
     )
 
 

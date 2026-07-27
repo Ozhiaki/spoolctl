@@ -10,6 +10,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
+from spoolctl.operations import WaitInput, wait_operation
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -36,6 +37,48 @@ class WaitTestCase(unittest.TestCase):
             _, out, _ = run_cli("work", "--once", "--db", self.db, "--json")
             if not json.loads(out)["data"]["claimed"]:
                 return
+
+    def make_terminal(self, state: str) -> int:
+        conn = store.connect(self.db)
+        try:
+            job_id = store.add_job(conn, [state], 300, 0, 10.0)
+            _, attempt = store.claim_next(conn, "w1", 42, 11.0, store.output_root(self.db))
+            if state == "done":
+                store.record_success(conn, job_id, attempt.id, "w1", 42, 12.0)
+            elif state == "dead":
+                store.record_failure(
+                    conn, job_id, attempt.id, "w1", 42, "failed", 1, "exit 1", 12.0
+                )
+            else:
+                raise AssertionError(state)
+            return job_id
+        finally:
+            conn.close()
+
+
+class TestDirectWaitOperation(WaitTestCase):
+    def test_reports_all_succeeded_without_process_exit(self):
+        ids = [self.make_terminal("done"), self.make_terminal("done")]
+
+        result = wait_operation(WaitInput(self.db, ids, None, 0.01))
+
+        self.assertTrue(result.all_succeeded)
+        self.assertTrue(result.data["all_succeeded"])
+        self.assertEqual(
+            {k: v["state"] for k, v in result.data["jobs"].items()},
+            {str(i): "done" for i in ids},
+        )
+
+    def test_reports_mixed_outcome_without_process_exit(self):
+        good = self.make_terminal("done")
+        bad = self.make_terminal("dead")
+
+        result = wait_operation(WaitInput(self.db, [good, bad], None, 0.01))
+
+        self.assertFalse(result.all_succeeded)
+        self.assertFalse(result.data["all_succeeded"])
+        self.assertEqual(result.data["jobs"][str(bad)]["state"], "dead")
+        self.assertEqual(result.data["jobs"][str(bad)]["last_error"], "exit 1")
 
 
 class TestWaitExitPaths(WaitTestCase):
