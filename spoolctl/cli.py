@@ -444,7 +444,7 @@ BOTH_ADD_FORMS = "try: spoolctl add -- <cmd> [args...]   or: spoolctl add -c '<s
 
 
 def _open_db(args: argparse.Namespace) -> "sqlite3.Connection":
-    db_path = store.resolve_db_path(args.db)
+    db_path = store.resolve_db_path(args.db, base_dir=os.getcwd())
     try:
         return store.connect(db_path)
     except OSError as exc:
@@ -576,6 +576,7 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
             next_run_at=next_run_at,
             cwd=cwd,
             env=env,
+            base_dir=os.getcwd(),
         )
     )
     job_id = result.data["job_id"]
@@ -613,7 +614,7 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
     from spoolctl import worker
 
     worker_id = _parse_worker_id(args.worker_id) or worker.default_worker_id()
-    db_path = store.resolve_db_path(args.db)
+    db_path = store.resolve_db_path(args.db, base_dir=os.getcwd())
     if args.once:
         conn = store.connect(db_path)
         try:
@@ -651,7 +652,7 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
     limit = _parse_int_bound(
         args.limit, flag="--limit", minimum=0, maximum=STATUS_LIMIT_MAX
     )
-    data = status_operation(StatusInput(db_path=args.db, limit=limit))
+    data = status_operation(StatusInput(db_path=args.db, limit=limit, base_dir=os.getcwd()))
     counts = data["counts"]
     scheduled = data["scheduled"]
     queues = data["queues"]
@@ -965,6 +966,7 @@ def cmd_wait(args: argparse.Namespace) -> VerbResult:
             ids=ids,
             timeout=timeout,
             poll_interval=poll_interval,
+            base_dir=os.getcwd(),
         )
     )
     lines = [f"#{i}  {result.data['jobs'][str(i)]['state']}" for i in ids]
@@ -1383,6 +1385,7 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
             job_id=job_id,
             attempt_no=attempt_no,
             stream=args.stream,
+            base_dir=os.getcwd(),
         )
     )
     if result.warnings:

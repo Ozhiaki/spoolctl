@@ -13,6 +13,7 @@ TOOL_VERSION = "0.4.6"
 CONTRACT_VERSION = "2"
 SCHEMA_VERSION = 6
 
+DEFAULT_DB_RELPATH = ".spoolctl/queue.db"
 VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
          "output", "events", "brief", "schema", "capabilities", "robot-docs")
 SQLITE_INT64_MIN = -(2 ** 63)

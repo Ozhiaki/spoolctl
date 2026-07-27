@@ -47,7 +47,9 @@ class TestCounts(StatusTestCase):
         store.add_job(conn, ["true"], 300, 3, 10.0, queue="gpu", next_run_at=200.0)
         conn.close()
 
-        data = status_operation(StatusInput(db_path=self.db, limit=10, now=lambda: 100.0))
+        data = status_operation(
+            StatusInput(db_path=self.db, limit=10, base_dir=None, now=lambda: 100.0)
+        )
 
         self.assertEqual(data["counts"]["queued"], 2)
         self.assertEqual(data["scheduled"], 1)

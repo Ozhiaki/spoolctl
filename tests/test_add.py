@@ -56,6 +56,7 @@ class AddTestCase(unittest.TestCase):
             next_run_at=None,
             cwd=None,
             env={},
+            base_dir=None,
         )
 
 

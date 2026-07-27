@@ -60,7 +60,7 @@ class TestDirectWaitOperation(WaitTestCase):
     def test_reports_all_succeeded_without_process_exit(self):
         ids = [self.make_terminal("done"), self.make_terminal("done")]
 
-        result = wait_operation(WaitInput(self.db, ids, None, 0.01))
+        result = wait_operation(WaitInput(self.db, ids, None, 0.01, base_dir=None))
 
         self.assertTrue(result.all_succeeded)
         self.assertTrue(result.data["all_succeeded"])
@@ -73,7 +73,9 @@ class TestDirectWaitOperation(WaitTestCase):
         good = self.make_terminal("done")
         bad = self.make_terminal("dead")
 
-        result = wait_operation(WaitInput(self.db, [good, bad], None, 0.01))
+        result = wait_operation(
+            WaitInput(self.db, [good, bad], None, 0.01, base_dir=None)
+        )
 
         self.assertFalse(result.all_succeeded)
         self.assertFalse(result.data["all_succeeded"])

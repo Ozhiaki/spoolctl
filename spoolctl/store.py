@@ -13,9 +13,11 @@ import sqlite3
 import time
 from typing import Any
 
+from spoolctl.config import resolve_effective_config
 from spoolctl.models import (
     Attempt,
     BUSY_TIMEOUT_MS,
+    DEFAULT_DB_RELPATH,
     FAILURE_REASONS,
     JOB_STATES,
     Job,
@@ -29,7 +31,6 @@ from spoolctl.models import (
     backoff_seconds,
 )
 
-DEFAULT_DB_RELPATH = os.path.join(".spoolctl", "queue.db")
 FAILURE_REASON_SQL = ", ".join(f"'{reason}'" for reason in FAILURE_REASONS)
 
 # Table bodies are shared between fresh creation (SCHEMA_SQL) and the v1->v2
@@ -152,14 +153,17 @@ class SchemaTooNewError(Exception):
         )
 
 
-def resolve_db_path(flag_value: str | None = None) -> str:
-    """--db flag > SPOOLCTL_DB env > ./.spoolctl/queue.db, canonicalized.
+def resolve_db_path(flag_value: str | None = None, *, base_dir: str | None = None) -> str:
+    """--db flag > SPOOLCTL_DB env > project config > default, canonicalized.
 
     realpath resolves symlinked spellings (macOS /var vs /private/var) so two
     names for one file are one queue.
     """
-    path = flag_value or os.environ.get("SPOOLCTL_DB") or DEFAULT_DB_RELPATH
-    return os.path.realpath(path)
+    return resolve_effective_config(
+        db_path_flag=flag_value,
+        base_dir=base_dir,
+        strict_unknown_keys=False,
+    ).db_path
 
 
 def output_root(db_path: str) -> str:

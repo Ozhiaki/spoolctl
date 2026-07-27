@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from spoolctl import store
-from spoolctl.models import SCHEMA_VERSION
+from spoolctl.models import DEFAULT_DB_RELPATH, SCHEMA_VERSION
 
 
 class StoreTestCase(unittest.TestCase):
@@ -74,8 +74,9 @@ class TestPathResolution(StoreTestCase):
         with mock.patch.dict(os.environ, {}, clear=True):
             self.assertEqual(
                 store.resolve_db_path(None),
-                os.path.realpath(store.DEFAULT_DB_RELPATH),
+                os.path.realpath(DEFAULT_DB_RELPATH),
             )
+            self.assertEqual(store.DEFAULT_DB_RELPATH, DEFAULT_DB_RELPATH)
 
     def test_symlinked_spellings_resolve_to_one_db(self):
         real_dir = Path(self.tmp.name) / "real"

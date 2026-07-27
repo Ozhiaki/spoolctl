@@ -55,9 +55,15 @@ class TestDirectOutputOperation(OutputTestCase):
     def test_selects_stdout_stderr_and_both_without_cli(self):
         job_id = self.make_captured_attempt(b"out", b"err")
 
-        stdout = output_operation(OutputInput(self.db, job_id, None, "stdout"))
-        stderr = output_operation(OutputInput(self.db, job_id, None, "stderr"))
-        both = output_operation(OutputInput(self.db, job_id, None, "both"))
+        stdout = output_operation(
+            OutputInput(self.db, job_id, None, "stdout", base_dir=None)
+        )
+        stderr = output_operation(
+            OutputInput(self.db, job_id, None, "stderr", base_dir=None)
+        )
+        both = output_operation(
+            OutputInput(self.db, job_id, None, "both", base_dir=None)
+        )
 
         self.assertEqual(stdout.stream_bytes, {"stdout": b"out"})
         self.assertEqual(stderr.stream_bytes, {"stderr": b"err"})

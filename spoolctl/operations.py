@@ -6,7 +6,7 @@ import errno
 import sqlite3
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from spoolctl import store
@@ -20,11 +20,12 @@ PREVIEW_BYTES = 4096
 class StatusInput:
     db_path: str | None
     limit: int
+    base_dir: str | None = field(kw_only=True)
     now: Callable[[], float] = time.time
 
 
-def _connect_db(db_path: str | None) -> sqlite3.Connection:
-    resolved = store.resolve_db_path(db_path)
+def _connect_db(db_path: str | None, *, base_dir: str | None) -> sqlite3.Connection:
+    resolved = store.resolve_db_path(db_path, base_dir=base_dir)
     try:
         return store.connect(resolved)
     except OSError as exc:
@@ -53,7 +54,7 @@ def _connect_db(db_path: str | None) -> sqlite3.Connection:
 
 
 def status_operation(input: StatusInput) -> dict[str, Any]:
-    conn = _connect_db(input.db_path)
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
     try:
         counts, scheduled, queues = store.status_counts(conn, input.now())
         dead = store.recent_dead(conn, input.limit)
@@ -73,6 +74,7 @@ class OutputInput:
     job_id: int
     attempt_no: int | None
     stream: str
+    base_dir: str | None = field(kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,8 @@ class OutputOperationResult:
 
 @dataclass(frozen=True)
 class AddInput:
+    # base_dir selects the project config discovery base. cwd is the submitted
+    # job's working directory and intentionally remains separate.
     db_path: str | None
     argv: list[str]
     timeout: int
@@ -98,6 +102,7 @@ class AddInput:
     next_run_at: float | None
     cwd: str | None
     env: dict[str, str]
+    base_dir: str | None = field(kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -114,6 +119,7 @@ class WaitInput:
     ids: list[int]
     timeout: float | None
     poll_interval: float
+    base_dir: str | None = field(kw_only=True)
     monotonic: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
 
@@ -133,7 +139,7 @@ def _read_stream(path: str) -> bytes:
 
 
 def output_operation(input: OutputInput) -> OutputOperationResult:
-    conn = _connect_db(input.db_path)
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
     try:
         job = store.get_job(conn, input.job_id)
         if job is None:
@@ -193,7 +199,7 @@ def output_operation(input: OutputInput) -> OutputOperationResult:
 
 
 def add_operation(input: AddInput) -> AddOperationResult:
-    conn = _connect_db(input.db_path)
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
     try:
         job_id, state, deduplicated, idempotency = store.add_job_checked(
             conn,
@@ -259,7 +265,7 @@ def add_operation(input: AddInput) -> AddOperationResult:
 
 def wait_operation(input: WaitInput) -> WaitOperationResult:
     id_list = " ".join(str(i) for i in input.ids)
-    conn = _connect_db(input.db_path)
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
     try:
         missing = sorted({i for i in input.ids if store.get_job(conn, i) is None})
         if missing:
