@@ -3,16 +3,27 @@
 from __future__ import annotations
 
 import errno
+import json
+import os
 import sqlite3
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
+from urllib.parse import quote
 
 from spoolctl import store
 from spoolctl.config import default_config_path, resolve_effective_config, validate_config_file
+from spoolctl.contract import build_capabilities, build_schema
 from spoolctl.errors import CliError
-from spoolctl.models import EXIT_CONFLICT, EXIT_TRANSIENT, _WAIT_TERMINAL
+from spoolctl.models import (
+    CONTRACT_VERSION,
+    EXIT_CONFLICT,
+    EXIT_TRANSIENT,
+    SCHEMA_VERSION,
+    TOOL_VERSION,
+    _WAIT_TERMINAL,
+)
 
 PREVIEW_BYTES = 4096
 
@@ -141,6 +152,13 @@ class ConfigShowInput:
 class ConfigValidateInput:
     path: str | None
     base_dir: str | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class DoctorInput:
+    db_path: str | None
+    base_dir: str | None = field(kw_only=True)
+    parser_verbs: Mapping[str, Any] = field(kw_only=True)
 
 
 def _read_stream(path: str) -> bytes:
@@ -340,3 +358,265 @@ def config_validate_operation(input: ConfigValidateInput) -> dict[str, Any]:
     else:
         path = input.path
     return validate_config_file(path).as_dict()
+
+
+def _doctor_check(
+    check_id: str,
+    status: str,
+    message: str,
+    remediation: str | None = None,
+    blocked_by: str | None = None,
+) -> dict[str, str | None]:
+    return {
+        "id": check_id,
+        "status": status,
+        "message": message,
+        "remediation": remediation,
+        "blocked_by": blocked_by,
+    }
+
+
+def _doctor_skip(check_id: str, blocked_by: str) -> dict[str, str | None]:
+    return _doctor_check(
+        check_id,
+        "skip",
+        f"skipped because {blocked_by} did not pass",
+        blocked_by=blocked_by,
+    )
+
+
+def _doctor_summary(checks: list[dict[str, str | None]]) -> dict[str, int]:
+    return {
+        "passed": sum(1 for c in checks if c["status"] == "pass"),
+        "warnings": sum(1 for c in checks if c["status"] == "warn"),
+        "failed": sum(1 for c in checks if c["status"] == "fail"),
+        "skipped": sum(1 for c in checks if c["status"] == "skip"),
+    }
+
+
+def _sqlite_rw_uri(path: str) -> str:
+    return "file:" + quote(path, safe="/:") + "?mode=rw"
+
+
+def _read_schema_version_non_mutating(db_path: str) -> tuple[bool, int | None, str | None]:
+    conn = sqlite3.connect(_sqlite_rw_uri(db_path), uri=True, timeout=1.0)
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+    except sqlite3.Error as exc:
+        conn.close()
+        return False, None, str(exc)
+    conn.close()
+    if row is None:
+        return True, None, None
+    try:
+        return True, int(row[0]), None
+    except (TypeError, ValueError):
+        return True, None, f"schema_version is not an integer: {row[0]!r}"
+
+
+def _contract_metadata_check(parser_verbs: Mapping[str, Any]) -> dict[str, str | None]:
+    if not isinstance(parser_verbs, Mapping) or not parser_verbs:
+        return _doctor_check(
+            "contract_metadata",
+            "fail",
+            "adapter parser metadata is missing or invalid",
+            "pass the live parser verb metadata into DoctorInput",
+        )
+    try:
+        schema_data, _ = build_schema(None)
+        caps_data, _ = build_capabilities(parser_verbs)
+        json.dumps({
+            "tool_version": TOOL_VERSION,
+            "contract_version": CONTRACT_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "schema": schema_data,
+            "capabilities": caps_data,
+        }, sort_keys=True)
+    except Exception as exc:  # noqa: BLE001 - readiness diagnostic captures builder failures
+        return _doctor_check(
+            "contract_metadata",
+            "fail",
+            f"contract metadata could not be serialized: {exc}",
+            "fix schema/capability builders before using this checkout",
+        )
+    return _doctor_check(
+        "contract_metadata",
+        "pass",
+        "contract metadata is serializable",
+    )
+
+
+def doctor_operation(input: DoctorInput) -> dict[str, Any]:
+    checks: list[dict[str, str | None]] = []
+    config_data: dict[str, Any]
+    try:
+        effective = resolve_effective_config(
+            db_path_flag=input.db_path,
+            base_dir=input.base_dir,
+            strict_unknown_keys=False,
+        )
+    except CliError as exc:
+        if input.db_path is not None and exc.message.startswith("--db "):
+            raise
+        config_path = default_config_path(input.base_dir) if input.base_dir else None
+        config_data = {
+            "config_path": config_path,
+            "config_exists": bool(config_path and os.path.exists(config_path)),
+            "config_valid": False,
+            "db_path": None,
+            "db_source": None,
+        }
+        checks.append(_doctor_check(
+            "config_valid",
+            "fail",
+            exc.message,
+            exc.remediation,
+        ))
+        for check_id in (
+            "db_path_resolved",
+            "spool_directory_writable",
+            "database_exists",
+            "sqlite_open_readwrite",
+            "schema_version",
+        ):
+            checks.append(_doctor_skip(check_id, "config_valid"))
+        checks.append(_contract_metadata_check(input.parser_verbs))
+        summary = _doctor_summary(checks)
+        return {
+            "ready": summary["failed"] == 0,
+            "summary": summary,
+            "config": config_data,
+            "checks": checks,
+            "versions": {
+                "tool_version": TOOL_VERSION,
+                "contract_version": CONTRACT_VERSION,
+                "schema_version": SCHEMA_VERSION,
+            },
+        }
+
+    config_data = {
+        "config_path": effective.config_path,
+        "config_exists": effective.config_exists,
+        "config_valid": effective.config_valid,
+        "db_path": effective.db_path,
+        "db_source": effective.db_source,
+    }
+    checks.append(_doctor_check("config_valid", "pass", "configuration is valid"))
+    checks.append(_doctor_check("db_path_resolved", "pass", "database path resolved"))
+
+    db_path = effective.db_path
+    parent = os.path.dirname(db_path) or "."
+    if not os.path.isdir(parent):
+        checks.append(_doctor_check(
+            "spool_directory_writable",
+            "fail",
+            f"database directory does not exist: {parent}",
+            "create the directory with a normal spoolctl command or choose an existing --db path",
+        ))
+    elif not os.access(parent, os.W_OK):
+        checks.append(_doctor_check(
+            "spool_directory_writable",
+            "fail",
+            f"database directory is not writable: {parent}",
+            "choose a writable database directory",
+        ))
+    else:
+        checks.append(_doctor_check(
+            "spool_directory_writable",
+            "pass",
+            "database directory is writable",
+        ))
+
+    if not os.path.exists(db_path):
+        checks.append(_doctor_check(
+            "database_exists",
+            "fail",
+            f"database does not exist: {db_path}",
+            "run a normal spoolctl command such as status to initialize the queue",
+        ))
+        checks.append(_doctor_skip("sqlite_open_readwrite", "database_exists"))
+        checks.append(_doctor_skip("schema_version", "database_exists"))
+    elif not os.path.isfile(db_path):
+        checks.append(_doctor_check(
+            "database_exists",
+            "fail",
+            f"database path is not a file: {db_path}",
+            "choose a SQLite database file path",
+        ))
+        checks.append(_doctor_skip("sqlite_open_readwrite", "database_exists"))
+        checks.append(_doctor_skip("schema_version", "database_exists"))
+    else:
+        checks.append(_doctor_check("database_exists", "pass", "database file exists"))
+        try:
+            opened, found, schema_error = _read_schema_version_non_mutating(db_path)
+        except sqlite3.Error as exc:
+            checks.append(_doctor_check(
+                "sqlite_open_readwrite",
+                "fail",
+                f"database cannot be opened read/write: {exc}",
+                "choose an existing writable SQLite database path",
+            ))
+            checks.append(_doctor_skip("schema_version", "sqlite_open_readwrite"))
+        else:
+            if not opened:
+                checks.append(_doctor_check(
+                    "sqlite_open_readwrite",
+                    "fail",
+                    f"database opened but schema metadata could not be read: {schema_error}",
+                    "run a normal spoolctl command to initialize or migrate the queue",
+                ))
+                checks.append(_doctor_skip("schema_version", "sqlite_open_readwrite"))
+            else:
+                checks.append(_doctor_check(
+                    "sqlite_open_readwrite",
+                    "pass",
+                    "database opened read/write without creating or migrating",
+                ))
+                if schema_error is not None:
+                    checks.append(_doctor_check(
+                        "schema_version",
+                        "fail",
+                        schema_error,
+                        "run a normal spoolctl command to initialize or migrate the queue",
+                    ))
+                elif found is None:
+                    checks.append(_doctor_check(
+                        "schema_version",
+                        "fail",
+                        "database schema version metadata is missing",
+                        "run a normal spoolctl command to initialize or migrate the queue",
+                    ))
+                elif found < SCHEMA_VERSION:
+                    checks.append(_doctor_check(
+                        "schema_version",
+                        "fail",
+                        f"database schema is {found}; expected {SCHEMA_VERSION}",
+                        "run a normal spoolctl command to migrate the queue",
+                    ))
+                elif found > SCHEMA_VERSION:
+                    checks.append(_doctor_check(
+                        "schema_version",
+                        "fail",
+                        f"database schema is {found}; this spoolctl understands {SCHEMA_VERSION}",
+                        "upgrade spoolctl before using this queue",
+                    ))
+                else:
+                    checks.append(_doctor_check(
+                        "schema_version",
+                        "pass",
+                        f"database schema is {SCHEMA_VERSION}",
+                    ))
+
+    checks.append(_contract_metadata_check(input.parser_verbs))
+    summary = _doctor_summary(checks)
+    return {
+        "ready": summary["failed"] == 0,
+        "summary": summary,
+        "config": config_data,
+        "checks": checks,
+        "versions": {
+            "tool_version": TOOL_VERSION,
+            "contract_version": CONTRACT_VERSION,
+            "schema_version": SCHEMA_VERSION,
+        },
+    }
