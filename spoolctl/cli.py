@@ -1,8 +1,8 @@
-"""argparse dispatch, envelope construction, human rendering, exit codes.
+"""Argparse adapter, envelope emission, rendering, and exit-code mapping.
 
-Thin over store/worker. Every verb speaks one machine contract: the
-seven-key JSON envelope, the published exit-code dictionary, and errors
-that teach the corrected invocation.
+This module owns parser construction, command dispatch, stdout/stderr behavior,
+and CLI-specific diagnostics. Reusable command bodies and contract metadata live
+in sibling modules.
 """
 
 from __future__ import annotations

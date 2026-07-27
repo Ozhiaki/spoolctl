@@ -1,4 +1,4 @@
-"""Reusable command operations for non-CLI adapters."""
+"""Reusable status, output, add, and wait operations for non-CLI adapters."""
 
 from __future__ import annotations
 
