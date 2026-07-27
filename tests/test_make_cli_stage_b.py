@@ -147,6 +147,12 @@ def valid_positionals(verb: str) -> list[str]:
     return []
 
 
+def valid_optional_positionals(verb: str) -> list[str]:
+    if verb == "config-validate":
+        return ["missing-config.json"]
+    return []
+
+
 def valid_required_options(verb: str, *, exclude: str | None = None) -> list[str]:
     if verb == "prune" and exclude != "--older-than":
         return ["--older-than", "1s"]
@@ -298,6 +304,18 @@ def generated_probes(caps: dict, db: str) -> list[Probe]:
                     },
                     covers={(verb_name, "arg", arg["name"])},
                 ))
+            else:
+                optionals = valid_optional_positionals(verb_name)
+                if optionals:
+                    probes.append(Probe(
+                        desc=f"{verb_name}: optional positional {arg['name']}",
+                        category="optional_positional",
+                        argv=base(verb_name, caps, db)
+                        + valid_required_options(verb_name)
+                        + optionals,
+                        expect={"exit_code": 0, "ok": True},
+                        covers={(verb_name, "arg", arg["name"])},
+                    ))
         for flags in verb["mutually_exclusive"]:
             argv = base(verb_name, caps, db)
             argv += valid_required_options(verb_name)

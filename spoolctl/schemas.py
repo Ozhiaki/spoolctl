@@ -256,7 +256,7 @@ CAP_ARG_SCHEMA = obj({
     "maximum": {"type": ["number", "null"]},
     "minimum": {"type": ["number", "null"]},
     "name": {"type": "string"},
-    "nargs": {"type": "string", "enum": ["1", "+", "*", "remainder"]},
+    "nargs": {"type": "string", "enum": ["1", "+", "*", "?", "remainder"]},
     "repeatable": {"type": "boolean"},
     "required": {"type": "boolean"},
     "type": {"type": "string"},
@@ -457,6 +457,32 @@ VERB_SCHEMAS = {
     "events": obj({
         "count": {"type": "integer"},
         "events": array_of(EVENT_RECORD_SCHEMA),
+    }),
+    "config-show": obj({
+        "config_path": NULLABLE_STRING,
+        "config_exists": {"type": "boolean"},
+        "config_valid": {"type": "boolean"},
+        "values": obj({"db_path": {"type": "string"}}),
+        "sources": obj({
+            "db_path": {
+                "type": "string",
+                "enum": ["flag", "environment", "project_config", "default"],
+            },
+        }),
+        "precedence": array_of({
+            "type": "string",
+            "enum": ["flag", "environment", "project_config", "default"],
+        }),
+        "ignored_keys": array_of({"type": "string"}),
+    }),
+    "config-validate": obj({
+        "config_path": {"type": "string"},
+        "exists": {"type": "boolean"},
+        "valid": {"type": "boolean"},
+        "format": {"type": "string", "const": "json"},
+        "schema_version": {"type": "integer", "const": 1},
+        "recognized_keys": array_of({"type": "string", "enum": ["db_path"]}),
+        "unknown_keys": array_of({"type": "string"}),
     }),
     "brief": obj({
         "approx_tokens": {"type": "integer"},

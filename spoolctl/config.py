@@ -158,32 +158,10 @@ def resolve_effective_config(
     base_dir: str | None = None,
     strict_unknown_keys: bool = False,
 ) -> EffectiveConfig:
-    if db_path_flag is not None:
-        raw = _validate_db_path_value(db_path_flag, source="--db")
-        return EffectiveConfig(
-            config_path=default_config_path(base_dir) if base_dir is not None else None,
-            config_exists=False,
-            config_valid=True,
-            db_path=os.path.realpath(raw),
-            db_source="flag",
-            ignored_keys=[],
-        )
-
-    env_path = os.environ.get("SPOOLCTL_DB")
-    if env_path is not None:
-        raw = _validate_db_path_value(env_path, source="SPOOLCTL_DB")
-        return EffectiveConfig(
-            config_path=default_config_path(base_dir) if base_dir is not None else None,
-            config_exists=False,
-            config_valid=True,
-            db_path=os.path.realpath(raw),
-            db_source="environment",
-            ignored_keys=[],
-        )
-
     config_path = default_config_path(base_dir) if base_dir is not None else None
     config_obj: dict[str, Any] | None = None
     config_exists = False
+    unknown: list[str] = []
     if config_path is not None:
         config_obj, config_exists = _load_config_object(config_path)
         unknown = sorted(set(config_obj or {}) - set(SUPPORTED_KEYS))
@@ -193,6 +171,31 @@ def resolve_effective_config(
                 "unknown config key(s): " + ", ".join(unknown),
                 "remove unsupported keys; supported keys are version and db_path",
             )
+
+    if db_path_flag is not None:
+        raw = _validate_db_path_value(db_path_flag, source="--db")
+        return EffectiveConfig(
+            config_path=config_path,
+            config_exists=config_exists,
+            config_valid=True,
+            db_path=os.path.realpath(raw),
+            db_source="flag",
+            ignored_keys=unknown,
+        )
+
+    env_path = os.environ.get("SPOOLCTL_DB")
+    if env_path is not None:
+        raw = _validate_db_path_value(env_path, source="SPOOLCTL_DB")
+        return EffectiveConfig(
+            config_path=config_path,
+            config_exists=config_exists,
+            config_valid=True,
+            db_path=os.path.realpath(raw),
+            db_source="environment",
+            ignored_keys=unknown,
+        )
+
+    if config_path is not None:
         if config_obj and CONFIG_DB_PATH_KEY in config_obj:
             raw = _validate_db_path_value(config_obj[CONFIG_DB_PATH_KEY], source="config")
             path = raw if os.path.isabs(raw) else os.path.join(os.path.dirname(config_path), raw)
@@ -204,8 +207,6 @@ def resolve_effective_config(
                 db_source="project_config",
                 ignored_keys=unknown,
             )
-    else:
-        unknown = []
 
     default_base = os.getcwd() if base_dir is None else base_dir
     return EffectiveConfig(

@@ -146,6 +146,17 @@ VERB_SUMMARIES = {
                        " error_codes, events, exit_codes, failure_reasons, job_states,"
                        " scheduling, verbs}",
     },
+    "config-show": {
+        "summary": "show effective read-only project configuration and DB path source",
+        "data_schema": "{config_path, config_exists, config_valid,"
+                       " values:{db_path}, sources:{db_path}, precedence,"
+                       " ignored_keys}",
+    },
+    "config-validate": {
+        "summary": "validate project config JSON without opening the queue database",
+        "data_schema": "{config_path, exists, valid, format, schema_version,"
+                       " recognized_keys, unknown_keys}",
+    },
     "robot-docs": {
         "summary": "agent workflow guide; currently supports the guide subcommand",
         "data_schema": "{text: str, approx_tokens: int, sections: [{title, bullets}]}",
@@ -555,6 +566,8 @@ VERB_TRAITS = {
     "brief": {"mutates": False, "destructive": False, "idempotent": True},
     "cancel": {"mutates": True, "destructive": "only with --running", "idempotent": False},
     "capabilities": {"mutates": False, "destructive": False, "idempotent": True},
+    "config-show": {"mutates": False, "destructive": False, "idempotent": True},
+    "config-validate": {"mutates": False, "destructive": False, "idempotent": True},
     "robot-docs": {"mutates": False, "destructive": False, "idempotent": True},
     "events": {"mutates": False, "destructive": False, "idempotent": True},
     "list": {"mutates": False, "destructive": False, "idempotent": True},
@@ -590,6 +603,8 @@ VERB_EXAMPLES = {
     "brief": [["spoolctl", "brief", "--json"]],
     "cancel": [["spoolctl", "cancel", "--json", "1"]],
     "capabilities": [["spoolctl", "capabilities", "--json"]],
+    "config-show": [["spoolctl", "config-show", "--json"]],
+    "config-validate": [["spoolctl", "config-validate", "--json"]],
     "robot-docs": [["spoolctl", "robot-docs", "guide", "--json"]],
     "events": [["spoolctl", "events", "--json", "--limit", "10"]],
     "list": [["spoolctl", "list", "--json", "--limit", "10"]],

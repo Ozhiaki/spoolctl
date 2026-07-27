@@ -54,10 +54,14 @@ from spoolctl.models import (
 )
 from spoolctl.operations import (
     AddInput,
+    ConfigShowInput,
+    ConfigValidateInput,
     OutputInput,
     StatusInput,
     WaitInput,
     add_operation,
+    config_show_operation,
+    config_validate_operation,
     output_operation,
     status_operation,
     wait_operation,
@@ -333,6 +337,16 @@ def build_parser() -> _Parser:
     events.add_argument("--poll-interval", type=_float_token, default=0.5, metavar="SECONDS",
                         help="poll rate for --wait/--follow; default 0.5")
 
+    config_show = sub.add_parser("config-show", parents=[common_db],
+                                 help="show effective read-only configuration",
+                                 allow_abbrev=False)
+
+    config_validate = sub.add_parser("config-validate", parents=[common_nodb],
+                                     help="validate project config without opening the queue",
+                                     allow_abbrev=False)
+    config_validate.add_argument("path", nargs="?", metavar="PATH",
+                                 help="config file to validate; defaults to .spoolctl/config.json")
+
     brief = sub.add_parser("brief", parents=[common_nodb], help="compact usage brief",
                            allow_abbrev=False)
 
@@ -354,7 +368,8 @@ def build_parser() -> _Parser:
     _SUBPARSERS.update(
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
          "show": show, "retry": retry, "cancel": cancel, "prune": prune,
-         "output": output, "events": events, "brief": brief, "schema": schema,
+         "output": output, "events": events, "config-show": config_show,
+         "config-validate": config_validate, "brief": brief, "schema": schema,
          "capabilities": caps, "robot-docs": robot}
     )
     return parser
@@ -1416,6 +1431,34 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
     return VerbResult(data=None, human="\n".join(sections))
 
 
+def cmd_config_show(args: argparse.Namespace) -> VerbResult:
+    data = config_show_operation(
+        ConfigShowInput(db_path=args.db, base_dir=os.getcwd())
+    )
+    human = "\n".join([
+        f"config_path: {data['config_path']}",
+        f"config_exists: {str(data['config_exists']).lower()}",
+        f"config_valid: {str(data['config_valid']).lower()}",
+        f"db_path: {data['values']['db_path']}",
+        f"db_source: {data['sources']['db_path']}",
+    ])
+    return VerbResult(data=data, human=human)
+
+
+def cmd_config_validate(args: argparse.Namespace) -> VerbResult:
+    data = config_validate_operation(
+        ConfigValidateInput(path=args.path, base_dir=os.getcwd())
+    )
+    human = "\n".join([
+        f"config_path: {data['config_path']}",
+        f"exists: {str(data['exists']).lower()}",
+        f"valid: {str(data['valid']).lower()}",
+        f"format: {data['format']}",
+        f"schema_version: {data['schema_version']}",
+    ])
+    return VerbResult(data=data, human=human)
+
+
 def cmd_robot_docs(args: argparse.Namespace) -> VerbResult:
     if args.robot_docs_command != "guide":
         raise CliError(
@@ -1448,6 +1491,8 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "brief": cmd_brief,
     "cancel": cmd_cancel,
     "capabilities": cmd_capabilities,
+    "config-show": cmd_config_show,
+    "config-validate": cmd_config_validate,
     "events": cmd_events,
     "list": cmd_list,
     "output": cmd_output,

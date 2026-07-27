@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from spoolctl import store
+from spoolctl.config import default_config_path, resolve_effective_config, validate_config_file
 from spoolctl.errors import CliError
 from spoolctl.models import EXIT_CONFLICT, EXIT_TRANSIENT, _WAIT_TERMINAL
 
@@ -128,6 +129,18 @@ class WaitInput:
 class WaitOperationResult:
     data: dict[str, Any]
     all_succeeded: bool
+
+
+@dataclass(frozen=True)
+class ConfigShowInput:
+    db_path: str | None
+    base_dir: str | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class ConfigValidateInput:
+    path: str | None
+    base_dir: str | None = field(kw_only=True)
 
 
 def _read_stream(path: str) -> bytes:
@@ -305,3 +318,25 @@ def wait_operation(input: WaitInput) -> WaitOperationResult:
         },
         all_succeeded=all_succeeded,
     )
+
+
+def config_show_operation(input: ConfigShowInput) -> dict[str, Any]:
+    return resolve_effective_config(
+        db_path_flag=input.db_path,
+        base_dir=input.base_dir,
+        strict_unknown_keys=False,
+    ).as_dict()
+
+
+def config_validate_operation(input: ConfigValidateInput) -> dict[str, Any]:
+    if input.path is None:
+        if input.base_dir is None:
+            raise CliError(
+                "INVALID_INPUT",
+                "config validation needs a path or base_dir",
+                "pass a config path or provide an explicit base_dir",
+            )
+        path = default_config_path(input.base_dir)
+    else:
+        path = input.path
+    return validate_config_file(path).as_dict()

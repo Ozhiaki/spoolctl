@@ -219,7 +219,7 @@ class TestParserParity(unittest.TestCase):
                         self.assertIn("minimum", flag)
                         self.assertIn("maximum", flag)
                 for arg in verb["args"]:
-                    self.assertIn(arg["nargs"], {"1", "+", "*", "remainder"})
+                    self.assertIn(arg["nargs"], {"1", "+", "*", "?", "remainder"})
                     self.assertEqual(
                         arg["repeatable"],
                         arg["nargs"] in {"+", "*", "remainder"},

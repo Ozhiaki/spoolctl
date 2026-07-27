@@ -23,9 +23,13 @@ from spoolctl.contract import DB_VERBS
 from spoolctl.errors import CliError
 from spoolctl.operations import (
     AddInput,
+    ConfigShowInput,
+    ConfigValidateInput,
     OutputInput,
     StatusInput,
     WaitInput,
+    config_show_operation,
+    config_validate_operation,
     status_operation,
 )
 
@@ -191,6 +195,112 @@ class TestOperationBaseDir(ConfigTestCase):
                 cwd=None,
                 env={},
             )
+
+    def test_config_operations_require_keyword_only_base_dir(self):
+        with self.assertRaises(TypeError):
+            ConfigShowInput(None)
+        with self.assertRaises(TypeError):
+            ConfigValidateInput(None)
+
+
+class TestConfigCli(ConfigTestCase):
+    def run_in_project(self, *argv: str) -> tuple[int, str, str]:
+        with chdir(str(self.project)):
+            return run_cli(*argv)
+
+    def test_config_show_default_json_and_human_do_not_open_database(self):
+        code, out, err = self.run_in_project("config-show", "--json")
+        self.assertEqual(code, 0, err)
+        data = json.loads(out)["data"]
+        self.assertEqual(data["sources"]["db_path"], "default")
+        self.assertEqual(
+            data["values"]["db_path"],
+            os.path.realpath(self.project / ".spoolctl" / "queue.db"),
+        )
+        self.assertFalse((self.project / ".spoolctl" / "queue.db").exists())
+
+        code, out, err = self.run_in_project("config-show")
+        self.assertEqual(code, 0, err)
+        self.assertIn("config_path:", out)
+        self.assertIn("db_source: default", out)
+        self.assertFalse((self.project / ".spoolctl" / "queue.db").exists())
+
+    def test_config_show_reports_flag_env_config_and_ignored_keys(self):
+        path = self.write_config({"version": 1, "db_path": "config.db", "future": True})
+        flag_db = self.project / "flag.db"
+        env_db = self.project / "env.db"
+
+        data = config_show_operation(
+            ConfigShowInput(db_path=None, base_dir=str(self.project))
+        )
+        self.assertEqual(data["config_path"], os.path.realpath(path))
+        self.assertEqual(data["sources"]["db_path"], "project_config")
+        self.assertEqual(data["ignored_keys"], ["future"])
+
+        with mock.patch.dict(os.environ, {"SPOOLCTL_DB": str(env_db)}):
+            code, out, err = self.run_in_project("config-show", "--json")
+        self.assertEqual(code, 0, err)
+        env_data = json.loads(out)["data"]
+        self.assertEqual(env_data["sources"]["db_path"], "environment")
+        self.assertEqual(env_data["values"]["db_path"], os.path.realpath(env_db))
+
+        code, out, err = self.run_in_project(
+            "config-show", "--db", str(flag_db), "--json"
+        )
+        self.assertEqual(code, 0, err)
+        flag_data = json.loads(out)["data"]
+        self.assertEqual(flag_data["sources"]["db_path"], "flag")
+        self.assertEqual(flag_data["values"]["db_path"], os.path.realpath(flag_db))
+        self.assertEqual(flag_data["ignored_keys"], ["future"])
+        self.assertEqual(json.loads(out)["warnings"], [])
+        self.assertFalse(flag_db.exists(), "config-show must not open --db path")
+
+    def test_config_show_rejects_positional_and_bad_db_syntax(self):
+        code, out, _ = self.run_in_project("config-show", "extra", "--json")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+        code, out, _ = self.run_in_project("config-show", "--db", "", "--json")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_config_validate_absent_default_is_valid(self):
+        code, out, err = self.run_in_project("config-validate", "--json")
+        self.assertEqual(code, 0, err)
+        data = json.loads(out)["data"]
+        self.assertEqual(data["config_path"], os.path.realpath(self.config_dir / "config.json"))
+        self.assertFalse(data["exists"])
+        self.assertTrue(data["valid"])
+        self.assertEqual(data["format"], "json")
+        self.assertEqual(data["schema_version"], 1)
+        self.assertEqual(data["recognized_keys"], ["db_path"])
+        self.assertEqual(data["unknown_keys"], [])
+
+    def test_config_validate_explicit_path_ignores_default_config(self):
+        (self.config_dir / "config.json").write_text("{", encoding="utf-8")
+        explicit = self.project / "explicit.json"
+        explicit.write_text(json.dumps({"version": 1, "db_path": "queue.db"}), encoding="utf-8")
+
+        data = config_validate_operation(
+            ConfigValidateInput(path=str(explicit), base_dir=str(self.project))
+        )
+        self.assertTrue(data["exists"])
+
+        code, out, err = self.run_in_project("config-validate", str(explicit), "--json")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(json.loads(out)["data"]["config_path"], os.path.realpath(explicit))
+
+    def test_config_validate_unknown_key_fails_and_db_flag_is_unknown(self):
+        self.write_config({"version": 1, "future": True})
+        code, out, _ = self.run_in_project("config-validate", "--json")
+        self.assertEqual(code, 1)
+        error = json.loads(out)["errors"][0]
+        self.assertEqual(error["code"], "INVALID_INPUT")
+        self.assertIn("future", error["message"])
+
+        code, out, _ = self.run_in_project("config-validate", "--db", "x", "--json")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "UNKNOWN_FLAG")
 
 
 class TestCliDbVerbConfigDiscovery(ConfigTestCase):
