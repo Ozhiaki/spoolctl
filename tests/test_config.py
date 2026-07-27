@@ -330,6 +330,11 @@ class TestCliDbVerbConfigDiscovery(ConfigTestCase):
         if verb in {"events", "list", "prune", "status"}:
             conn = store.connect(self.configured_db)
             conn.close()
+        elif verb == "config-show":
+            pass
+        elif verb == "doctor":
+            conn = store.connect(self.configured_db)
+            conn.close()
         elif verb == "add":
             pass
         elif verb == "cancel":
@@ -357,6 +362,8 @@ class TestCliDbVerbConfigDiscovery(ConfigTestCase):
         table = {
             "add": ["add", "--json", "--", "true"],
             "cancel": ["cancel", "1", "--json"],
+            "config-show": ["config-show", "--json"],
+            "doctor": ["doctor", "--json"],
             "events": ["events", "--json"],
             "list": ["list", "--json"],
             "output": ["output", "1", "--json"],
@@ -381,7 +388,13 @@ class TestCliDbVerbConfigDiscovery(ConfigTestCase):
                 self.setup_for(verb)
                 code, out, err = self.run_in_project(*self.invocation_for(verb))
                 self.assertIn(code, {0, 6}, (verb, out, err))
-                self.assertTrue(Path(self.configured_db).exists(), verb)
+                if verb == "config-show":
+                    data = json.loads(out)["data"]
+                    self.assertEqual(data["sources"]["db_path"], "project_config")
+                    self.assertEqual(data["values"]["db_path"], os.path.realpath(self.configured_db))
+                    self.assertFalse(Path(self.configured_db).exists(), verb)
+                else:
+                    self.assertTrue(Path(self.configured_db).exists(), verb)
                 self.assertFalse(self.default_db.exists(), f"{verb} used default DB path")
 
 

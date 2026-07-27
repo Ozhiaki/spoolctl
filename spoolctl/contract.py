@@ -170,7 +170,8 @@ VERB_SUMMARIES = {
 }
 
 ENV_DOCS = {
-    "SPOOLCTL_DB": "queue database path (overridden by --db; default"
+    "SPOOLCTL_DB": "queue database path (precedence: --db flag,"
+                   " SPOOLCTL_DB, .spoolctl/config.json db_path,"
                    " ./.spoolctl/queue.db)",
     "SPOOLCTL_TEST_HEARTBEAT_INTERVAL": "test-only: seconds between worker"
                                         " heartbeats (default 5)",
@@ -188,6 +189,8 @@ EXPECT_CONFLICT = {"code": "IDEMPOTENCY_CONFLICT", "exit_code": EXIT_CONFLICT}
 DB_VERBS = [
     "add",
     "cancel",
+    "config-show",
+    "doctor",
     "events",
     "list",
     "output",
@@ -545,6 +548,22 @@ VERB_FLAG_CONTRACTS = {
     ("events", "--limit"): {"type": "integer", **LIMITS["event_limit"]},
     ("events", "--max-events"): {"type": "integer", "minimum": 1, "maximum": EVENT_LIMIT_MAX, "unbounded": False},
     ("status", "--limit"): {"type": "integer", **LIMITS["status_limit"]},
+    ("config-show", "--db"): {
+        "malformed_expectations": {
+            "missing_value": EXPECT_INVALID,
+            "value_is_another_flag": EXPECT_INVALID,
+        },
+        "opens_database": False,
+        "unopenable_path": "reported as effective configuration, not an input error",
+    },
+    ("doctor", "--db"): {
+        "malformed_expectations": {
+            "missing_value": EXPECT_INVALID,
+            "value_is_another_flag": EXPECT_INVALID,
+        },
+        "opens_database": "readiness diagnostic with non-creating mode=rw",
+        "unopenable_path": "readiness outcome: ok:true, errors:[], data.ready:false, exit 3",
+    },
 }
 
 POSITIONAL_CONTRACTS = {
@@ -1139,8 +1158,12 @@ def build_capabilities(
         "attempt_states": sorted(ATTEMPT_STATES),
         "code_registry": code_registry,
         "config": {
-            "supported": False,
-            "reason": "no config file surface in v0.4.5",
+            "supported": True,
+            "path": ".spoolctl/config.json",
+            "format": "json",
+            "schema_version": 1,
+            "precedence": ["flag", "environment", "project_config", "default"],
+            "keys": ["db_path"],
         },
         "contract_policy": CONTRACT_POLICY,
         "contract_version": CONTRACT_VERSION,

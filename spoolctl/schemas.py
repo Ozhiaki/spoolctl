@@ -537,9 +537,16 @@ VERB_SCHEMAS = {
     "capabilities": obj({
         "attempt_states": array_of({"type": "string"}),
         "config": obj({
-            "reason": {"type": "string"},
             "supported": {"type": "boolean"},
-        }),
+            "path": {"type": "string"},
+            "format": {"type": "string", "const": "json"},
+            "schema_version": {"type": "integer"},
+            "precedence": array_of({
+                "type": "string",
+                "enum": ["flag", "environment", "project_config", "default"],
+            }),
+            "keys": array_of({"type": "string"}),
+        }, required=["supported"]),
         "contract_policy": {"type": "string"},
         "contract_version": {"type": "string"},
         "code_registry": {

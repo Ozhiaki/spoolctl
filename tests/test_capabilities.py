@@ -10,6 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from spoolctl import cli
+from spoolctl.contract import DB_VERBS
 from spoolctl.models import CODE_REGISTRY, ERROR_CODES, FAILURE_REASONS, WARNING_CODES
 
 GOLDEN = Path(__file__).resolve().parent / "golden" / "capabilities.json"
@@ -108,6 +109,48 @@ class TestParserParity(unittest.TestCase):
             self.assertIn("malformed_expectations", entry, name)
             self.assertIn("consumed_by", entry, name)
             self.assertTrue(entry["consumed_by"], name)
+        self.assertIn(".spoolctl/config.json", data["env"]["SPOOLCTL_DB"])
+        self.assertEqual(data["env_vars"]["SPOOLCTL_DB"]["consumed_by"], DB_VERBS)
+
+    def test_config_support_documented(self):
+        config = capabilities_data()["config"]
+        self.assertTrue(config["supported"])
+        self.assertNotIn("reason", config)
+        self.assertEqual(config["path"], ".spoolctl/config.json")
+        self.assertEqual(config["format"], "json")
+        self.assertEqual(config["schema_version"], 1)
+        self.assertEqual(
+            config["precedence"],
+            ["flag", "environment", "project_config", "default"],
+        )
+        self.assertEqual(config["keys"], ["db_path"])
+
+    def test_spoolctl_db_consumed_by_matches_parsers_accepting_db(self):
+        cli.build_parser()
+        accepting = sorted(
+            name for name, parser in cli._SUBPARSERS.items()
+            if "--db" in parser._option_string_actions
+        )
+        self.assertEqual(accepting, sorted(DB_VERBS))
+        self.assertEqual(
+            sorted(capabilities_data()["env_vars"]["SPOOLCTL_DB"]["consumed_by"]),
+            accepting,
+        )
+
+    def test_config_show_and_doctor_db_semantics_are_documented(self):
+        verbs = capabilities_data()["verbs"]
+        config_db = next(f for f in verbs["config-show"]["flags"] if f["name"] == "--db")
+        doctor_db = next(f for f in verbs["doctor"]["flags"] if f["name"] == "--db")
+        self.assertIs(config_db["opens_database"], False)
+        self.assertIn("not an input error", config_db["unopenable_path"])
+        self.assertIn("readiness outcome", doctor_db["unopenable_path"])
+        self.assertNotIn("bad_path", config_db["malformed_expectations"])
+        self.assertNotIn("bad_path", doctor_db["malformed_expectations"])
+
+    def test_exit_three_documents_doctor_readiness_shape(self):
+        exit_three = capabilities_data()["exit_codes"]["3"]
+        self.assertIn("doctor readiness failures", exit_three["note"])
+        self.assertIn("data.ready:false", exit_three["note"])
 
     def test_events_declares_frames_follow_mode(self):
         events = capabilities_data()["verbs"]["events"]
@@ -183,7 +226,7 @@ class TestParserParity(unittest.TestCase):
         self.assertEqual(data["tool_name"], "spoolctl")
         self.assertIn("probeable_surface", data["features"])
         self.assertEqual(data["output_modes"], ["envelope", "frames", "raw", "text"])
-        self.assertFalse(data["config"]["supported"])
+        self.assertTrue(data["config"]["supported"])
         self.assertIn("--db is verb-local", data["global_flags"]["db_scope"])
         self.assertEqual(
             {f["name"] for f in data["global_flags"]["flags"]},

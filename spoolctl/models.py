@@ -106,7 +106,11 @@ EXIT_CODES = {
     EXIT_OK: {"meaning": "success (including empty results)", "retryable": None},
     EXIT_INPUT: {"meaning": "user-input-error", "retryable": False},
     EXIT_SAFETY: {"meaning": "safety-block (refused; a --force form may exist)", "retryable": False},
-    EXIT_ENVIRONMENT: {"meaning": "tool-environment-error", "retryable": None},
+    EXIT_ENVIRONMENT: {
+        "meaning": "tool-environment-error",
+        "note": "ordinary tool-environment failures use ok:false with errors; doctor readiness failures use ok:true, empty errors, and data.ready:false, so envelope consumers key off data.ready for doctor",
+        "retryable": None,
+    },
     EXIT_TRANSIENT: {"meaning": "transient-failure (retry after a short delay)", "retryable": True},
     EXIT_CONFLICT: {"meaning": "conflict (state changed underneath)", "retryable": False},
     EXIT_JOB_FAILURE: {
