@@ -14,6 +14,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from spoolctl import cli, store
+from spoolctl.operations import OutputInput, output_operation
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -38,6 +39,31 @@ class OutputTestCase(unittest.TestCase):
         code, out, err = run_cli("work", "--once", "--db", self.db, "--json")
         assert code == 0, err
         return job_id
+
+    def make_captured_attempt(self, stdout: bytes, stderr: bytes) -> int:
+        job_id = store.add_job(self.conn, ["capture"], 300, 3, time.time())
+        out_root = store.output_root(self.db)
+        _, attempt = store.claim_next(self.conn, "w1", 42, time.time(), out_root)
+        for path, body in ((attempt.stdout_path, stdout), (attempt.stderr_path, stderr)):
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            Path(path).write_bytes(body)
+        store.record_success(self.conn, job_id, attempt.id, "w1", 42, time.time())
+        return job_id
+
+
+class TestDirectOutputOperation(OutputTestCase):
+    def test_selects_stdout_stderr_and_both_without_cli(self):
+        job_id = self.make_captured_attempt(b"out", b"err")
+
+        stdout = output_operation(OutputInput(self.db, job_id, None, "stdout"))
+        stderr = output_operation(OutputInput(self.db, job_id, None, "stderr"))
+        both = output_operation(OutputInput(self.db, job_id, None, "both"))
+
+        self.assertEqual(stdout.stream_bytes, {"stdout": b"out"})
+        self.assertEqual(stderr.stream_bytes, {"stderr": b"err"})
+        self.assertEqual(both.stream_bytes, {"stdout": b"out", "stderr": b"err"})
+        self.assertEqual(stdout.data["streams"]["stdout"]["preview"], "out")
+        self.assertEqual(stderr.data["streams"]["stderr"]["preview"], "err")
 
 
 class TestRawFidelity(OutputTestCase):

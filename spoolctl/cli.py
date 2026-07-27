@@ -65,7 +65,7 @@ from spoolctl.models import (
     _WAIT_TERMINAL,
     _suggest,
 )
-from spoolctl.operations import StatusInput, status_operation
+from spoolctl.operations import OutputInput, StatusInput, output_operation, status_operation
 from spoolctl.validation import (
     _job_id_arg,
     _normalize_key,
@@ -1417,17 +1417,6 @@ def cmd_events(args: argparse.Namespace) -> VerbResult:
     )
 
 
-PREVIEW_BYTES = 4096
-
-
-def _read_stream(path: str) -> bytes:
-    try:
-        with open(path, "rb") as f:
-            return f.read()
-    except FileNotFoundError:
-        return b""
-
-
 def cmd_output(args: argparse.Namespace) -> VerbResult:
     job_id = _job_id_arg(args.id)
     attempt_no = (
@@ -1446,71 +1435,37 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
             "--raw needs a single stream",
             f"try: spoolctl output {job_id} --raw --stream stdout",
         )
-    conn = _open_db(args)
-    try:
-        job = store.get_job(conn, job_id)
-        if job is None:
-            raise CliError(
-                "NOT_FOUND",
-                f"no job with id {job_id}",
-                "run: spoolctl status  (to list job ids)",
-            )
-        attempts = store.get_attempts(conn, job_id)
-    finally:
-        conn.close()
-    if not attempts:
-        return VerbResult(
-            data={"attempts": []},
-            human=f"Job {job_id} has no attempts yet",
-            warnings=[{
-                "code": "NO_ATTEMPTS_YET",
-                "message": f"job {job_id} has not been executed yet",
-            }],
+    result = output_operation(
+        OutputInput(
+            db_path=args.db,
+            job_id=job_id,
+            attempt_no=attempt_no,
+            stream=args.stream,
         )
-    if attempt_no is not None:
-        matching = [a for a in attempts if a.attempt_no == attempt_no]
-        if not matching:
-            available = ", ".join(str(a.attempt_no) for a in attempts)
-            raise CliError(
-                "NOT_FOUND",
-                f"job {job_id} has no attempt {attempt_no}",
-                f"available attempts: {available}",
-            )
-        attempt = matching[0]
-    else:
-        attempt = attempts[-1]
+    )
+    if result.warnings:
+        return VerbResult(
+            data=result.data,
+            human=f"Job {job_id} has no attempts yet",
+            warnings=result.warnings,
+        )
 
-    streams = ["stdout", "stderr"] if args.stream == "both" else [args.stream]
-    paths = {"stdout": attempt.stdout_path, "stderr": attempt.stderr_path}
+    assert result.data is not None
+    streams = list(result.stream_bytes)
+    attempt_no = result.data["attempt_no"]
 
     if args.raw:
-        sys.stdout.buffer.write(_read_stream(paths[streams[0]]))
+        sys.stdout.buffer.write(result.stream_bytes[streams[0]])
         sys.stdout.buffer.flush()
         return VerbResult(data=None, human="", stdout_silent=True)
 
     if args.json:
-        stream_data = {}
-        for name in streams:
-            blob = _read_stream(paths[name])
-            stream_data[name] = {
-                "path": paths[name],
-                "preview": blob[:PREVIEW_BYTES].decode("utf-8", errors="replace"),
-                "preview_truncated": len(blob) > PREVIEW_BYTES,
-                "size_bytes": len(blob),
-            }
-        data = {
-            "attempt_no": attempt.attempt_no,
-            "attempt_state": attempt.state,
-            "attempts_total": len(attempts),
-            "job_id": job_id,
-            "streams": stream_data,
-        }
-        return VerbResult(data=data, human="")
+        return VerbResult(data=result.data, human="")
 
     sections = []
     for name in streams:
-        body = _read_stream(paths[name]).decode("utf-8", errors="replace")
-        sections.append(f"=== job {job_id} attempt {attempt.attempt_no} {name} ===")
+        body = result.stream_bytes[name].decode("utf-8", errors="replace")
+        sections.append(f"=== job {job_id} attempt {attempt_no} {name} ===")
         if body:
             sections.append(body.rstrip("\n"))
     return VerbResult(data=None, human="\n".join(sections))
