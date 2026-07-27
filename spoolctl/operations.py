@@ -11,6 +11,7 @@ from typing import Any
 
 from spoolctl import store
 from spoolctl.errors import CliError
+from spoolctl.models import EXIT_CONFLICT
 
 PREVIEW_BYTES = 4096
 
@@ -81,6 +82,32 @@ class OutputOperationResult:
     warnings: list[dict[str, str]]
 
 
+@dataclass(frozen=True)
+class AddInput:
+    db_path: str | None
+    argv: list[str]
+    timeout: int
+    max_retries: int
+    max_crashes: int | None
+    now: float
+    key: str | None
+    tags: dict[str, str]
+    note: str | None
+    priority: int
+    queue: str
+    next_run_at: float | None
+    cwd: str | None
+    env: dict[str, str]
+
+
+@dataclass(frozen=True)
+class AddOperationResult:
+    data: dict[str, Any]
+    deduplicated: bool
+    state: str
+    warnings: list[dict[str, str]]
+
+
 def _read_stream(path: str) -> bytes:
     try:
         with open(path, "rb") as f:
@@ -146,4 +173,69 @@ def output_operation(input: OutputInput) -> OutputOperationResult:
         },
         stream_bytes=stream_bytes,
         warnings=[],
+    )
+
+
+def add_operation(input: AddInput) -> AddOperationResult:
+    conn = _connect_db(input.db_path)
+    try:
+        job_id, state, deduplicated, idempotency = store.add_job_checked(
+            conn,
+            input.argv,
+            input.timeout,
+            input.max_retries,
+            input.now,
+            input.key,
+            input.tags,
+            input.note,
+            priority=input.priority,
+            queue=input.queue,
+            next_run_at=input.next_run_at,
+            cwd=input.cwd,
+            env=input.env,
+            max_crashes=input.max_crashes,
+        )
+        if idempotency.get("execution_differences"):
+            fields = ", ".join(idempotency["execution_differences"])
+            raise CliError(
+                "IDEMPOTENCY_CONFLICT",
+                f"--key {input.key!r} is already active with a different execution payload"
+                f" ({fields})",
+                "reuse the key only with the same command, execution flags, queue,"
+                " cwd, and environment; choose a new --key for different work",
+                exit_code=EXIT_CONFLICT,
+            )
+        job = store.get_job(conn, job_id)
+    finally:
+        conn.close()
+
+    metadata_differences = idempotency.get("metadata_differences", {})
+    warnings = []
+    if metadata_differences:
+        fields = ", ".join(sorted(metadata_differences))
+        warnings.append({
+            "code": "IDEMPOTENCY_METADATA_DIFFERS",
+            "message": f"active idempotent add ignored differing metadata: {fields}",
+        })
+    data = {
+        "deduplicated": deduplicated,
+        "cwd": job.cwd,
+        "env_keys": sorted((job.env or {}).keys()),
+        "job_id": job_id,
+        "next_run_at": job.next_run_at,
+        "priority": job.priority,
+        "queue": job.queue,
+        "state": state,
+    }
+    if deduplicated:
+        data["idempotency"] = {
+            "key": input.key,
+            "metadata_differs": bool(metadata_differences),
+            "metadata_differences": metadata_differences,
+        }
+    return AddOperationResult(
+        data=data,
+        deduplicated=deduplicated,
+        state=state,
+        warnings=warnings,
     )

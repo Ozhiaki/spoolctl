@@ -11,6 +11,8 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
+from spoolctl.errors import CliError
+from spoolctl.operations import AddInput, add_operation
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -37,6 +39,43 @@ class AddTestCase(unittest.TestCase):
         row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
         conn.close()
         return row
+
+    def add_input(self, argv: list[str], *, key: str | None = None) -> AddInput:
+        return AddInput(
+            db_path=self.db,
+            argv=argv,
+            timeout=300,
+            max_retries=3,
+            max_crashes=None,
+            now=100.0,
+            key=key,
+            tags={},
+            note=None,
+            priority=0,
+            queue="default",
+            next_run_at=None,
+            cwd=None,
+            env={},
+        )
+
+
+class TestDirectAddOperation(AddTestCase):
+    def test_enqueues_argv_vector_without_cli(self):
+        result = add_operation(self.add_input(["echo", "direct"]))
+
+        self.assertEqual(result.data["job_id"], 1)
+        self.assertEqual(result.data["state"], "queued")
+        self.assertFalse(result.data["deduplicated"])
+        self.assertEqual(self.stored_argv(1), ["echo", "direct"])
+
+    def test_preserves_idempotency_conflict_without_cli(self):
+        add_operation(self.add_input(["true"], key="run-1"))
+
+        with self.assertRaises(CliError) as raised:
+            add_operation(self.add_input(["false"], key="run-1"))
+
+        self.assertEqual(raised.exception.code, "IDEMPOTENCY_CONFLICT")
+        self.assertIn("argv", raised.exception.message)
 
 
 class TestArgvForm(AddTestCase):

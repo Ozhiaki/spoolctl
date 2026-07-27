@@ -65,7 +65,14 @@ from spoolctl.models import (
     _WAIT_TERMINAL,
     _suggest,
 )
-from spoolctl.operations import OutputInput, StatusInput, output_operation, status_operation
+from spoolctl.operations import (
+    AddInput,
+    OutputInput,
+    StatusInput,
+    add_operation,
+    output_operation,
+    status_operation,
+)
 from spoolctl.validation import (
     _job_id_arg,
     _normalize_key,
@@ -564,57 +571,33 @@ def cmd_add(args: argparse.Namespace) -> VerbResult:
     elif args.at is not None:
         next_run_at = max(_parse_at(args.at), now)
 
-    conn = _open_db(args)
-    try:
-        job_id, state, deduplicated, idempotency = store.add_job_checked(
-            conn, job_argv, timeout, max_retries, now, key,
-            tags, args.note, priority=priority, queue=queue, next_run_at=next_run_at,
-            cwd=cwd, env=env, max_crashes=max_crashes)
-        if idempotency.get("execution_differences"):
-            fields = ", ".join(idempotency["execution_differences"])
-            raise CliError(
-                "IDEMPOTENCY_CONFLICT",
-                f"--key {key!r} is already active with a different execution payload"
-                f" ({fields})",
-                "reuse the key only with the same command, execution flags, queue,"
-                " cwd, and environment; choose a new --key for different work",
-                exit_code=EXIT_CONFLICT,
-            )
-        job = store.get_job(conn, job_id)
-    finally:
-        conn.close()
-    if deduplicated:
-        human = f"Job {job_id} already active under key '{key}' ({state})"
+    result = add_operation(
+        AddInput(
+            db_path=args.db,
+            argv=job_argv,
+            timeout=timeout,
+            max_retries=max_retries,
+            max_crashes=max_crashes,
+            now=now,
+            key=key,
+            tags=tags,
+            note=args.note,
+            priority=priority,
+            queue=queue,
+            next_run_at=next_run_at,
+            cwd=cwd,
+            env=env,
+        )
+    )
+    job_id = result.data["job_id"]
+    if result.deduplicated:
+        human = f"Job {job_id} already active under key '{key}' ({result.state})"
     else:
         human = f"Added job {job_id}"
-    metadata_differences = idempotency.get("metadata_differences", {})
-    warnings = []
-    if metadata_differences:
-        fields = ", ".join(sorted(metadata_differences))
-        warnings.append({
-            "code": "IDEMPOTENCY_METADATA_DIFFERS",
-            "message": f"active idempotent add ignored differing metadata: {fields}",
-        })
-    data = {
-        "deduplicated": deduplicated,
-        "cwd": job.cwd,
-        "env_keys": sorted((job.env or {}).keys()),
-        "job_id": job_id,
-        "next_run_at": job.next_run_at,
-        "priority": job.priority,
-        "queue": job.queue,
-        "state": state,
-    }
-    if deduplicated:
-        data["idempotency"] = {
-            "key": key,
-            "metadata_differs": bool(metadata_differences),
-            "metadata_differences": metadata_differences,
-        }
     return VerbResult(
-        data=data,
+        data=result.data,
         human=human,
-        warnings=warnings,
+        warnings=result.warnings,
     )
 
 
