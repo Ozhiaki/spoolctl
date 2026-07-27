@@ -15,8 +15,8 @@ SCHEMA_VERSION = 6
 
 DEFAULT_DB_RELPATH = ".spoolctl/queue.db"
 VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
-         "output", "events", "config-show", "config-validate", "brief", "schema",
-         "capabilities", "robot-docs")
+         "output", "events", "config-show", "config-validate", "doctor", "brief",
+         "schema", "capabilities", "robot-docs")
 SQLITE_INT64_MIN = -(2 ** 63)
 SQLITE_INT64_MAX = 2 ** 63 - 1
 MAX_DURATION_SECONDS = 31_536_000_000.0  # 1000 365-day years

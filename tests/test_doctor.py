@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from spoolctl import cli, store
@@ -18,6 +20,13 @@ from spoolctl.operations import DoctorInput, doctor_operation
 def parser_verbs():
     cli.build_parser()
     return dict(cli._SUBPARSERS)
+
+
+def run_cli(*argv: str) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = cli.main(list(argv))
+    return code, out.getvalue(), err.getvalue()
 
 
 def check_map(data: dict) -> dict[str, dict]:
@@ -169,6 +178,97 @@ class TestDoctorReadiness(DoctorTestCase):
     def test_result_is_json_serializable(self):
         store.connect(self.db).close()
         json.dumps(self.doctor(self.db), sort_keys=True)
+
+
+class TestDoctorCli(DoctorTestCase):
+    def test_doctor_json_ready_exit_zero(self):
+        store.connect(self.db).close()
+
+        code, out, err = run_cli("doctor", "--db", self.db, "--json")
+
+        self.assertEqual(code, 0, err)
+        env = json.loads(out)
+        self.assertTrue(env["ok"])
+        self.assertTrue(env["data"]["ready"])
+        self.assertEqual(env["errors"], [])
+        self.assertIn("checks", env["data"])
+        self.assertIn("versions", env["data"])
+
+    def test_doctor_json_unready_exit_three_but_ok_true(self):
+        code, out, err = run_cli("doctor", "--db", self.db, "--json")
+
+        self.assertEqual(code, 3, err)
+        env = json.loads(out)
+        self.assertTrue(env["ok"])
+        self.assertEqual(env["errors"], [])
+        self.assertFalse(env["data"]["ready"])
+        checks = check_map(env["data"])
+        self.assertEqual(checks["database_exists"]["status"], "fail")
+        self.assertEqual(checks["schema_version"]["status"], "skip")
+
+    def test_doctor_human_output_is_compact(self):
+        code, out, err = run_cli("doctor", "--db", self.db)
+
+        self.assertEqual(code, 3)
+        self.assertIn("ready: no", out)
+        self.assertIn("checks:", out)
+        self.assertIn("failed checks:", out)
+        self.assertIn("database_exists", out)
+        self.assertNotIn("Traceback", out + err)
+
+    def test_doctor_rejects_positional_and_syntactically_bad_db(self):
+        code, out, _ = run_cli("doctor", "extra", "--json")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+        code, out, _ = run_cli("doctor", "--db", "", "--json")
+        self.assertEqual(code, 1)
+        env = json.loads(out)
+        self.assertFalse(env["ok"])
+        self.assertEqual(env["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_doctor_malformed_config_is_readiness_result(self):
+        project = self.root / "project"
+        config_dir = project / ".spoolctl"
+        config_dir.mkdir(parents=True)
+        (config_dir / "config.json").write_text("{", encoding="utf-8")
+        old = os.getcwd()
+        os.chdir(project)
+        try:
+            code, out, err = run_cli("doctor", "--json")
+        finally:
+            os.chdir(old)
+
+        self.assertEqual(code, 3, err)
+        env = json.loads(out)
+        self.assertTrue(env["ok"])
+        self.assertFalse(env["data"]["ready"])
+        self.assertEqual(check_map(env["data"])["config_valid"]["status"], "fail")
+
+    def test_doctor_unopenable_path_is_readiness_result(self):
+        parent_file = self.root / "parent-file"
+        parent_file.write_text("not a dir", encoding="utf-8")
+
+        code, out, err = run_cli("doctor", "--db", str(parent_file / "queue.db"), "--json")
+
+        self.assertEqual(code, 3, err)
+        env = json.loads(out)
+        self.assertTrue(env["ok"])
+        self.assertFalse(env["data"]["ready"])
+        self.assertEqual(
+            check_map(env["data"])["spool_directory_writable"]["status"],
+            "fail",
+        )
+
+    def test_doctor_cli_does_not_mutate_existing_database(self):
+        store.connect(self.db).close()
+        before = sha256(self.db)
+
+        code, out, err = run_cli("doctor", "--db", self.db, "--json")
+
+        self.assertEqual(code, 0, err)
+        self.assertTrue(json.loads(out)["data"]["ready"])
+        self.assertEqual(sha256(self.db), before)
 
 
 if __name__ == "__main__":

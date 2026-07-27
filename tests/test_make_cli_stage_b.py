@@ -185,6 +185,8 @@ def setup_for_success(verb: str, mode: str, db: str) -> list[list[str]]:
         ]
     if verb == "work":
         return [["add", "--db", db, "--json", "--", "true"]]
+    if verb == "doctor":
+        return [["status", "--db", db, "--json"]]
     return []
 
 

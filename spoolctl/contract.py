@@ -157,6 +157,12 @@ VERB_SUMMARIES = {
         "data_schema": "{config_path, exists, valid, format, schema_version,"
                        " recognized_keys, unknown_keys}",
     },
+    "doctor": {
+        "summary": "check local spoolctl readiness without repairs or database mutation",
+        "data_schema": "{ready, summary:{passed,warnings,failed,skipped},"
+                       " config, checks:[{id,status,message,remediation,blocked_by}],"
+                       " versions}",
+    },
     "robot-docs": {
         "summary": "agent workflow guide; currently supports the guide subcommand",
         "data_schema": "{text: str, approx_tokens: int, sections: [{title, bullets}]}",
@@ -568,6 +574,7 @@ VERB_TRAITS = {
     "capabilities": {"mutates": False, "destructive": False, "idempotent": True},
     "config-show": {"mutates": False, "destructive": False, "idempotent": True},
     "config-validate": {"mutates": False, "destructive": False, "idempotent": True},
+    "doctor": {"mutates": False, "destructive": False, "idempotent": True},
     "robot-docs": {"mutates": False, "destructive": False, "idempotent": True},
     "events": {"mutates": False, "destructive": False, "idempotent": True},
     "list": {"mutates": False, "destructive": False, "idempotent": True},
@@ -605,6 +612,7 @@ VERB_EXAMPLES = {
     "capabilities": [["spoolctl", "capabilities", "--json"]],
     "config-show": [["spoolctl", "config-show", "--json"]],
     "config-validate": [["spoolctl", "config-validate", "--json"]],
+    "doctor": [["spoolctl", "doctor", "--json"]],
     "robot-docs": [["spoolctl", "robot-docs", "guide", "--json"]],
     "events": [["spoolctl", "events", "--json", "--limit", "10"]],
     "list": [["spoolctl", "list", "--json", "--limit", "10"]],

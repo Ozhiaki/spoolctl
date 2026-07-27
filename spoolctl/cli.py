@@ -56,12 +56,14 @@ from spoolctl.operations import (
     AddInput,
     ConfigShowInput,
     ConfigValidateInput,
+    DoctorInput,
     OutputInput,
     StatusInput,
     WaitInput,
     add_operation,
     config_show_operation,
     config_validate_operation,
+    doctor_operation,
     output_operation,
     status_operation,
     wait_operation,
@@ -347,6 +349,10 @@ def build_parser() -> _Parser:
     config_validate.add_argument("path", nargs="?", metavar="PATH",
                                  help="config file to validate; defaults to .spoolctl/config.json")
 
+    doctor = sub.add_parser("doctor", parents=[common_db],
+                            help="check local readiness without repairs",
+                            allow_abbrev=False)
+
     brief = sub.add_parser("brief", parents=[common_nodb], help="compact usage brief",
                            allow_abbrev=False)
 
@@ -369,7 +375,7 @@ def build_parser() -> _Parser:
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
          "show": show, "retry": retry, "cancel": cancel, "prune": prune,
          "output": output, "events": events, "config-show": config_show,
-         "config-validate": config_validate, "brief": brief, "schema": schema,
+         "config-validate": config_validate, "doctor": doctor, "brief": brief, "schema": schema,
          "capabilities": caps, "robot-docs": robot}
     )
     return parser
@@ -1459,6 +1465,45 @@ def cmd_config_validate(args: argparse.Namespace) -> VerbResult:
     return VerbResult(data=data, human=human)
 
 
+def _format_doctor_human(data: dict[str, Any]) -> str:
+    ready = "yes" if data["ready"] else "no"
+    config = data["config"]
+    db_path = config.get("db_path") or "-"
+    db_source = config.get("db_source") or "-"
+    summary = data["summary"]
+    lines = [
+        f"ready: {ready}",
+        f"db: {db_path} ({db_source})",
+        f"schema: {data['versions']['schema_version']}",
+        "checks: "
+        f"{summary['passed']} passed, {summary['warnings']} warnings, "
+        f"{summary['failed']} failed, {summary['skipped']} skipped",
+    ]
+    failures = [c for c in data["checks"] if c["status"] == "fail"]
+    if failures:
+        lines.append("failed checks:")
+        for check in failures:
+            lines.append(f"  {check['id']}: {check['message']}")
+            if check.get("remediation"):
+                lines.append(f"    remediation: {check['remediation']}")
+    return "\n".join(lines)
+
+
+def cmd_doctor(args: argparse.Namespace) -> VerbResult:
+    data = doctor_operation(
+        DoctorInput(
+            db_path=args.db,
+            base_dir=os.getcwd(),
+            parser_verbs=dict(_SUBPARSERS),
+        )
+    )
+    return VerbResult(
+        data=data,
+        human=_format_doctor_human(data),
+        exit_code=EXIT_OK if data["ready"] else EXIT_ENVIRONMENT,
+    )
+
+
 def cmd_robot_docs(args: argparse.Namespace) -> VerbResult:
     if args.robot_docs_command != "guide":
         raise CliError(
@@ -1493,6 +1538,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "capabilities": cmd_capabilities,
     "config-show": cmd_config_show,
     "config-validate": cmd_config_validate,
+    "doctor": cmd_doctor,
     "events": cmd_events,
     "list": cmd_list,
     "output": cmd_output,

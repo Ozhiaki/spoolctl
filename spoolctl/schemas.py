@@ -484,6 +484,37 @@ VERB_SCHEMAS = {
         "recognized_keys": array_of({"type": "string", "enum": ["db_path"]}),
         "unknown_keys": array_of({"type": "string"}),
     }),
+    "doctor": obj({
+        "ready": {"type": "boolean"},
+        "summary": obj({
+            "passed": {"type": "integer"},
+            "warnings": {"type": "integer"},
+            "failed": {"type": "integer"},
+            "skipped": {"type": "integer"},
+        }),
+        "config": obj({
+            "config_path": NULLABLE_STRING,
+            "config_exists": {"type": "boolean"},
+            "config_valid": {"type": "boolean"},
+            "db_path": NULLABLE_STRING,
+            "db_source": {
+                "type": ["string", "null"],
+                "enum": ["flag", "environment", "project_config", "default", None],
+            },
+        }),
+        "checks": array_of(obj({
+            "id": {"type": "string"},
+            "status": {"type": "string", "enum": ["pass", "warn", "fail", "skip"]},
+            "message": {"type": "string"},
+            "remediation": NULLABLE_STRING,
+            "blocked_by": NULLABLE_STRING,
+        })),
+        "versions": obj({
+            "tool_version": {"type": "string"},
+            "contract_version": {"type": "string"},
+            "schema_version": {"type": "integer"},
+        }),
+    }),
     "brief": obj({
         "approx_tokens": {"type": "integer"},
         "budget_tokens": {"type": "integer", "const": BRIEF_BUDGET_TOKENS},
