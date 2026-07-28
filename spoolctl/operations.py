@@ -147,6 +147,27 @@ class ListOperationResult:
 
 
 @dataclass(frozen=True)
+class CancelInput:
+    """running is the already-decided effect, not the adapter's --running flag.
+
+    The --running --yes consent gate lives in the adapter; the operation only
+    sees the decision.
+    """
+
+    db_path: str | None
+    job_id: int
+    running: bool
+    now: float
+    base_dir: str | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class CancelOperationResult:
+    data: dict[str, Any]
+    warnings: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
 class RetryInput:
     """force is the already-decided effect, not the adapter's --force flag.
 
@@ -446,6 +467,69 @@ def list_operation(input: ListInput) -> ListOperationResult:
         jobs=jobs,
         pagination=pagination,
         warnings=warnings,
+    )
+
+
+def cancel_operation(input: CancelInput) -> CancelOperationResult:
+    """Record the cancellation. Nothing is killed here.
+
+    On the running path the owning worker observes lost ownership and kills
+    its own child process group; that logic lives in worker.py.
+    """
+    job_id = input.job_id
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
+    try:
+        outcome, state = store.cancel_job(conn, job_id, input.running, input.now)
+    finally:
+        conn.close()
+    if outcome == "ok":
+        return CancelOperationResult(
+            data={"job_id": job_id, "state": "canceled", "was_running": False},
+            warnings=[],
+        )
+    if outcome == "ok_running":
+        return CancelOperationResult(
+            data={"job_id": job_id, "state": "canceled", "was_running": True},
+            warnings=[{
+                "code": "KILL_ASYNC",
+                "message": "the job's process dies within about one heartbeat"
+                           " interval, not synchronously",
+            }],
+        )
+    if outcome == "not_found":
+        raise CliError(
+            "NOT_FOUND",
+            f"no job with id {job_id}",
+            "run: spoolctl list  (to see job ids)",
+        )
+    if outcome == "running_unforced":
+        raise CliError(
+            "SAFETY_BLOCK",
+            f"job {job_id} is running; canceling it kills its process",
+            "let it finish, or force with:"
+            f" spoolctl cancel --running --yes {job_id}",
+            exit_code=EXIT_SAFETY,
+        )
+    if outcome == "raced":
+        raise CliError(
+            "CONFLICT",
+            f"job {job_id} changed state before --running could cancel it"
+            f" (now {state})",
+            f"re-check with: spoolctl show {job_id}",
+            exit_code=EXIT_CONFLICT,
+        )
+    # terminal: done / dead / canceled (or failed)
+    if state == "dead":
+        remediation = f"to run it again: spoolctl retry {job_id}"
+    elif state == "canceled":
+        remediation = "nothing to do; it is already canceled"
+    else:
+        remediation = f"nothing to cancel; the job already finished ({state})"
+    raise CliError(
+        "CONFLICT",
+        f"job {job_id} is already {state}",
+        remediation,
+        exit_code=EXIT_CONFLICT,
     )
 
 

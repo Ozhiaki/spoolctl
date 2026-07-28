@@ -54,6 +54,7 @@ from spoolctl.models import (
 )
 from spoolctl.operations import (
     AddInput,
+    CancelInput,
     ConfigShowInput,
     ConfigValidateInput,
     DoctorInput,
@@ -65,6 +66,7 @@ from spoolctl.operations import (
     StatusInput,
     WaitInput,
     add_operation,
+    cancel_operation,
     config_show_operation,
     config_validate_operation,
     doctor_operation,
@@ -859,62 +861,21 @@ def cmd_cancel(args: argparse.Namespace) -> VerbResult:
             f" spoolctl cancel --running --yes {job_id}",
             exit_code=EXIT_SAFETY,
         )
-    conn = _open_db(args)
-    try:
-        outcome, state = store.cancel_job(conn, job_id, args.running, time.time())
-    finally:
-        conn.close()
-    if outcome == "ok":
-        return VerbResult(
-            data={"job_id": job_id, "state": "canceled", "was_running": False},
-            human=f"Canceled job {job_id}",
+    result = cancel_operation(
+        CancelInput(
+            db_path=args.db,
+            job_id=job_id,
+            running=args.running,
+            now=time.time(),
+            base_dir=os.getcwd(),
         )
-    if outcome == "ok_running":
-        return VerbResult(
-            data={"job_id": job_id, "state": "canceled", "was_running": True},
-            human=f"Canceled job {job_id} (was running; the owning worker kills"
-                  " its process group within a heartbeat)",
-            warnings=[{
-                "code": "KILL_ASYNC",
-                "message": "the job's process dies within about one heartbeat"
-                           " interval, not synchronously",
-            }],
-        )
-    if outcome == "not_found":
-        raise CliError(
-            "NOT_FOUND",
-            f"no job with id {job_id}",
-            "run: spoolctl list  (to see job ids)",
-        )
-    if outcome == "running_unforced":
-        raise CliError(
-            "SAFETY_BLOCK",
-            f"job {job_id} is running; canceling it kills its process",
-            "let it finish, or force with:"
-            f" spoolctl cancel --running --yes {job_id}",
-            exit_code=EXIT_SAFETY,
-        )
-    if outcome == "raced":
-        raise CliError(
-            "CONFLICT",
-            f"job {job_id} changed state before --running could cancel it"
-            f" (now {state})",
-            f"re-check with: spoolctl show {job_id}",
-            exit_code=EXIT_CONFLICT,
-        )
-    # terminal: done / dead / canceled (or failed)
-    if state == "dead":
-        remediation = f"to run it again: spoolctl retry {job_id}"
-    elif state == "canceled":
-        remediation = "nothing to do; it is already canceled"
-    else:
-        remediation = f"nothing to cancel; the job already finished ({state})"
-    raise CliError(
-        "CONFLICT",
-        f"job {job_id} is already {state}",
-        remediation,
-        exit_code=EXIT_CONFLICT,
     )
+    if result.data["was_running"]:
+        human = (f"Canceled job {job_id} (was running; the owning worker kills"
+                 " its process group within a heartbeat)")
+    else:
+        human = f"Canceled job {job_id}"
+    return VerbResult(data=result.data, human=human, warnings=result.warnings)
 
 
 def cmd_prune(args: argparse.Namespace) -> VerbResult:

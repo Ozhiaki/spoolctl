@@ -18,7 +18,9 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from spoolctl import cli, store, worker
-from spoolctl.models import REASON_CANCELED
+from spoolctl.errors import CliError
+from spoolctl.models import EXIT_CONFLICT, EXIT_SAFETY, REASON_CANCELED
+from spoolctl.operations import CancelInput, cancel_operation
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -265,6 +267,74 @@ class TestHeartbeatProofDiscipline(CancelTestCase):
         store.cancel_job(conn, job_id, True, 31.0)
         self.assertEqual(store.update_heartbeat(conn, job_id, "w1", 42, 32.0), 0)
         conn.close()
+
+
+class TestCancelOperation(CancelTestCase):
+    """Direct operation entry point: one case per store.cancel_job outcome."""
+
+    def cancel(self, job_id: int, running: bool = False):
+        return cancel_operation(
+            CancelInput(
+                db_path=self.db,
+                job_id=job_id,
+                running=running,
+                now=100.0,
+                base_dir=self.tmp.name,
+            )
+        )
+
+    def raises(self, job_id: int, running: bool = False) -> CliError:
+        with self.assertRaises(CliError) as ctx:
+            self.cancel(job_id, running)
+        return ctx.exception
+
+    def test_queued_cancel_returns_payload_with_no_warnings(self):
+        job_id = self.add_queued()
+        result = self.cancel(job_id)
+        self.assertEqual(
+            result.data, {"job_id": job_id, "state": "canceled", "was_running": False}
+        )
+        self.assertEqual(result.warnings, [])
+        self.assertEqual(self.job_row(job_id)["state"], "canceled")
+
+    def test_running_cancel_returns_kill_async_warning(self):
+        job_id = self.add_running()
+        result = self.cancel(job_id, running=True)
+        self.assertEqual(
+            result.data, {"job_id": job_id, "state": "canceled", "was_running": True}
+        )
+        self.assertEqual([w["code"] for w in result.warnings], ["KILL_ASYNC"])
+        self.assertIn("heartbeat", result.warnings[0]["message"])
+
+    def test_not_found_raises_without_process_exit(self):
+        store.connect(self.db).close()
+        self.assertEqual(self.raises(999).code, "NOT_FOUND")
+
+    def test_running_unforced_raises_safety_block(self):
+        job_id = self.add_running()
+        err = self.raises(job_id)
+        self.assertEqual((err.code, err.exit_code), ("SAFETY_BLOCK", EXIT_SAFETY))
+        self.assertEqual(self.job_row(job_id)["state"], "running")
+
+    def test_terminal_states_carry_state_specific_remediation(self):
+        job_id = self.add_queued()
+        self.cancel(job_id)
+        err = self.raises(job_id)
+        self.assertEqual((err.code, err.exit_code), ("CONFLICT", EXIT_CONFLICT))
+        self.assertIn("already canceled", err.remediation)
+
+    def test_raced_maps_to_conflict(self):
+        # 'raced' is defensively unreachable in one BEGIN IMMEDIATE txn; the
+        # mapping is still part of the operation's contract.
+        job_id = self.add_running()
+        with mock.patch.object(store, "cancel_job", return_value=("raced", "done")):
+            err = self.raises(job_id, running=True)
+        self.assertEqual((err.code, err.exit_code), ("CONFLICT", EXIT_CONFLICT))
+        self.assertIn("now done", err.message)
+
+    def test_input_requires_keyword_only_base_dir(self):
+        with self.assertRaises(TypeError):
+            CancelInput(self.db, 1, False, 100.0)
 
 
 if __name__ == "__main__":
