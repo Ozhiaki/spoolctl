@@ -57,6 +57,7 @@ from spoolctl.operations import (
     ConfigShowInput,
     ConfigValidateInput,
     DoctorInput,
+    EventsInput,
     ListInput,
     OutputInput,
     ShowInput,
@@ -66,6 +67,7 @@ from spoolctl.operations import (
     config_show_operation,
     config_validate_operation,
     doctor_operation,
+    events_operation,
     list_operation,
     output_operation,
     show_operation,
@@ -1114,27 +1116,6 @@ def _validate_events_args(args: argparse.Namespace) -> None:
         )
 
 
-def _event_page(
-    conn: sqlite3.Connection,
-    since_id: int,
-    job_id: int | None,
-    limit: int,
-) -> tuple[list[dict], dict[str, int | None]]:
-    fetch_limit = 0 if limit == 0 else limit + 1
-    rows = store.list_events(conn, since_id, job_id, fetch_limit)
-    truncated = limit > 0 and len(rows) > limit
-    events = rows[:limit] if truncated else rows
-    high_water = store.event_high_water(conn)
-    if truncated:
-        cursor = events[-1]["id"]
-    else:
-        cursor = max(since_id, high_water)
-    return events, {
-        "cursor": cursor,
-        "first_id": store.first_event_id(conn, job_id),
-    }
-
-
 def _format_event_line(event: dict) -> str:
     ts = datetime.fromtimestamp(event["at"], timezone.utc).strftime(
         "%Y-%m-%dT%H:%M:%S.%fZ"
@@ -1228,34 +1209,25 @@ def cmd_events(args: argparse.Namespace) -> VerbResult:
         return _run_events_follow(args)
 
     since_id = 0 if args.since_id is None else args.since_id
-    conn = _open_db(args)
-    try:
-        waited_start = time.monotonic()
-        wait_reason = None
-        if args.wait:
-            deadline = waited_start + args.wait_timeout
-            while True:
-                probe = store.list_events(conn, since_id, args.job, 1)
-                if probe:
-                    wait_reason = "records_available"
-                    break
-                if time.monotonic() >= deadline:
-                    wait_reason = "timeout"
-                    break
-                time.sleep(args.poll_interval)
-        events, pagination = _event_page(conn, since_id, args.job, limit)
-    finally:
-        conn.close()
-
-    meta_extra: dict[str, Any] = {"pagination": pagination}
-    if args.wait:
-        meta_extra["wait"] = {
-            "reason": wait_reason,
-            "waited_ms": int((time.monotonic() - waited_start) * 1000),
-        }
+    result = events_operation(
+        EventsInput(
+            db_path=args.db,
+            since_id=since_id,
+            job_id=args.job,
+            limit=limit,
+            wait=args.wait,
+            wait_timeout=args.wait_timeout,
+            poll_interval=args.poll_interval,
+            base_dir=os.getcwd(),
+        )
+    )
+    meta_extra: dict[str, Any] = {"pagination": result.pagination}
+    if result.wait is not None:
+        meta_extra["wait"] = result.wait
+    events = result.events
     human = "\n".join(_format_event_line(e) for e in events) if events else "No events"
     return VerbResult(
-        data={"count": len(events), "events": events},
+        data=result.data,
         human=human,
         meta_extra=meta_extra,
     )

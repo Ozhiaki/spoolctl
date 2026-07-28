@@ -98,6 +98,34 @@ class OutputOperationResult:
 
 
 @dataclass(frozen=True)
+class EventsInput:
+    """One-shot event page, optionally preceded by a bounded long-poll.
+
+    --follow is deliberately not modeled here; it is a live stream and stays
+    in the adapter. See the module docstring.
+    """
+
+    db_path: str | None
+    since_id: int
+    job_id: int | None
+    limit: int
+    wait: bool
+    wait_timeout: float
+    poll_interval: float
+    base_dir: str | None = field(kw_only=True)
+    monotonic: Callable[[], float] = time.monotonic
+    sleep: Callable[[float], None] = time.sleep
+
+
+@dataclass(frozen=True)
+class EventsOperationResult:
+    data: dict[str, Any]
+    events: list[dict[str, Any]]
+    pagination: dict[str, int | None]
+    wait: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
 class ListInput:
     db_path: str | None
     states: list[str] | None
@@ -261,6 +289,62 @@ def output_operation(input: OutputInput) -> OutputOperationResult:
         },
         stream_bytes=stream_bytes,
         warnings=[],
+    )
+
+
+def _event_page(
+    conn: sqlite3.Connection,
+    since_id: int,
+    job_id: int | None,
+    limit: int,
+) -> tuple[list[dict], dict[str, int | None]]:
+    fetch_limit = 0 if limit == 0 else limit + 1
+    rows = store.list_events(conn, since_id, job_id, fetch_limit)
+    truncated = limit > 0 and len(rows) > limit
+    events = rows[:limit] if truncated else rows
+    high_water = store.event_high_water(conn)
+    if truncated:
+        cursor = events[-1]["id"]
+    else:
+        cursor = max(since_id, high_water)
+    return events, {
+        "cursor": cursor,
+        "first_id": store.first_event_id(conn, job_id),
+    }
+
+
+def events_operation(input: EventsInput) -> EventsOperationResult:
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
+    try:
+        waited_start = input.monotonic()
+        wait_reason = None
+        if input.wait:
+            deadline = waited_start + input.wait_timeout
+            while True:
+                probe = store.list_events(conn, input.since_id, input.job_id, 1)
+                if probe:
+                    wait_reason = "records_available"
+                    break
+                if input.monotonic() >= deadline:
+                    wait_reason = "timeout"
+                    break
+                input.sleep(input.poll_interval)
+        events, pagination = _event_page(
+            conn, input.since_id, input.job_id, input.limit
+        )
+    finally:
+        conn.close()
+    wait_meta = None
+    if input.wait:
+        wait_meta = {
+            "reason": wait_reason,
+            "waited_ms": int((input.monotonic() - waited_start) * 1000),
+        }
+    return EventsOperationResult(
+        data={"count": len(events), "events": events},
+        events=events,
+        pagination=pagination,
+        wait=wait_meta,
     )
 
 

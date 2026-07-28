@@ -16,6 +16,7 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
+from spoolctl.operations import EventsInput, events_operation
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -259,6 +260,95 @@ class TestEventsFollow(EventsTestCase):
                          "max_events")
         self.assertEqual(proc.wait(timeout=3), 0)
         self.stop_follow(proc)
+
+
+class FakeClock:
+    """Monotonic clock that only advances when sleep() is called."""
+
+    def __init__(self):
+        self.now = 0.0
+        self.slept: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+class TestEventsOperation(EventsTestCase):
+    """Direct operation entry point: typed input, injected clock, no stdout."""
+
+    def run_op(self, **overrides):
+        kwargs = dict(
+            db_path=self.db,
+            since_id=0,
+            job_id=None,
+            limit=1000,
+            wait=False,
+            wait_timeout=30.0,
+            poll_interval=0.5,
+        )
+        clock = overrides.pop("clock", None)
+        kwargs.update(overrides)
+        if clock is not None:
+            return events_operation(
+                EventsInput(
+                    base_dir=self.tmp.name,
+                    monotonic=clock.monotonic,
+                    sleep=clock.sleep,
+                    **kwargs,
+                )
+            )
+        return events_operation(EventsInput(base_dir=self.tmp.name, **kwargs))
+
+    def test_one_shot_payload_and_pagination_match_cli(self):
+        self.add()
+        result = self.run_op()
+        env = self.events()
+        self.assertEqual(result.data, env["data"])
+        self.assertEqual(result.pagination, env["meta"]["pagination"])
+        self.assertIsNone(result.wait)
+        self.assertNotIn("wait", env["meta"])
+
+    def test_since_id_job_and_limit_filter_the_page(self):
+        job_one = self.add()
+        self.add()
+        self.assertEqual(
+            [e["job_id"] for e in self.run_op(job_id=job_one).data["events"]],
+            [job_one],
+        )
+        self.assertEqual(self.run_op(since_id=1).data["count"], 1)
+        self.assertEqual(self.run_op(limit=1).data["count"], 1)
+
+    def test_wait_times_out_on_fake_clock_without_real_sleeping(self):
+        self.add()
+        clock = FakeClock()
+        result = self.run_op(
+            since_id=1, wait=True, wait_timeout=5.0, poll_interval=0.5, clock=clock
+        )
+        self.assertEqual(result.data, {"count": 0, "events": []})
+        self.assertEqual(result.wait["reason"], "timeout")
+        self.assertEqual(result.wait["waited_ms"], 5000)
+        self.assertEqual(clock.slept, [0.5] * 10)
+
+    def test_wait_returns_immediately_when_records_are_available(self):
+        self.add()
+        clock = FakeClock()
+        result = self.run_op(wait=True, clock=clock)
+        self.assertEqual(result.data["count"], 1)
+        self.assertEqual(result.wait["reason"], "records_available")
+        self.assertEqual(result.wait["waited_ms"], 0)
+        self.assertEqual(clock.slept, [])
+
+    def test_wait_meta_is_absent_when_wait_is_false(self):
+        self.add()
+        self.assertIsNone(self.run_op(wait=False).wait)
+
+    def test_input_requires_keyword_only_base_dir(self):
+        with self.assertRaises(TypeError):
+            EventsInput(self.db, 0, None, 1000, False, 30.0, 0.5)
 
 
 if __name__ == "__main__":
