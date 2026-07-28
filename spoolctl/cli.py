@@ -61,6 +61,7 @@ from spoolctl.operations import (
     EventsInput,
     ListInput,
     OutputInput,
+    PruneInput,
     RetryInput,
     ShowInput,
     StatusInput,
@@ -73,6 +74,7 @@ from spoolctl.operations import (
     events_operation,
     list_operation,
     output_operation,
+    prune_operation,
     retry_operation,
     show_operation,
     status_operation,
@@ -894,71 +896,22 @@ def cmd_prune(args: argparse.Namespace) -> VerbResult:
             "preview with: spoolctl prune --older-than 30d --dry-run; confirm with: spoolctl prune --older-than 30d --yes",
             exit_code=EXIT_SAFETY,
         )
-    cutoff = time.time() - seconds
-    conn = _open_db(args)
-    try:
-        matches = store.prune_matches(conn, states, cutoff)
-        if args.dry_run:
-            freed = 0
-            for m in matches:
-                for paths in m["paths"]:
-                    for path in paths:
-                        try:
-                            freed += os.stat(path).st_size
-                        except OSError:
-                            pass
-            data = {
-                "deleted_attempts": sum(m["n_attempts"] for m in matches),
-                "deleted_events": sum(m["n_events"] for m in matches),
-                "deleted_jobs": len(matches),
-                "actual": False,
-                "dry_run": True,
-                "freed_bytes": freed,
-                "matched": len(matches),
-            }
-            return VerbResult(
-                data=data,
-                human=f"would prune {data['deleted_jobs']} job(s),"
-                      f" freeing {freed} bytes (dry run)",
-            )
-        # Files first, rows second: a crash in between leaves rows a re-run
-        # still finds; the reverse order would strand invisible orphan files.
-        freed = 0
-        for m in matches:
-            for stdout_path, stderr_path in m["paths"]:
-                for path in (stdout_path, stderr_path):
-                    try:
-                        freed += os.stat(path).st_size
-                        os.unlink(path)
-                    except OSError:
-                        pass  # already gone; re-runs must not trip here
-                try:
-                    os.rmdir(os.path.dirname(stdout_path))
-                except OSError:
-                    pass
-            if m["paths"]:
-                try:
-                    os.rmdir(os.path.dirname(os.path.dirname(m["paths"][0][0])))
-                except OSError:
-                    pass  # not empty (e.g. a newer attempt's dir) or gone
-        jobs, attempts, events = store.prune_delete(
-            conn, [m["job_id"] for m in matches], states, cutoff)
-    finally:
-        conn.close()
-    data = {
-        "deleted_attempts": attempts,
-        "deleted_events": events,
-        "deleted_jobs": jobs,
-        "actual": True,
-        "dry_run": False,
-        "freed_bytes": freed,
-        "irreversible": True,
-        "matched": len(matches),
-    }
-    return VerbResult(
-        data=data,
-        human=f"pruned {jobs} job(s), freed {freed} bytes",
+    data = prune_operation(
+        PruneInput(
+            db_path=args.db,
+            states=states,
+            cutoff=time.time() - seconds,
+            dry_run=args.dry_run,
+            base_dir=os.getcwd(),
+        )
     )
+    freed = data["freed_bytes"]
+    if data["dry_run"]:
+        human = (f"would prune {data['deleted_jobs']} job(s),"
+                 f" freeing {freed} bytes (dry run)")
+    else:
+        human = f"pruned {data['deleted_jobs']} job(s), freed {freed} bytes"
+    return VerbResult(data=data, human=human)
 
 
 def _validate_events_args(args: argparse.Namespace) -> None:

@@ -11,6 +11,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 from spoolctl import cli, store
+from spoolctl.operations import PruneInput, prune_operation
 from spoolctl.validation import _parse_duration
 
 
@@ -199,6 +200,88 @@ class TestPruneBehavior(PruneTestCase):
         conn.close()
         self.assertEqual((jobs, attempts, events), (0, 0, 0))
         self.assertEqual(self.job_ids(), [job_id])
+
+
+class TestPruneOperation(PruneTestCase):
+    """Direct operation entry point: selection, deletion, and counts."""
+
+    def run_op(self, *, dry_run: bool, states=("done", "dead", "canceled"),
+               cutoff: float = 10_000.0):
+        return prune_operation(
+            PruneInput(
+                db_path=self.db,
+                states=list(states),
+                cutoff=cutoff,
+                dry_run=dry_run,
+                base_dir=self.tmp.name,
+            )
+        )
+
+    def attempt_paths(self, job_id: int) -> list[str]:
+        conn = store.connect(self.db)
+        attempts = store.get_attempts(conn, job_id)
+        conn.close()
+        return [p for a in attempts for p in (a.stdout_path, a.stderr_path)]
+
+    def test_dry_run_counts_without_deleting_rows_or_files(self):
+        job_id = self.make_finished("done", 100.0)
+        paths = self.attempt_paths(job_id)
+        data = self.run_op(dry_run=True)
+        self.assertEqual(
+            (data["matched"], data["deleted_jobs"], data["actual"], data["dry_run"]),
+            (1, 1, False, True),
+        )
+        self.assertEqual(data["freed_bytes"], sum(os.stat(p).st_size for p in paths))
+        self.assertNotIn("irreversible", data)
+        self.assertEqual(self.job_ids(), [job_id])
+        self.assertTrue(all(os.path.exists(p) for p in paths))
+
+    def test_real_prune_deletes_rows_and_output_files(self):
+        job_id = self.make_finished("done", 100.0)
+        paths = self.attempt_paths(job_id)
+        expected_bytes = sum(os.stat(p).st_size for p in paths)
+        data = self.run_op(dry_run=False)
+        self.assertEqual(
+            (data["matched"], data["deleted_jobs"], data["actual"],
+             data["dry_run"], data["irreversible"]),
+            (1, 1, True, False, True),
+        )
+        self.assertEqual(data["freed_bytes"], expected_bytes)
+        self.assertEqual(data["deleted_attempts"], 1)
+        self.assertGreater(data["deleted_events"], 0)
+        self.assertEqual(self.job_ids(), [])
+        self.assertFalse(any(os.path.exists(p) for p in paths))
+
+    def test_state_filter_and_cutoff_narrow_the_selection(self):
+        old_done = self.make_finished("done", 100.0)
+        self.make_finished("dead", 100.0)
+        recent = self.make_finished("done", 50_000.0)
+        data = self.run_op(dry_run=False, states=("done",))
+        self.assertEqual(data["deleted_jobs"], 1)
+        self.assertEqual(self.job_ids(), sorted(self.job_ids()))
+        self.assertNotIn(old_done, self.job_ids())
+        self.assertIn(recent, self.job_ids())
+
+    def test_no_matches_reports_zeroes(self):
+        store.connect(self.db).close()
+        data = self.run_op(dry_run=False)
+        self.assertEqual(
+            (data["matched"], data["deleted_jobs"], data["deleted_attempts"],
+             data["deleted_events"], data["freed_bytes"]),
+            (0, 0, 0, 0, 0),
+        )
+
+    def test_missing_output_files_do_not_trip_the_delete(self):
+        job_id = self.make_finished("done", 100.0)
+        for path in self.attempt_paths(job_id):
+            os.unlink(path)
+        data = self.run_op(dry_run=False)
+        self.assertEqual((data["deleted_jobs"], data["freed_bytes"]), (1, 0))
+        self.assertEqual(self.job_ids(), [])
+
+    def test_input_requires_keyword_only_base_dir(self):
+        with self.assertRaises(TypeError):
+            PruneInput(self.db, ["done"], 10_000.0, True)
 
 
 if __name__ == "__main__":

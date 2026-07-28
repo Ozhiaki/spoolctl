@@ -147,6 +147,21 @@ class ListOperationResult:
 
 
 @dataclass(frozen=True)
+class PruneInput:
+    """dry_run is the already-decided effect, not the adapter's --dry-run flag.
+
+    The --yes / --dry-run consent gate lives in the adapter; the operation
+    only sees whether to select or to delete.
+    """
+
+    db_path: str | None
+    states: list[str]
+    cutoff: float
+    dry_run: bool
+    base_dir: str | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
 class CancelInput:
     """running is the already-decided effect, not the adapter's --running flag.
 
@@ -468,6 +483,64 @@ def list_operation(input: ListInput) -> ListOperationResult:
         pagination=pagination,
         warnings=warnings,
     )
+
+
+def prune_operation(input: PruneInput) -> dict[str, Any]:
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
+    try:
+        matches = store.prune_matches(conn, input.states, input.cutoff)
+        if input.dry_run:
+            freed = 0
+            for m in matches:
+                for paths in m["paths"]:
+                    for path in paths:
+                        try:
+                            freed += os.stat(path).st_size
+                        except OSError:
+                            pass
+            return {
+                "deleted_attempts": sum(m["n_attempts"] for m in matches),
+                "deleted_events": sum(m["n_events"] for m in matches),
+                "deleted_jobs": len(matches),
+                "actual": False,
+                "dry_run": True,
+                "freed_bytes": freed,
+                "matched": len(matches),
+            }
+        # Files first, rows second: a crash in between leaves rows a re-run
+        # still finds; the reverse order would strand invisible orphan files.
+        freed = 0
+        for m in matches:
+            for stdout_path, stderr_path in m["paths"]:
+                for path in (stdout_path, stderr_path):
+                    try:
+                        freed += os.stat(path).st_size
+                        os.unlink(path)
+                    except OSError:
+                        pass  # already gone; re-runs must not trip here
+                try:
+                    os.rmdir(os.path.dirname(stdout_path))
+                except OSError:
+                    pass
+            if m["paths"]:
+                try:
+                    os.rmdir(os.path.dirname(os.path.dirname(m["paths"][0][0])))
+                except OSError:
+                    pass  # not empty (e.g. a newer attempt's dir) or gone
+        jobs, attempts, events = store.prune_delete(
+            conn, [m["job_id"] for m in matches], input.states, input.cutoff)
+    finally:
+        conn.close()
+    return {
+        "deleted_attempts": attempts,
+        "deleted_events": events,
+        "deleted_jobs": jobs,
+        "actual": True,
+        "dry_run": False,
+        "freed_bytes": freed,
+        "irreversible": True,
+        "matched": len(matches),
+    }
 
 
 def cancel_operation(input: CancelInput) -> CancelOperationResult:
