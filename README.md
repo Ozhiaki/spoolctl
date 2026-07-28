@@ -92,6 +92,9 @@ $ spoolctl status --json          # machine-readable, for operators without eyes
 $ spoolctl output 1               # captured stdout/stderr, any time after the run
 fetched 3120 records
 
+$ spoolctl feedback 1 --json      # one-call verdict: terminal, succeeded, why, what next
+{"state": "done", "terminal": true, "succeeded": true, "remediation": null, ...}
+
 $ spoolctl retry 7                # requeue a dead job with a fresh retry budget
 Job 7 requeued
 

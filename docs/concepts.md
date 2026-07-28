@@ -17,7 +17,7 @@ Jobs move through these states:
 | `queued` | Waiting to be claimed by a worker. |
 | `running` | Currently being executed by a worker. |
 | `done` | Completed successfully (exit code 0). |
-| `failed` | Failed and may be retried (within retry budget). |
+| `failed` | Reserved and never emitted. A failing job with retry budget left returns to `queued`; it becomes `dead` once the budget is exhausted. |
 | `dead` | Exhausted all retries; will not be retried automatically. |
 | `canceled` | Explicitly canceled by the user. |
 

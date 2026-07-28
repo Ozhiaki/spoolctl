@@ -36,7 +36,7 @@ python3 -m spoolctl add --db ./queue.db --json --key task-3 -- command-3
 python3 -m spoolctl wait --db ./queue.db --json 1 2 3
 ```
 
-The `wait` verb blocks until all listed jobs reach a terminal state (`done`, `dead`, or `canceled`). `failed` is not terminal because the job may still be retried.
+The `wait` verb blocks until all listed jobs reach a terminal state (`done`, `dead`, or `canceled`). A job with retry budget left sits in `queued` between attempts, which is not terminal.
 
 ### Exit code 6 and `data.all_succeeded`
 
@@ -45,6 +45,51 @@ The `wait` verb blocks until all listed jobs reach a terminal state (`done`, `de
 Exit 6 is the one deliberate exception in spoolctl's exit contract: it pairs with `ok:true` and empty `errors[]`. The tool call succeeded; the exit code carries the job outcome for shell scripts.
 
 **Envelope consumers** should key off `data.all_succeeded`, not the exit code.
+
+## One-call verdict: `feedback`
+
+After a job settles, an agent usually needs four things: did it finish, did it succeed, why not, and what to do next. `feedback` answers all four in one call.
+
+```bash
+python3 -m spoolctl feedback --db ./queue.db --json 1
+```
+
+```json
+{
+  "job_id": 1,
+  "state": "dead",
+  "terminal": true,
+  "succeeded": false,
+  "exit_code": 3,
+  "failure_reason": "process_exit",
+  "last_error": "exit 3",
+  "attempts": 4,
+  "attempts_total": 4,
+  "latest_attempt_no": 4,
+  "duration_seconds": 0.014,
+  "remediation": "spoolctl output 1",
+  "streams": {
+    "stdout": {"tail": "hi\n", "size_bytes": 3, "truncated": false, "missing": false, "path": "..."},
+    "stderr": {"tail": "bad\n", "size_bytes": 4, "truncated": false, "missing": false, "path": "..."}
+  }
+}
+```
+
+Read `terminal` first, then `succeeded`. `succeeded` is tri-state: `true`, `false`, or `null` for every non-terminal state. Never parse the prose.
+
+The counting fields are three different numbers and none of them is derivable from the others:
+
+- `attempts` -- the job's live retry budget counter, which a manual `retry` resets to 0.
+- `attempts_total` -- every attempt row ever recorded for the job, which nothing resets.
+- `latest_attempt_no` -- the attempt the streams come from, or `null` when the job has never been claimed.
+
+`streams` always carries both `stdout` and `stderr`. Three distinct situations are distinguishable: `path: null` means no attempt has run; `missing: true` with a non-null path means the file was deleted or unreadable; `size_bytes: 0` with `missing: false` means the attempt genuinely produced nothing.
+
+`--tail-bytes N` (1..65536, default 2048) widens each tail; `truncated` says whether bytes were dropped from the front. `--stream {stdout,stderr,both}` narrows the human-readable rendering only -- the JSON payload always carries both streams.
+
+`remediation` names the next command to run: `spoolctl output <id>` for a dead job, `spoolctl wait <id>` for a running one, `spoolctl work --drain` for a job nothing has picked up yet.
+
+A job that has never been attempted also returns a `NO_ATTEMPTS_YET` warning in the envelope.
 
 ## Idempotency keys
 

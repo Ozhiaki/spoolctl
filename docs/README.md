@@ -15,6 +15,7 @@
 | Check if spoolctl is ready to run | [Doctor](doctor.md) |
 | Stream or poll the event ledger | [Events](events.md) |
 | Build an agent or script on top of spoolctl | [Agent Guide](agent-guide.md) |
+| Get a one-call verdict on a finished job | [Agent Guide: feedback](agent-guide.md#one-call-verdict-feedback) |
 | Understand the JSON envelope contract | [JSON Contract](json-contract.md) |
 | Look up a verb's flags, exit codes, and output | [Verb Reference](verbs.md) |
 | Look up an error code or failure reason | [Error Reference](errors.md) |

@@ -10,7 +10,7 @@
 | `canceled` | Job was explicitly canceled. |
 | `dead` | Job exhausted all retries and will not be retried. |
 | `done` | Job completed successfully. |
-| `failed` | Job failed and may be retried (within retry budget). |
+| `failed` | Reserved and never emitted. A failing job with retry budget left returns to `queued` (reported as `scheduled` while its backoff runs) and becomes `dead` once the budget is exhausted. |
 | `queued` | Job is waiting to be claimed by a worker. |
 | `running` | Job is currently being executed by a worker. |
 
