@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import shlex
 import sqlite3
 import time
 from collections.abc import Callable, Mapping
@@ -19,6 +20,7 @@ from spoolctl.errors import CliError
 from spoolctl.models import (
     CONTRACT_VERSION,
     EXIT_CONFLICT,
+    EXIT_SAFETY,
     EXIT_TRANSIENT,
     SCHEMA_VERSION,
     TAG_FILTER_SCAN_LIMIT,
@@ -142,6 +144,20 @@ class ListOperationResult:
     jobs: list[store.Job]
     pagination: dict[str, Any]
     warnings: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
+class RetryInput:
+    """force is the already-decided effect, not the adapter's --force flag.
+
+    Consent lives in the adapter; the operation only sees the decision.
+    """
+
+    db_path: str | None
+    job_id: int
+    force: bool
+    now: float
+    base_dir: str | None = field(kw_only=True)
 
 
 @dataclass(frozen=True)
@@ -430,6 +446,53 @@ def list_operation(input: ListInput) -> ListOperationResult:
         jobs=jobs,
         pagination=pagination,
         warnings=warnings,
+    )
+
+
+def retry_operation(input: RetryInput) -> dict[str, Any]:
+    job_id = input.job_id
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
+    try:
+        outcome, argv = store.retry_job(conn, job_id, input.force, input.now)
+    finally:
+        conn.close()
+    if outcome == "ok":
+        return {"job_id": job_id, "state": "queued"}
+    if outcome == "not_found":
+        raise CliError(
+            "NOT_FOUND",
+            f"no job with id {job_id}",
+            "run: spoolctl status  (to list job ids)",
+        )
+    if outcome == "already_queued":
+        raise CliError(
+            "CONFLICT",
+            f"job {job_id} is already queued",
+            "run: spoolctl work  (to execute it)",
+            exit_code=EXIT_CONFLICT,
+        )
+    if outcome == "done":
+        readd = " ".join(shlex.quote(t) for t in argv)
+        raise CliError(
+            "CONFLICT",
+            f"job {job_id} already succeeded; retry would rerun a completed job",
+            f"try: spoolctl add -- {readd}",
+            exit_code=EXIT_CONFLICT,
+        )
+    if outcome == "running_unforced":
+        raise CliError(
+            "SAFETY_BLOCK",
+            f"job {job_id} is running; requeuing it could execute the job twice",
+            "wait for automatic recovery (the reaper requeues it once the owning"
+            f" worker is confirmed dead), or force with: spoolctl retry --force {job_id}",
+            exit_code=EXIT_SAFETY,
+        )
+    # raced: force re-check found the row no longer running
+    raise CliError(
+        "CONFLICT",
+        f"job {job_id} changed state before --force could requeue it",
+        f"re-check with: spoolctl status, then: spoolctl retry {job_id}",
+        exit_code=EXIT_CONFLICT,
     )
 
 

@@ -60,6 +60,7 @@ from spoolctl.operations import (
     EventsInput,
     ListInput,
     OutputInput,
+    RetryInput,
     ShowInput,
     StatusInput,
     WaitInput,
@@ -70,6 +71,7 @@ from spoolctl.operations import (
     events_operation,
     list_operation,
     output_operation,
+    retry_operation,
     show_operation,
     status_operation,
     wait_operation,
@@ -805,51 +807,18 @@ def cmd_show(args: argparse.Namespace) -> VerbResult:
 
 def cmd_retry(args: argparse.Namespace) -> VerbResult:
     job_id = _job_id_arg(args.id)
-    conn = _open_db(args)
-    try:
-        outcome, argv = store.retry_job(conn, job_id, args.force, time.time())
-    finally:
-        conn.close()
-    if outcome == "ok":
-        return VerbResult(
-            data={"job_id": job_id, "state": "queued"},
-            human=f"Requeued job {job_id} with a fresh retry budget",
+    data = retry_operation(
+        RetryInput(
+            db_path=args.db,
+            job_id=job_id,
+            force=args.force,
+            now=time.time(),
+            base_dir=os.getcwd(),
         )
-    if outcome == "not_found":
-        raise CliError(
-            "NOT_FOUND",
-            f"no job with id {job_id}",
-            "run: spoolctl status  (to list job ids)",
-        )
-    if outcome == "already_queued":
-        raise CliError(
-            "CONFLICT",
-            f"job {job_id} is already queued",
-            "run: spoolctl work  (to execute it)",
-            exit_code=EXIT_CONFLICT,
-        )
-    if outcome == "done":
-        readd = " ".join(shlex.quote(t) for t in argv)
-        raise CliError(
-            "CONFLICT",
-            f"job {job_id} already succeeded; retry would rerun a completed job",
-            f"try: spoolctl add -- {readd}",
-            exit_code=EXIT_CONFLICT,
-        )
-    if outcome == "running_unforced":
-        raise CliError(
-            "SAFETY_BLOCK",
-            f"job {job_id} is running; requeuing it could execute the job twice",
-            "wait for automatic recovery (the reaper requeues it once the owning"
-            f" worker is confirmed dead), or force with: spoolctl retry --force {job_id}",
-            exit_code=EXIT_SAFETY,
-        )
-    # raced: --force re-check found the row no longer running
-    raise CliError(
-        "CONFLICT",
-        f"job {job_id} changed state before --force could requeue it",
-        f"re-check with: spoolctl status, then: spoolctl retry {job_id}",
-        exit_code=EXIT_CONFLICT,
+    )
+    return VerbResult(
+        data=data,
+        human=f"Requeued job {job_id} with a fresh retry budget",
     )
 
 

@@ -10,7 +10,13 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
-from spoolctl.models import REASON_CANCELED
+from spoolctl.errors import CliError
+from spoolctl.models import (
+    EXIT_CONFLICT,
+    EXIT_SAFETY,
+    REASON_CANCELED,
+)
+from spoolctl.operations import RetryInput, retry_operation
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -138,6 +144,68 @@ class TestForce(RetryTestCase):
         # Budget reset must NOT reset attempt numbering: history keeps
         # attempt 1, the rerun is attempt 2, output paths never collide.
         self.assertEqual(data["attempt_no"], 2)
+
+
+class TestRetryOperation(RetryTestCase):
+    """Direct operation entry point: one case per store.retry_job outcome."""
+
+    def retry(self, job_id: int, force: bool = False):
+        return retry_operation(
+            RetryInput(
+                db_path=self.db,
+                job_id=job_id,
+                force=force,
+                now=100.0,
+                base_dir=self.tmp.name,
+            )
+        )
+
+    def raises(self, job_id: int, force: bool = False) -> CliError:
+        with self.assertRaises(CliError) as ctx:
+            self.retry(job_id, force)
+        return ctx.exception
+
+    def test_ok_returns_payload_and_requeues(self):
+        job_id = self.make_job("dead")
+        self.assertEqual(self.retry(job_id), {"job_id": job_id, "state": "queued"})
+        job = store.get_job(self.conn, job_id)
+        self.assertEqual((job.state, job.attempts, job.next_run_at), ("queued", 0, 100.0))
+
+    def test_not_found_raises_without_process_exit(self):
+        err = self.raises(999)
+        self.assertEqual(err.code, "NOT_FOUND")
+
+    def test_already_queued_raises_conflict(self):
+        job_id = self.make_job("queued")
+        err = self.raises(job_id)
+        self.assertEqual((err.code, err.exit_code), ("CONFLICT", EXIT_CONFLICT))
+
+    def test_done_conflict_quotes_readd_command(self):
+        job_id = self.make_job("done")
+        err = self.raises(job_id)
+        self.assertEqual((err.code, err.exit_code), ("CONFLICT", EXIT_CONFLICT))
+        self.assertIn("spoolctl add -- echo 'a b'", err.remediation)
+
+    def test_running_unforced_raises_safety_block(self):
+        job_id = self.make_job("running")
+        err = self.raises(job_id)
+        self.assertEqual((err.code, err.exit_code), ("SAFETY_BLOCK", EXIT_SAFETY))
+
+    def test_force_on_running_requeues(self):
+        job_id = self.make_job("running")
+        self.assertEqual(self.retry(job_id, force=True),
+                         {"job_id": job_id, "state": "queued"})
+        self.assertEqual(self.state(job_id), "queued")
+
+    def test_force_on_non_running_raced_raises_conflict(self):
+        job_id = self.make_job("dead")
+        err = self.raises(job_id, force=True)
+        self.assertEqual((err.code, err.exit_code), ("CONFLICT", EXIT_CONFLICT))
+        self.assertIn("changed state", err.message)
+
+    def test_input_requires_keyword_only_base_dir(self):
+        with self.assertRaises(TypeError):
+            RetryInput(self.db, 1, False, 100.0)
 
 
 if __name__ == "__main__":
