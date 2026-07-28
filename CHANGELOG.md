@@ -6,6 +6,41 @@ All notable user-visible changes to spoolctl are documented here.
 > package release, but the documented interface and guarantees are tested in
 > this repository.
 
+## v0.4.10 — The `feedback` Verb and the Operation Layer
+
+Additive release. `CONTRACT_VERSION` remains `2`, `SCHEMA_VERSION` remains `6`,
+and spoolctl still has zero runtime dependencies.
+
+Version note: `0.4.10` sorts *after* `0.4.9`. PEP 440 compares each component
+numerically, so `10 > 9`; only a lexical string sort would put it before.
+
+- Added the `feedback` verb: one call returns whether a job is `terminal`,
+  whether it `succeeded` (tri-state, `null` while in flight), its `exit_code`,
+  `failure_reason`, `last_error`, `duration_seconds`, the three counting fields
+  (`attempts`, `attempts_total`, `latest_attempt_no`), a `remediation` command
+  naming what to run next, and tails of both output streams.
+- `feedback --tail-bytes N` (1..65536, default 2048) sizes each tail;
+  `--stream {stdout,stderr,both}` narrows the human-readable rendering only,
+  since the JSON payload always carries both streams.
+- `feedback` distinguishes three stream situations that used to look alike: no
+  attempt has run (`path: null`), the file was deleted or is unreadable
+  (`missing: true`), and the attempt produced nothing (`size_bytes: 0`).
+- Completed the operation layer: `show`, `list`, `events`, `retry`, `cancel`,
+  and `prune` now delegate to reusable operations in `spoolctl/operations.py`,
+  joining `add`, `wait`, `status`, `output`, `config-*`, and `doctor`. Consent
+  stays in the CLI adapter; effect lives in the operation. Behavior is
+  unchanged, proven by the differential signature matrix.
+- `work` and `events --follow` are deliberately not lifted: one is a process
+  with signal handlers and a process group, the other an open-ended stream
+  against a terminal. Both reasons are recorded in the operations module.
+- Corrected the documented `failed` job state. It is reserved and never
+  emitted: a failing job with retry budget left returns to `queued` (reported
+  as `scheduled` during backoff) and becomes `dead` when the budget is
+  exhausted. The value itself is unchanged in the contract.
+- The `brief` token budget stays at 700; the new `feedback` line was paid for
+  by removing a duplicated `wait` clause and the self-describing
+  `capabilities --json` surface enumeration.
+
 ## v0.4.9 — Changelog and README Housekeeping
 
 Housekeeping release. Zero runtime behavior change. `CONTRACT_VERSION` remains

@@ -139,6 +139,12 @@ class TestPerVerbEnvelopeGoldens(GoldenEnvelopeTestCase):
         self.assertEqual(code, 0)
         self.assert_golden("output-no-attempts", out)
 
+    def test_feedback_no_attempts(self):
+        run_cli("add", "--db", self.db, "--json", "--", "echo", "hi")
+        code, out, _ = run_cli("feedback", "1", "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assert_golden("feedback-no-attempts", out)
+
     def test_events_empty(self):
         code, out, _ = run_cli("events", "--db", self.db, "--json")
         self.assertEqual(code, 0)

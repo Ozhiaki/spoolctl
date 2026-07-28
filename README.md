@@ -15,7 +15,7 @@ No broker. No server. No dependencies.
 
 </div>
 
-> **Status: pre-release.** spoolctl v0.4.9 is implemented with contract version
+> **Status: pre-release.** spoolctl v0.4.10 is implemented with contract version
 > `2`, local migrations, schemas, generated conformance probes, readiness
 > diagnostics, concurrency tests, and [documentation](docs/README.md). The CLI
 > surface may still move before a public package release, but the documented
