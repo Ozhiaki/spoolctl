@@ -429,6 +429,39 @@ class TestLeakGate(unittest.TestCase):
         self._check_no_absolute_paths(readme, content)
 
 
+class TestChangelogAssertions(unittest.TestCase):
+    """Changelog content gates."""
+
+    def test_changelog_versions_not_ahead_of_tool_version(self):
+        changelog = REPO / "CHANGELOG.md"
+        if not changelog.exists():
+            self.skipTest("CHANGELOG.md does not exist yet")
+        from spoolctl.models import TOOL_VERSION
+        content = changelog.read_text()
+        for m in re.finditer(r'^## v(\d+\.\d+\.\d+)', content, re.MULTILINE):
+            ver = m.group(1)
+            self.assertLessEqual(
+                tuple(int(x) for x in ver.split(".")),
+                tuple(int(x) for x in TOOL_VERSION.split(".")),
+                f"CHANGELOG.md contains version {ver} which exceeds TOOL_VERSION {TOOL_VERSION}",
+            )
+
+    def test_changelog_no_forward_language_in_headers(self):
+        changelog = REPO / "CHANGELOG.md"
+        if not changelog.exists():
+            self.skipTest("CHANGELOG.md does not exist yet")
+        content = changelog.read_text()
+        bad = re.compile(r'\bnext\b|\bupcoming\b|\bplanned\b|\bv0\.5', re.IGNORECASE)
+        for line in content.splitlines():
+            if line.startswith("## "):
+                m = bad.search(line)
+                if m:
+                    self.fail(
+                        f"CHANGELOG.md version header contains forward language "
+                        f"'{m.group()}': {line.strip()}"
+                    )
+
+
 class TestContentAssertions(unittest.TestCase):
     """Thin content assertions for contract facts readers get wrong."""
 

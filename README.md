@@ -15,11 +15,11 @@ No broker. No server. No dependencies.
 
 </div>
 
-> **Status: pre-release.** spoolctl v0.4.7 is implemented with contract version
+> **Status: pre-release.** spoolctl v0.4.9 is implemented with contract version
 > `2`, local migrations, schemas, generated conformance probes, readiness
-> diagnostics, and concurrency tests. The CLI surface may still move before a
-> public package release, but the documented interface and guarantees are tested
-> in this repository.
+> diagnostics, concurrency tests, and [documentation](docs/README.md). The CLI
+> surface may still move before a public package release, but the documented
+> interface and guarantees are tested in this repository.
 
 ---
 
@@ -65,7 +65,7 @@ arbitrary shell commands, with less infrastructure than either shelf:
 
 ## Interface Preview
 
-*Pre-release: this is the committed v0.4.7 CLI surface.*
+*Pre-release: this is the committed CLI surface.*
 
 ```console
 $ spoolctl add -- python fetch.py --all
@@ -92,9 +92,6 @@ $ spoolctl status --json          # machine-readable, for operators without eyes
 $ spoolctl output 1               # captured stdout/stderr, any time after the run
 fetched 3120 records
 
-$ spoolctl output 1 --stream stdout --raw
-fetched 3120 records
-
 $ spoolctl retry 7                # requeue a dead job with a fresh retry budget
 Job 7 requeued
 
@@ -113,14 +110,9 @@ $ spoolctl events --follow --json --max-events 1 # NDJSON data/control frames
 
 ## Documentation
 
-The [`docs/`](docs/README.md) directory has the full documentation:
-
-- [Install](docs/install.md) and [Quickstart](docs/quickstart.md) to get started.
-- [Concepts](docs/concepts.md), [Guarantees](docs/guarantees.md), and [Architecture](docs/architecture.md) for the design.
-- [Scheduling](docs/scheduling.md), [Execution](docs/execution.md), [Config](docs/config.md), [Doctor](docs/doctor.md), and [Events](docs/events.md) for usage.
-- [Agent Guide](docs/agent-guide.md) and [JSON Contract](docs/json-contract.md) for machine consumers.
-- [Verb Reference](docs/verbs.md), [Error Reference](docs/errors.md), [Limits](docs/reference/limits.md), and [States](docs/reference/states.md) for lookup.
-- [Comparison](docs/comparison.md), [Landscape](docs/landscape.md), and [FAQ](docs/faq.md) for positioning.
+Full documentation is in [`docs/`](docs/README.md): install, quickstart,
+concepts, guarantees, architecture, scheduling, execution, config, events,
+agent guide, JSON contract, verb/error/state reference, and more.
 
 ## Design Philosophy
 
@@ -183,76 +175,12 @@ keep that market. spoolctl exists for the operator who won't be there when the j
   pid-reuse protection) — inconclusive always means "leave it alone."
 - **Failure handling**: nonzero exit, timeout, or a reaped crash all feed the same path:
   exponential backoff and requeue until the retry budget is spent, then `dead`.
-  `show --json` exposes per-attempt `failure_reason` values for unsuccessful terminal
-  attempts (`process_exit`, `timeout`, `spawn_failed`, `worker_crash`, `canceled`,
-  `unknown`) plus `job.last_failure_reason` as the current terminal failure summary.
-  `capabilities --json` publishes the stable `failure_reasons` registry.
+  Per-attempt failure reasons are machine-classifiable via `show --json`.
 - **Output** from every attempt is captured and kept — retries don't clobber the
   evidence of what went wrong before.
-- **Contract discovery** is first-class: `capabilities --json` describes verbs,
-  flags, positionals, output modes, safety gates, idempotency behavior, schemas,
-  exit codes, and the `robot-docs` guide entry point. `schema --json` exports the
-  envelope, verb payload, and event-frame schemas.
-- **Configuration is explainable** before work starts. `config-show --json`
-  reports the effective database path and whether it came from `--db`,
-  `SPOOLCTL_DB`, `.spoolctl/config.json`, or the project default
-  `./.spoolctl/queue.db`; `config-validate [PATH] --json` validates that config
-  file without opening or creating the queue database.
-- **Readiness is diagnostic, not mutating.** `doctor --json` checks config
-  validity, database path resolution, spool-directory writability, database
-  presence/openability, schema version, and published contract metadata. A
-  failed readiness check exits `3` while keeping the JSON envelope `ok:true`,
-  `errors:[]`, and `data.ready:false`.
 
-## v0.4.7 MCP Readiness Notes
-
-v0.4.7 is an additive MCP-readiness release for agent use. It keeps
-`CONTRACT_VERSION` at `2` and `SCHEMA_VERSION` at `6`; there is still no
-contract-version-1 compatibility shim because spoolctl is pre-release.
-
-- Destructive and interrupting operations now require explicit gates:
-  `prune` needs `--yes` unless `--dry-run` is used, `cancel --running` needs
-  `--yes`, and `retry --force` is reserved for running-job recovery.
-- Active idempotency keys now distinguish execution payload from metadata:
-  command/options mismatches return `IDEMPOTENCY_CONFLICT`, while metadata-only
-  differences deduplicate with an `IDEMPOTENCY_METADATA_DIFFERS` warning.
-- Scheduling remains metadata, not a new state: delayed jobs stay `queued` with
-  future `next_run_at`, and `status.scheduled` is derived.
-- Parser behavior is stricter and probeable: abbreviated flags are disabled,
-  inert flags on verbs that do not accept them return `UNKNOWN_FLAG`, bare
-  invocation returns `MISSING_REQUIRED`, and misplaced flag-looking tokens after
-  `add`'s command boundary are diagnosed before enqueueing.
-- Numeric, path, duration, timestamp, environment, enum, and missing-value
-  failures return structured errors instead of tracebacks, hangs, or empty JSON
-  stdout.
-- Output modes are declared and tested: envelope mode for `--json`, frames mode
-  for `events --follow --json`, raw mode for `output --raw`, and text mode for
-  human output.
-- Read-only project configuration is now part of the contract. Database
-  resolution order is `--db`, `SPOOLCTL_DB`, project config, then default, and
-  the default is relative to the current project directory.
-- `config-show`, `config-validate`, and `doctor` are published in
-  capabilities, schemas, brief output, robot docs, generated probes, and
-  deterministic signatures.
-- `doctor` is intentionally narrow: it reports readiness checks and remediation
-  text for launchers, but it does not repair, initialize, or mutate config.
-- The generated conformance suite validates live capabilities, live schema data,
-  golden envelopes, parser/capabilities parity, event frame records, raw output,
-  and text-mode declarations.
-
-Deferred make-cli surfaces are explicit rather than accidental: delivery sinks,
-feedback loopback, broad stdin ingestion, full sparse field projection, broad
-doctor checks, and mutating config commands remain out of scope for v0.4.7.
-
-## v0.4.7 Handoff
-
-The implemented slice is limited to read-only config discovery and bounded
-readiness diagnostics before MCP lands. Handoff consumers should use
-`config-show --json` to discover the effective queue path, `config-validate
---json` to validate project config in CI, and `doctor --json` to decide whether
-the local checkout/database is ready. For doctor, shell exit `3` is a readiness
-outcome; JSON consumers should read `data.ready` and `data.checks`, not
-`errors`.
+See the [documentation](docs/README.md) for contract discovery, configuration,
+readiness diagnostics, and the full architecture.
 
 ## Installation
 
@@ -278,18 +206,12 @@ Read these before adopting. They are design decisions, not roadmap gaps:
   positives in one direction, and spoolctl refuses the dangerous direction.
 - **One machine, local filesystem.** Coordination correctness comes from SQLite locking;
   NFS and friends are unsupported. No distributed mode, ever — that's a different tool.
-- **Scheduling is deliberately small.** v0.4.7 has one-shot delays, priorities, and named
-  lanes with opt-in slot ceilings. It does not have recurring schedules or job
-  dependencies.
+- **Scheduling is deliberately small.** One-shot delays, priorities, and named lanes with
+  opt-in slot ceilings. No recurring schedules or job dependencies.
 - **POSIX only.** macOS and Linux. Process groups and signal semantics are load-bearing;
   Windows is out of scope.
 
 ## FAQ
-
-**Is this exactly-once?**
-No, and nothing running arbitrary shell commands can be. At-least-once with absolute
-mutual exclusion (never two live workers on one job) is the honest maximum, and it's
-what spoolctl guarantees.
 
 **Why not just use pueue?**
 If you're a human watching your queue, do. pueue's daemon is also its weakness for
@@ -300,12 +222,6 @@ dead-letter state. spoolctl is for work that has to survive nobody watching.
 Those queue *functions in your application*. spoolctl queues *commands on your machine*.
 If you have an app with a worker fleet and a broker, you don't need spoolctl.
 
-**What does "agent-native" mean concretely?**
-The assumed operator is a process that runs concurrently with others it doesn't know
-about, gets SIGKILLed routinely, and needs a successor — possibly a different process
-entirely — to find the work, its state, and its output. Every guarantee in the design
-exists to serve that operator. Humans are welcome too.
-
 **Why SQLite instead of lockfiles or a spool directory?**
 Atomic claim-one-of-N under concurrency is exactly what a transactional database does
 and exactly what flock choreography does badly. WAL mode makes readers free, and the
@@ -314,12 +230,6 @@ whole queue is one inspectable file.
 **Why Python stdlib only?**
 Zero-dependency single-file Python is the most installable software artifact that exists:
 every macOS and Linux box can run it, and an agent can "install" it by writing a file.
-
-**When can I use it?**
-From a checkout now, with the usual pre-release caution. v0.4.7 has a full
-concurrency/crash test suite, JSON contract goldens, schema conformance tests,
-generated conformance probes, readiness diagnostics, and single-file build
-coverage.
 
 ## About Contributions
 
