@@ -57,6 +57,7 @@ from spoolctl.operations import (
     ConfigShowInput,
     ConfigValidateInput,
     DoctorInput,
+    ListInput,
     OutputInput,
     ShowInput,
     StatusInput,
@@ -65,6 +66,7 @@ from spoolctl.operations import (
     config_show_operation,
     config_validate_operation,
     doctor_operation,
+    list_operation,
     output_operation,
     show_operation,
     status_operation,
@@ -493,15 +495,6 @@ def _open_db(args: argparse.Namespace) -> "sqlite3.Connection":
         raise
 
 
-def _tags_match(tags: dict[str, str], predicates: list[tuple[str, str | None]]) -> bool:
-    for key, value in predicates:
-        if key not in tags:
-            return False
-        if value is not None and tags[key] != value:
-            return False
-    return True
-
-
 def cmd_add(args: argparse.Namespace) -> VerbResult:
     argv = list(args.argv)
     explicit_boundary = getattr(args, "_explicit_command_boundary", False)
@@ -719,54 +712,19 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
         args.limit, flag="--limit", minimum=0, maximum=LIST_LIMIT_MAX
     )
     effective_limit = LIST_LIMIT_MAX if limit == 0 else limit
-    fetch_limit = (
-        TAG_FILTER_SCAN_LIMIT + 1 if tag_predicates else effective_limit + 1
-    )
-    conn = _open_db(args)
-    try:
-        jobs = store.list_jobs(
-            conn, states, fetch_limit,
-            queue=queue, priority_min=priority_min,
+    result = list_operation(
+        ListInput(
+            db_path=args.db,
+            states=states,
+            tag_predicates=tag_predicates,
+            queue=queue,
+            priority_min=priority_min,
+            effective_limit=effective_limit,
+            base_dir=os.getcwd(),
         )
-        first_id, _ = store.job_id_bounds(conn)
-    finally:
-        conn.close()
-    scanned = len(jobs)
-    scan_truncated = bool(tag_predicates and len(jobs) > TAG_FILTER_SCAN_LIMIT)
-    if tag_predicates:
-        scan_rows = jobs[:TAG_FILTER_SCAN_LIMIT]
-        filtered = [j for j in scan_rows if _tags_match(j.tags or {}, tag_predicates)]
-        truncated = scan_truncated or len(filtered) > effective_limit
-        jobs = filtered[:effective_limit]
-    else:
-        truncated = len(jobs) > effective_limit
-        jobs = jobs[:effective_limit]
-    rows = [
-        {
-            "argv": j.argv,
-            "attempts": j.attempts,
-            "created_at": j.created_at,
-            "finished_at": j.finished_at,
-            "id": j.id,
-            "idempotency_key": j.idempotency_key,
-            "last_error": j.last_error,
-            "last_exit_code": j.last_exit_code,
-            "max_retries": j.max_retries,
-            "crashes": j.crashes,
-            "cwd": j.cwd,
-            "next_run_at": j.next_run_at,
-            "note": j.note,
-            "priority": j.priority,
-            "queue": j.queue,
-            "started_at": j.started_at,
-            "state": j.state,
-            "tags": j.tags or {},
-            "timeout_seconds": j.timeout_seconds,
-        }
-        for j in jobs
-    ]
+    )
     lines = []
-    for j in jobs:
+    for j in result.jobs:
         command = " ".join(j.argv)
         if len(command) > 80:
             command = command[:77] + "..."
@@ -779,30 +737,11 @@ def cmd_list(args: argparse.Namespace) -> VerbResult:
             f"#{j.id}  {j.state}  queue={j.queue}  priority={j.priority}"
             f"  next_run_at={j.next_run_at:g}  attempts={j.attempts}{extra}  {command}"
         )
-    pagination = {
-        "cursor": jobs[-1].id if jobs else 0,
-        "first_id": first_id,
-        "limit": effective_limit,
-        "truncated": truncated,
-    }
-    if tag_predicates:
-        pagination["scanned"] = min(scanned, TAG_FILTER_SCAN_LIMIT)
-        pagination["scan_limit"] = TAG_FILTER_SCAN_LIMIT
-    warnings = []
-    if scan_truncated:
-        warnings.append({
-            "code": "TAG_FILTER_SCAN_CAPPED",
-            "message": (
-                "tag-filtered list scanned the newest"
-                f" {TAG_FILTER_SCAN_LIMIT} matching pre-filter rows; later"
-                " tag matches may be omitted"
-            ),
-        })
     return VerbResult(
-        data={"count": len(rows), "jobs": rows},
+        data=result.data,
         human="\n".join(lines) if lines else "No jobs",
-        warnings=warnings,
-        meta_extra={"pagination": pagination},
+        warnings=result.warnings,
+        meta_extra={"pagination": result.pagination},
     )
 
 

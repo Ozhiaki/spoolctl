@@ -10,6 +10,8 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
+from spoolctl.models import LIST_LIMIT_MAX, TAG_FILTER_SCAN_LIMIT
+from spoolctl.operations import ListInput, list_operation
 
 
 def run_cli(*argv: str) -> tuple[int, str, str]:
@@ -247,6 +249,79 @@ class TestHuman(ListTestCase):
         code, out, _ = run_cli("list", "--db", self.db)
         self.assertEqual(code, 0)
         self.assertEqual(out.strip(), "No jobs")
+
+
+class TestListOperation(ListTestCase):
+    """Direct operation entry point: typed input, no argparse, no process exit."""
+
+    def run_op(self, **overrides):
+        kwargs = dict(
+            db_path=self.db,
+            states=None,
+            tag_predicates=[],
+            queue=None,
+            priority_min=None,
+            effective_limit=LIST_LIMIT_MAX,
+        )
+        kwargs.update(overrides)
+        return list_operation(ListInput(base_dir=self.tmp.name, **kwargs))
+
+    def test_operation_payload_and_pagination_match_cli(self):
+        self.populate()
+        result = self.run_op()
+        env = self.list_env("--limit", "0")
+        self.assertEqual(result.data, env["data"])
+        self.assertEqual(result.pagination, env["meta"]["pagination"])
+        self.assertEqual(result.warnings, env["warnings"])
+
+    def test_state_queue_and_priority_min_filters(self):
+        self.populate()
+        self.assertEqual(
+            [j["state"] for j in self.run_op(states=["done"]).data["jobs"]],
+            ["done"],
+        )
+        self.assertEqual(self.run_op(queue="nonexistent").data["count"], 0)
+        self.assertEqual(self.run_op(priority_min=1).data["count"], 0)
+
+    def test_tag_predicates_filter_and_report_scan_meta(self):
+        self.add_cli("--tag", "owner=agent")
+        self.add_cli("--tag", "owner=human")
+        existence = self.run_op(tag_predicates=[("owner", None)])
+        self.assertEqual(existence.data["count"], 2)
+        exact = self.run_op(tag_predicates=[("owner", "agent")])
+        self.assertEqual(exact.data["count"], 1)
+        self.assertEqual(exact.pagination["scan_limit"], TAG_FILTER_SCAN_LIMIT)
+        self.assertEqual(exact.pagination["scanned"], 2)
+        self.assertEqual(exact.warnings, [])
+
+    def test_scan_cap_emits_warning_and_truncated_pagination(self):
+        self.add_cli("--tag", "owner=agent")
+        for _ in range(TAG_FILTER_SCAN_LIMIT + 1):
+            self.add_cli()
+        result = self.run_op(tag_predicates=[("owner", "agent")])
+        self.assertEqual(result.data["jobs"], [])
+        self.assertEqual(result.warnings[0]["code"], "TAG_FILTER_SCAN_CAPPED")
+        self.assertEqual(result.pagination["scanned"], TAG_FILTER_SCAN_LIMIT)
+        self.assertTrue(result.pagination["truncated"])
+
+    def test_limit_truncates_and_sets_cursor(self):
+        self.populate()
+        result = self.run_op(effective_limit=2)
+        self.assertEqual(result.data["count"], 2)
+        self.assertTrue(result.pagination["truncated"])
+        self.assertEqual(result.pagination["cursor"], result.data["jobs"][-1]["id"])
+        self.assertEqual(result.pagination["limit"], 2)
+
+    def test_empty_db_reports_zero_cursor_and_no_truncation(self):
+        store.connect(self.db).close()
+        result = self.run_op()
+        self.assertEqual(result.data, {"count": 0, "jobs": []})
+        self.assertEqual(result.pagination["cursor"], 0)
+        self.assertFalse(result.pagination["truncated"])
+
+    def test_input_requires_keyword_only_base_dir(self):
+        with self.assertRaises(TypeError):
+            ListInput(self.db, None, [], None, None, 10)
 
 
 if __name__ == "__main__":

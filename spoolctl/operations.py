@@ -21,6 +21,7 @@ from spoolctl.models import (
     EXIT_CONFLICT,
     EXIT_TRANSIENT,
     SCHEMA_VERSION,
+    TAG_FILTER_SCAN_LIMIT,
     TOOL_VERSION,
     _WAIT_TERMINAL,
 )
@@ -93,6 +94,25 @@ class OutputInput:
 class OutputOperationResult:
     data: dict[str, Any] | None
     stream_bytes: dict[str, bytes]
+    warnings: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
+class ListInput:
+    db_path: str | None
+    states: list[str] | None
+    tag_predicates: list[tuple[str, str | None]]
+    queue: str | None
+    priority_min: int | None
+    effective_limit: int
+    base_dir: str | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class ListOperationResult:
+    data: dict[str, Any]
+    jobs: list[store.Job]
+    pagination: dict[str, Any]
     warnings: list[dict[str, str]]
 
 
@@ -241,6 +261,91 @@ def output_operation(input: OutputInput) -> OutputOperationResult:
         },
         stream_bytes=stream_bytes,
         warnings=[],
+    )
+
+
+def _tags_match(tags: dict[str, str], predicates: list[tuple[str, str | None]]) -> bool:
+    for key, value in predicates:
+        if key not in tags:
+            return False
+        if value is not None and tags[key] != value:
+            return False
+    return True
+
+
+def list_operation(input: ListInput) -> ListOperationResult:
+    tag_predicates = input.tag_predicates
+    effective_limit = input.effective_limit
+    fetch_limit = (
+        TAG_FILTER_SCAN_LIMIT + 1 if tag_predicates else effective_limit + 1
+    )
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
+    try:
+        jobs = store.list_jobs(
+            conn, input.states, fetch_limit,
+            queue=input.queue, priority_min=input.priority_min,
+        )
+        first_id, _ = store.job_id_bounds(conn)
+    finally:
+        conn.close()
+    scanned = len(jobs)
+    scan_truncated = bool(tag_predicates and len(jobs) > TAG_FILTER_SCAN_LIMIT)
+    if tag_predicates:
+        scan_rows = jobs[:TAG_FILTER_SCAN_LIMIT]
+        filtered = [j for j in scan_rows if _tags_match(j.tags or {}, tag_predicates)]
+        truncated = scan_truncated or len(filtered) > effective_limit
+        jobs = filtered[:effective_limit]
+    else:
+        truncated = len(jobs) > effective_limit
+        jobs = jobs[:effective_limit]
+    rows = [
+        {
+            "argv": j.argv,
+            "attempts": j.attempts,
+            "created_at": j.created_at,
+            "finished_at": j.finished_at,
+            "id": j.id,
+            "idempotency_key": j.idempotency_key,
+            "last_error": j.last_error,
+            "last_exit_code": j.last_exit_code,
+            "max_retries": j.max_retries,
+            "crashes": j.crashes,
+            "cwd": j.cwd,
+            "next_run_at": j.next_run_at,
+            "note": j.note,
+            "priority": j.priority,
+            "queue": j.queue,
+            "started_at": j.started_at,
+            "state": j.state,
+            "tags": j.tags or {},
+            "timeout_seconds": j.timeout_seconds,
+        }
+        for j in jobs
+    ]
+    pagination = {
+        "cursor": jobs[-1].id if jobs else 0,
+        "first_id": first_id,
+        "limit": effective_limit,
+        "truncated": truncated,
+    }
+    if tag_predicates:
+        pagination["scanned"] = min(scanned, TAG_FILTER_SCAN_LIMIT)
+        pagination["scan_limit"] = TAG_FILTER_SCAN_LIMIT
+    warnings = []
+    if scan_truncated:
+        warnings.append({
+            "code": "TAG_FILTER_SCAN_CAPPED",
+            "message": (
+                "tag-filtered list scanned the newest"
+                f" {TAG_FILTER_SCAN_LIMIT} matching pre-filter rows; later"
+                " tag matches may be omitted"
+            ),
+        })
+    return ListOperationResult(
+        data={"count": len(rows), "jobs": rows},
+        jobs=jobs,
+        pagination=pagination,
+        warnings=warnings,
     )
 
 
