@@ -6,3 +6,4 @@ build/
 .spoolctl/
 .beads/.local_version
 site/
+.DS_Store
