@@ -126,6 +126,16 @@ class TestSingleFileBuild(unittest.TestCase):
             self.assertEqual(code, 0, err)
             self.assertTrue(json.loads(out)["data"]["all_succeeded"])
 
+            proc = art_raw("feedback", "--help")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertIn("--tail-bytes", proc.stdout)
+            code, out, err = art("feedback", str(job_id))
+            self.assertEqual(code, 0, err)
+            verdict = json.loads(out)["data"]
+            self.assertTrue(verdict["terminal"])
+            self.assertTrue(verdict["succeeded"])
+            self.assertEqual(verdict["streams"]["stdout"]["tail"], "roundtrip\n")
+
 
 if __name__ == "__main__":
     unittest.main()

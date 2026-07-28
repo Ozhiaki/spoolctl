@@ -484,6 +484,7 @@ VERB_SCHEMAS = {
             }),
         ]
     },
+    "feedback": FEEDBACK_SCHEMA,
     "events": obj({
         "count": {"type": "integer"},
         "events": array_of(EVENT_RECORD_SCHEMA),
@@ -650,8 +651,10 @@ def build_brief(
         " spoolctl wait <ids>; spoolctl output <id> --stream stdout.",
         "Submit many jobs first, remember their ids, run one worker with"
         " work --drain, then wait on all ids. wait exits 6 when any awaited"
-        " job ends non-success, but the JSON envelope is still ok:true and"
-        " data.all_succeeded=false.",
+        " job fails; the envelope stays ok:true with data.all_succeeded=false.",
+        "feedback <id> gives the one-call verdict: terminal, succeeded,"
+        " exit_code, failure_reason, last_error, output tails, and a"
+        " remediation command; --tail-bytes N widens the tails.",
         "add supports --after/--at, --priority, --queue, --key, --cwd,"
         " repeatable --env K=V, repeatable --tag KEY=VALUE, and --note;"
         " delayed jobs remain queued with future next_run_at.",
@@ -661,8 +664,8 @@ def build_brief(
         " show prints full job, scheduling fields, attempts, events, key, tags,"
         " and note.",
         "status counts queued jobs inclusively and adds scheduled plus per-queue"
-        " counts; scheduled means queued with future next_run_at, including"
-        " retry backoff.",
+        " counts; scheduled means queued with future next_run_at, retry"
+        " backoff included.",
         "events reads the durable job_events ledger: one-shot and --wait"
         " return envelopes with meta.pagination.cursor; --follow --json emits"
         " NDJSON data frames plus end/error control frames.",
@@ -670,17 +673,15 @@ def build_brief(
         " opening DB; doctor exits 3 with ok:true/data.ready=false for"
         " readiness failures.",
         "schema --json exports the envelope, verb data, and raw stream JSON"
-        " Schemas. capabilities --json describes contract v2 surfaces: flags,"
-        " modes, states, events, process env, config support, safety gates,"
-        " idempotency mismatches, exit codes, and robot_docs_uri.",
-        "robot-docs guide is the longer paste-ready agent workflow handbook;"
-        " use --json for structured sections and token estimate.",
+        " Schemas. capabilities --json enumerates every contract v2 surface,"
+        " including robot_docs_uri.",
+        "robot-docs guide is the longer agent workflow handbook; --json adds"
+        " structured sections and a token estimate.",
         f"Exit codes: {exit_bits}.",
         "Use retry for dead/failed jobs, cancel for queued/running withdrawal,"
         " prune for old terminal jobs, status for counts/recent dead jobs."
-        " Destructive forms require confirmations: prune uses --yes or"
-        " --dry-run, cancel --running needs --yes, retry --force is the"
-        " running-job recovery override.",
+        " Destructive forms need confirmation: prune --yes or --dry-run,"
+        " cancel --running --yes, retry --force for running jobs.",
     ]
     prefix = "\n".join(lines)
     tokens = approx_tokens(prefix)

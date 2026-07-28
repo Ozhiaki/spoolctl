@@ -142,7 +142,7 @@ def valid_positionals(verb: str) -> list[str]:
         return ["guide"]
     if verb == "wait":
         return ["1"]
-    if verb in {"cancel", "output", "retry", "show"}:
+    if verb in {"cancel", "feedback", "output", "retry", "show"}:
         return ["1"]
     return []
 
@@ -164,7 +164,7 @@ def setup_for_success(verb: str, mode: str, db: str) -> list[list[str]]:
         return [["add", "--db", db, "--json", "--", "true"]]
     if verb == "cancel":
         return [["add", "--db", db, "--json", "--", "sleep", "1"]]
-    if verb == "output":
+    if verb in {"feedback", "output"}:
         return [
             ["add", "--db", db, "--json", "--", "sh", "-c", "printf hi"],
             ["work", "--db", db, "--json", "--once"],
@@ -205,6 +205,8 @@ def success_argv(verb: str, mode: str, caps: dict, db: str) -> list[str]:
         return argv + ["--limit", "1"]
     if verb == "list":
         return argv + ["--limit", "1"]
+    if verb == "feedback":
+        return argv + ["1"]
     if verb == "output":
         if mode == "raw":
             return argv + ["1", "--stream", "stdout", "--raw"]

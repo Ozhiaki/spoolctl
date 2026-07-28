@@ -1,7 +1,7 @@
 # spoolctl-signature target=source tz=UTC normalize_version=False
 meta:capabilities | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9
 meta:schema | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9
-meta:brief-text | exit=0 | json=none | ok=- | err=- | warnings=- | traceback=False | version=- | stdout_sha=13aaf060c32fc957
+meta:brief-text | exit=0 | json=none | ok=- | err=- | warnings=- | traceback=False | version=- | stdout_sha=d36013e3d7736125
 meta:robot-docs | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9
 meta:config-show | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9
 meta:config-validate | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9
@@ -19,6 +19,7 @@ roundtrip:doctor | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=F
 roundtrip:output-json | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9 | job_id=1
 roundtrip:show-json | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9 | state=done
 roundtrip:list-json | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9 | count=1
+roundtrip:feedback | exit=0 | json=ok | ok=True | err=- | warnings=- | traceback=False | version=0.4.9 | state=done | terminal=True | succeeded=True
 text:status | exit=0 | json=none | ok=- | err=- | warnings=- | traceback=False | version=- | stdout_sha=da128b1e23808a72
 text:list | exit=0 | json=none | ok=- | err=- | warnings=- | traceback=False | version=- | stdout_sha=43c33b0a4eca611b
 text:show | exit=0 | json=none | ok=- | err=- | warnings=- | traceback=False | version=- | stdout_sha=e50b0fae6ae0bc9d
@@ -41,6 +42,9 @@ invalid_flag:events:--max-events | exit=1 | json=ok | ok=False | err=INVALID_INP
 invalid_flag:events:--poll-interval | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid
 invalid_flag:events:--since-id | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid
 invalid_flag:events:--wait-timeout | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid
+invalid_flag:feedback:--db | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid
+invalid_flag:feedback:--stream | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid
+invalid_flag:feedback:--tail-bytes | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid
 invalid_flag:list:--db | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid
 invalid_flag:list:--limit | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid
 invalid_flag:list:--priority-min | exit=1 | json=ok | ok=False | err=INVALID_INPUT | warnings=- | traceback=False | version=0.4.9 | detail=generated-invalid

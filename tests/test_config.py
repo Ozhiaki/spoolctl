@@ -339,7 +339,7 @@ class TestCliDbVerbConfigDiscovery(ConfigTestCase):
             pass
         elif verb == "cancel":
             run_cli("add", "--db", self.configured_db, "--json", "--", "sleep", "1")
-        elif verb == "output":
+        elif verb in {"feedback", "output"}:
             run_cli("add", "--db", self.configured_db, "--json", "--", "sh", "-c", "printf hi")
             run_cli("work", "--db", self.configured_db, "--json", "--once")
         elif verb == "retry":
@@ -365,6 +365,7 @@ class TestCliDbVerbConfigDiscovery(ConfigTestCase):
             "config-show": ["config-show", "--json"],
             "doctor": ["doctor", "--json"],
             "events": ["events", "--json"],
+            "feedback": ["feedback", "1", "--json"],
             "list": ["list", "--json"],
             "output": ["output", "1", "--json"],
             "prune": ["prune", "--older-than", "1s", "--dry-run", "--json"],

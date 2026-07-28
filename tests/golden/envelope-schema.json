@@ -2199,6 +2199,173 @@
         ],
         "type": "object"
       },
+      "feedback": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "integer"
+          },
+          "attempts_total": {
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "failure_reason": {
+            "enum": [
+              "process_exit",
+              "timeout",
+              "spawn_failed",
+              "worker_crash",
+              "canceled",
+              "unknown",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job_id": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest_attempt_no": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remediation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "dead",
+              "canceled"
+            ],
+            "type": "string"
+          },
+          "streams": {
+            "additionalProperties": false,
+            "properties": {
+              "stderr": {
+                "additionalProperties": false,
+                "properties": {
+                  "missing": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  },
+                  "tail": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "missing",
+                  "path",
+                  "size_bytes",
+                  "tail",
+                  "truncated"
+                ],
+                "type": "object"
+              },
+              "stdout": {
+                "additionalProperties": false,
+                "properties": {
+                  "missing": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  },
+                  "tail": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "missing",
+                  "path",
+                  "size_bytes",
+                  "tail",
+                  "truncated"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "stderr",
+              "stdout"
+            ],
+            "type": "object"
+          },
+          "succeeded": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "terminal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "attempts",
+          "attempts_total",
+          "duration_seconds",
+          "exit_code",
+          "failure_reason",
+          "job_id",
+          "last_error",
+          "latest_attempt_no",
+          "remediation",
+          "state",
+          "streams",
+          "succeeded",
+          "terminal"
+        ],
+        "type": "object"
+      },
       "list": {
         "additionalProperties": false,
         "properties": {

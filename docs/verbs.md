@@ -254,6 +254,39 @@ read the durable event ledger; verify job ids with spoolctl show; --follow --jso
 spoolctl events --json --limit 10
 ```
 
+## `feedback`
+
+one-call verdict on a job: terminal, succeeded, why it failed, output tails, and the next command to run
+
+### Positionals
+
+| Name | Type | Required | Description |
+|---|---|---|---|
+| `id` | integer | yes |  |
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--db` | path | none | min: 1 max: 4096 |
+| `--json` | boolean | false |  |
+| `--stream` | enum: `both`, `stderr`, `stdout` | both |  |
+| `--tail-bytes` | integer | 2048 | min: 1 max: 65536 |
+
+**Output modes:** `envelope`, `text`
+
+**Exit codes:** 0, 1, 2, 3, 4, 5, 6
+
+**Traits:** idempotent
+
+**JSON data schema:** {job_id, state, terminal: bool, succeeded: bool|null, exit_code, failure_reason, last_error, attempts, attempts_total, latest_attempt_no, duration_seconds, remediation, streams:{stdout,stderr}: {tail, size_bytes, truncated, missing, path}}
+
+### Example
+
+```bash
+spoolctl feedback --json 1
+```
+
 ## `list`
 
 enumerate jobs, newest first, optionally filtered by state/tag/queue/priority
@@ -424,7 +457,7 @@ export JSON Schemas for the envelope, verb data payloads, and streams
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--json` | boolean | false |  |
-| `--verb` | enum: `add`, `brief`, `cancel`, `capabilities`, `config-show`, `config-validate`, `doctor`, `events`, `list`, `output`, `prune`, `retry`, `robot-docs`, `schema`, `show`, `status`, `wait`, `work` | none |  |
+| `--verb` | enum: `add`, `brief`, `cancel`, `capabilities`, `config-show`, `config-validate`, `doctor`, `events`, `feedback`, `list`, `output`, `prune`, `retry`, `robot-docs`, `schema`, `show`, `status`, `wait`, `work` | none |  |
 
 **Output modes:** `envelope`, `text`
 

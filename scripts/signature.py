@@ -127,6 +127,7 @@ def base_for(verb: str, db: str) -> list[str] | None:
         "add": ["add", "--json", "--db", db, "--", "true"],
         "cancel": ["cancel", "1", "--json", "--db", db],
         "events": ["events", "--json", "--db", db],
+        "feedback": ["feedback", "1", "--json", "--db", db],
         "config-show": ["config-show", "--json", "--db", db],
         "config-validate": ["config-validate", "--json"],
         "doctor": ["doctor", "--json", "--db", db],
@@ -224,6 +225,7 @@ def cases(prefix: list[str], cwd: Path, tmp: Path) -> list[Case]:
         Case("roundtrip:output-json", ["output", "1", "--stream", "stdout", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
         Case("roundtrip:show-json", ["show", "1", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
         Case("roundtrip:list-json", ["list", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
+        Case("roundtrip:feedback", ["feedback", "1", "--db", roundtrip_db, "--json"], db_name=roundtrip_db),
         Case("text:status", ["status", "--db", roundtrip_db], db_name=roundtrip_db, text_hash=True),
         Case("text:list", ["list", "--db", roundtrip_db], db_name=roundtrip_db, text_hash=True),
         Case("text:show", ["show", "1", "--db", roundtrip_db], db_name=roundtrip_db, text_hash=True),
@@ -260,6 +262,12 @@ def detail_for(
         if round(delta, 6) != 3600.0:
             raise SystemExit(f"add --after delta was {delta}, expected 3600.0")
         return [f"after_delta={one_line(delta, False)}"]
+    if case.label == "roundtrip:feedback" and isinstance(data, dict):
+        return [
+            f"state={data.get('state')}",
+            f"terminal={data.get('terminal')}",
+            f"succeeded={data.get('succeeded')}",
+        ]
     if case.label.startswith("roundtrip:") and isinstance(data, dict):
         if "job_id" in data:
             return [f"job_id={data['job_id']}"]

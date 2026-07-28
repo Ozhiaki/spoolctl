@@ -43,6 +43,8 @@ from spoolctl.models import (
     EXIT_OK,
     EXIT_SAFETY,
     EXIT_TRANSIENT,
+    FEEDBACK_TAIL_BYTES,
+    FEEDBACK_TAIL_MAX,
     LIST_LIMIT_MAX,
     MAX_POLL_INTERVAL_SECONDS,
     MAX_WAIT_SECONDS,
@@ -59,6 +61,7 @@ from spoolctl.operations import (
     ConfigValidateInput,
     DoctorInput,
     EventsInput,
+    FeedbackInput,
     ListInput,
     OutputInput,
     PruneInput,
@@ -72,6 +75,7 @@ from spoolctl.operations import (
     config_validate_operation,
     doctor_operation,
     events_operation,
+    feedback_operation,
     list_operation,
     output_operation,
     prune_operation,
@@ -327,6 +331,17 @@ def build_parser() -> _Parser:
     output.add_argument("--raw", action="store_true", help="raw bytes, single stream, no headers")
     output.add_argument("--attempt", type=_int_token, default=None, metavar="N")
 
+    feedback = sub.add_parser("feedback", parents=[common_db],
+                              help="one-call verdict on a job with output tails",
+                              allow_abbrev=False)
+    feedback.add_argument("id", metavar="ID")
+    feedback.add_argument("--tail-bytes", type=_int_token, default=None, metavar="N",
+                          help=f"bytes of each stream tail (default"
+                               f" {FEEDBACK_TAIL_BYTES}, max {FEEDBACK_TAIL_MAX})")
+    feedback.add_argument("--stream", choices=["stdout", "stderr", "both"], default="both",
+                          help="which tails the text rendering prints; the JSON"
+                               " payload always carries both streams")
+
     events = sub.add_parser("events", parents=[common_db],
                             help="read or follow the global job event stream",
                             allow_abbrev=False)
@@ -384,7 +399,8 @@ def build_parser() -> _Parser:
     _SUBPARSERS.update(
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
          "show": show, "retry": retry, "cancel": cancel, "prune": prune,
-         "output": output, "events": events, "config-show": config_show,
+         "output": output, "feedback": feedback, "events": events,
+         "config-show": config_show,
          "config-validate": config_validate, "doctor": doctor, "brief": brief, "schema": schema,
          "capabilities": caps, "robot-docs": robot}
     )
@@ -1171,6 +1187,64 @@ def cmd_output(args: argparse.Namespace) -> VerbResult:
     return VerbResult(data=None, human="\n".join(sections))
 
 
+def _format_feedback_human(data: dict[str, Any], stream_choice: str) -> str:
+    verdict = (
+        "succeeded" if data["succeeded"] else "failed"
+    ) if data["terminal"] else "in flight"
+    lines = [f"#{data['job_id']}  {data['state']}  {verdict}"]
+    if data["exit_code"] is not None:
+        lines.append(f"exit_code: {data['exit_code']}")
+    if data["failure_reason"] is not None:
+        lines.append(f"failure_reason: {data['failure_reason']}")
+    if data["last_error"]:
+        lines.append(f"last_error: {data['last_error']}")
+    lines.append(
+        f"attempts: {data['attempts']}  recorded: {data['attempts_total']}"
+    )
+    if data["duration_seconds"] is not None:
+        lines.append(f"duration_seconds: {data['duration_seconds']:g}")
+    names = ["stdout", "stderr"] if stream_choice == "both" else [stream_choice]
+    for name in names:
+        stream = data["streams"][name]
+        if stream["missing"]:
+            lines.append(f"=== {name} (missing) ===")
+            continue
+        head = f"=== {name} ({stream['size_bytes']} bytes"
+        head += ", tail truncated) ===" if stream["truncated"] else ") ==="
+        lines.append(head)
+        if stream["tail"]:
+            lines.append(stream["tail"].rstrip("\n"))
+    if data["remediation"]:
+        lines.append(f"next: {data['remediation']}")
+    return "\n".join(lines)
+
+
+def cmd_feedback(args: argparse.Namespace) -> VerbResult:
+    job_id = _job_id_arg(args.id)
+    tail_bytes = (
+        _parse_int_bound(
+            args.tail_bytes,
+            flag="--tail-bytes",
+            minimum=1,
+            maximum=FEEDBACK_TAIL_MAX,
+        )
+        if args.tail_bytes is not None else FEEDBACK_TAIL_BYTES
+    )
+    result = feedback_operation(
+        FeedbackInput(
+            db_path=args.db,
+            job_id=job_id,
+            tail_bytes=tail_bytes,
+            base_dir=os.getcwd(),
+        )
+    )
+    return VerbResult(
+        data=result.data,
+        human=_format_feedback_human(result.data, args.stream),
+        warnings=result.warnings,
+    )
+
+
 def cmd_config_show(args: argparse.Namespace) -> VerbResult:
     data = config_show_operation(
         ConfigShowInput(db_path=args.db, base_dir=os.getcwd())
@@ -1274,6 +1348,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "config-validate": cmd_config_validate,
     "doctor": cmd_doctor,
     "events": cmd_events,
+    "feedback": cmd_feedback,
     "list": cmd_list,
     "output": cmd_output,
     "prune": cmd_prune,

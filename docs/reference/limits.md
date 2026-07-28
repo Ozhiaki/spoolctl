@@ -35,7 +35,7 @@
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| `SPOOLCTL_DB` | path | ./.spoolctl/queue.db | queue database path (precedence: --db flag, SPOOLCTL_DB, .spoolctl/config.json db_path, ./.spoolctl/queue.db) (consumed by: `add`, `cancel`, `config-show`, `doctor`, `events`, `list`, `output`, `prune`, `retry`, `show`, `status`, `wait`, `work`) |
+| `SPOOLCTL_DB` | path | ./.spoolctl/queue.db | queue database path (precedence: --db flag, SPOOLCTL_DB, .spoolctl/config.json db_path, ./.spoolctl/queue.db) (consumed by: `add`, `cancel`, `config-show`, `doctor`, `events`, `feedback`, `list`, `output`, `prune`, `retry`, `show`, `status`, `wait`, `work`) |
 | `SPOOLCTL_TEST_HEARTBEAT_INTERVAL` | float | 5.0 | test-only: seconds between worker heartbeats (default 5) (consumed by: `work`) |
 | `SPOOLCTL_TEST_REAP_THRESHOLD` | float | 30.0 | test-only: seconds of heartbeat staleness before a running job becomes a reap candidate (default 30) (consumed by: `work`) |
 

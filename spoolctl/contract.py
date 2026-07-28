@@ -165,6 +165,15 @@ VERB_SUMMARIES = {
                        " config, checks:[{id,status,message,remediation,blocked_by}],"
                        " versions}",
     },
+    "feedback": {
+        "summary": "one-call verdict on a job: terminal, succeeded, why it failed,"
+                   " output tails, and the next command to run",
+        "data_schema": "{job_id, state, terminal: bool, succeeded: bool|null,"
+                       " exit_code, failure_reason, last_error, attempts,"
+                       " attempts_total, latest_attempt_no, duration_seconds,"
+                       " remediation, streams:{stdout,stderr}:"
+                       " {tail, size_bytes, truncated, missing, path}}",
+    },
     "robot-docs": {
         "summary": "agent workflow guide; currently supports the guide subcommand",
         "data_schema": "{text: str, approx_tokens: int, sections: [{title, bullets}]}",
@@ -194,6 +203,7 @@ DB_VERBS = [
     "config-show",
     "doctor",
     "events",
+    "feedback",
     "list",
     "output",
     "prune",
@@ -554,6 +564,13 @@ VERB_FLAG_CONTRACTS = {
         "malformed_expectations": {"bad_type": EXPECT_INVALID},
     },
     ("wait", "--timeout"): {"type": "float", **LIMITS["wait_seconds"]},
+    ("feedback", "--tail-bytes"): {"type": "integer", **LIMITS["feedback_tail_bytes"]},
+    ("feedback", "--stream"): {
+        "type": "enum",
+        "choices": ["both", "stderr", "stdout"],
+        "malformed_expectations": {"bad_type": EXPECT_INVALID},
+        "affects": "text rendering only; the JSON payload always carries both streams",
+    },
     ("events", "--limit"): {"type": "integer", **LIMITS["event_limit"]},
     ("events", "--max-events"): {"type": "integer", "minimum": 1, "maximum": EVENT_LIMIT_MAX, "unbounded": False},
     ("status", "--limit"): {"type": "integer", **LIMITS["status_limit"]},
@@ -605,6 +622,7 @@ VERB_TRAITS = {
     "doctor": {"mutates": False, "destructive": False, "idempotent": True},
     "robot-docs": {"mutates": False, "destructive": False, "idempotent": True},
     "events": {"mutates": False, "destructive": False, "idempotent": True},
+    "feedback": {"mutates": False, "destructive": False, "idempotent": True},
     "list": {"mutates": False, "destructive": False, "idempotent": True},
     "output": {"mutates": False, "destructive": False, "idempotent": True},
     "prune": {"mutates": True, "destructive": True, "idempotent": False},
@@ -643,6 +661,7 @@ VERB_EXAMPLES = {
     "doctor": [["spoolctl", "doctor", "--json"]],
     "robot-docs": [["spoolctl", "robot-docs", "guide", "--json"]],
     "events": [["spoolctl", "events", "--json", "--limit", "10"]],
+    "feedback": [["spoolctl", "feedback", "--json", "1"]],
     "list": [["spoolctl", "list", "--json", "--limit", "10"]],
     "output": [["spoolctl", "output", "--json", "1", "--stream", "stdout"]],
     "prune": [["spoolctl", "prune", "--json", "--older-than", "30d", "--dry-run"]],
@@ -1084,6 +1103,15 @@ ROBOT_DOC_SECTIONS = [
             "spoolctl work --json --once",
             "spoolctl wait --json 1",
             "spoolctl output --json 1 --stream stdout",
+        ],
+    },
+    {
+        "title": "Get a verdict in one call",
+        "bullets": [
+            "spoolctl feedback --json 1",
+            "Read terminal first, then succeeded: null succeeded means still in flight.",
+            "data.remediation is the next command to run; data.streams carries output tails.",
+            "Use --tail-bytes N for more output, --stream to narrow the text rendering.",
         ],
     },
     {

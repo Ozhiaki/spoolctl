@@ -7,12 +7,15 @@ and the discriminator is the counting fields, not the state string.
 
 from __future__ import annotations
 
+import io
+import json
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
-from spoolctl import store
+from spoolctl import cli, store
 from spoolctl.errors import CliError
 from spoolctl.models import (
     FAILURE_REASONS,
@@ -26,6 +29,13 @@ from spoolctl.models import (
     REASON_WORKER_CRASH,
 )
 from spoolctl.operations import FeedbackInput, feedback_operation
+
+
+def run_cli(*argv: str) -> tuple[int, str, str]:
+    out, err = io.StringIO(), io.StringIO()
+    with redirect_stdout(out), redirect_stderr(err):
+        code = cli.main(list(argv))
+    return code, out.getvalue(), err.getvalue()
 
 
 class FeedbackTestCase(unittest.TestCase):
@@ -425,6 +435,108 @@ class TestFeedbackGrammar(FeedbackTestCase):
 
     def test_last_error_comes_from_the_job_row(self):
         self.assertEqual(self.feedback(self.make_dead()).data["last_error"], "exit 3")
+
+
+class TestFeedbackCliSurface(FeedbackTestCase):
+    """The adapter's own grammar: flag parsing, rendering, exit mapping."""
+
+    def dead_with_output(self, stdout: bytes = b"", stderr: bytes = b"") -> int:
+        job_id = self.add()
+        attempt = self.claim()
+        self.write_stream(attempt, "stdout", stdout)
+        self.write_stream(attempt, "stderr", stderr)
+        store.record_failure(self.conn, job_id, attempt.id, "w1", 42,
+                             "failed", 3, "exit 3", 12.0)
+        return job_id
+
+    def cli_json(self, *argv: str) -> dict:
+        code, out, err = run_cli("feedback", *argv, "--db", self.db, "--json")
+        self.assertEqual(code, 0, err)
+        return json.loads(out)
+
+    def test_json_payload_carries_the_operation_data(self):
+        job_id = self.make_dead()
+        env = self.cli_json(str(job_id))
+        self.assertTrue(env["ok"])
+        self.assertEqual(env["data"]["state"], "dead")
+        self.assertFalse(env["data"]["succeeded"])
+        self.assertEqual(env["data"]["remediation"], f"spoolctl output {job_id}")
+
+    def test_tail_bytes_flag_reaches_the_operation(self):
+        job_id = self.dead_with_output(stdout=b"abcdefghij")
+        env = self.cli_json(str(job_id), "--tail-bytes", "4")
+        self.assertEqual(env["data"]["streams"]["stdout"]["tail"], "ghij")
+        self.assertTrue(env["data"]["streams"]["stdout"]["truncated"])
+
+    def test_json_carries_both_streams_regardless_of_stream_flag(self):
+        job_id = self.make_dead()
+        env = self.cli_json(str(job_id), "--stream", "stderr")
+        self.assertEqual(set(env["data"]["streams"]), {"stdout", "stderr"})
+
+    def test_stream_flag_narrows_only_the_text_rendering(self):
+        job_id = self.dead_with_output(stdout=b"OUT-MARK", stderr=b"ERR-MARK")
+        code, out, err = run_cli("feedback", str(job_id), "--db", self.db,
+                                 "--stream", "stderr")
+        self.assertEqual(code, 0, err)
+        self.assertIn("ERR-MARK", out)
+        self.assertNotIn("OUT-MARK", out)
+
+    def test_text_rendering_states_the_verdict_and_next_command(self):
+        job_id = self.make_dead()
+        code, out, err = run_cli("feedback", str(job_id), "--db", self.db)
+        self.assertEqual(code, 0, err)
+        self.assertIn(f"#{job_id}  dead  failed", out)
+        self.assertIn(f"next: spoolctl output {job_id}", out)
+
+    def test_fresh_job_surfaces_the_warning_through_the_envelope(self):
+        env = self.cli_json(str(self.make_queued_fresh()))
+        self.assertEqual([w["code"] for w in env["warnings"]], ["NO_ATTEMPTS_YET"])
+
+    def test_missing_job_id_positional_is_an_input_error(self):
+        code, out, err = run_cli("feedback", "--db", self.db, "--json")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "MISSING_REQUIRED")
+
+    def test_unknown_job_maps_to_not_found(self):
+        code, out, err = run_cli("feedback", "999", "--db", self.db, "--json")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "NOT_FOUND")
+
+    def test_non_integer_tail_bytes_is_rejected(self):
+        job_id = self.make_dead()
+        code, out, _ = run_cli("feedback", str(job_id), "--db", self.db,
+                               "--tail-bytes", "lots", "--json")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_out_of_range_tail_bytes_is_rejected_at_both_ends(self):
+        job_id = self.make_dead()
+        for value in ("0", "-1", str(FEEDBACK_TAIL_MAX + 1)):
+            with self.subTest(value=value):
+                code, out, _ = run_cli("feedback", str(job_id), "--db", self.db,
+                                       "--tail-bytes", value, "--json")
+                self.assertEqual(code, 1, out)
+                self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_tail_bytes_without_a_value_is_rejected(self):
+        job_id = self.make_dead()
+        code, out, _ = run_cli("feedback", str(job_id), "--db", self.db,
+                               "--tail-bytes", "--json")
+        self.assertEqual(code, 1, out)
+
+    def test_bad_stream_choice_is_rejected(self):
+        job_id = self.make_dead()
+        code, out, _ = run_cli("feedback", str(job_id), "--db", self.db,
+                               "--stream", "stdin", "--json")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "INVALID_INPUT")
+
+    def test_unknown_flag_is_rejected(self):
+        job_id = self.make_dead()
+        code, out, _ = run_cli("feedback", str(job_id), "--db", self.db,
+                               "--bogus", "--json")
+        self.assertEqual(code, 1, out)
+        self.assertEqual(json.loads(out)["errors"][0]["code"], "UNKNOWN_FLAG")
 
 
 if __name__ == "__main__":

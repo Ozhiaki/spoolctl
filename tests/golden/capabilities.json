@@ -170,6 +170,7 @@
         "config-show",
         "doctor",
         "events",
+        "feedback",
         "list",
         "output",
         "prune",
@@ -4378,6 +4379,402 @@
         "mode": "text"
       }
     },
+    "feedback": {
+      "args": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "id",
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
+        }
+      ],
+      "data_schema": "{job_id, state, terminal: bool, succeeded: bool|null, exit_code, failure_reason, last_error, attempts, attempts_total, latest_attempt_no, duration_seconds, remediation, streams:{stdout,stderr}: {tail, size_bytes, truncated, missing, path}}",
+      "description": "one-call verdict on a job: terminal, succeeded, why it failed, output tails, and the next command to run",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "feedback",
+          "--json",
+          "1"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "flags": [
+        {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
+          "default": null,
+          "flag": "--db",
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 4096,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": false,
+          "value_required": true
+        },
+        {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
+          "default": false,
+          "flag": "--json",
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
+        },
+        {
+          "affects": "text rendering only; the JSON payload always carries both streams",
+          "aliases": [
+            "--stream"
+          ],
+          "choices": [
+            "both",
+            "stderr",
+            "stdout"
+          ],
+          "default": "both",
+          "flag": "--stream",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "name": "--stream",
+          "repeatable": false,
+          "required": false,
+          "type": "enum",
+          "unbounded": false,
+          "value_required": true
+        },
+        {
+          "aliases": [
+            "--tail-bytes"
+          ],
+          "choices": null,
+          "default": 2048,
+          "flag": "--tail-bytes",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 65536,
+          "minimum": 1,
+          "name": "--tail-bytes",
+          "repeatable": false,
+          "required": false,
+          "type": "integer",
+          "unbounded": false,
+          "value_required": true
+        }
+      ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb feedback"
+      },
+      "mutates": false,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "attempts": {
+            "type": "integer"
+          },
+          "attempts_total": {
+            "type": "integer"
+          },
+          "duration_seconds": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "exit_code": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "failure_reason": {
+            "enum": [
+              "process_exit",
+              "timeout",
+              "spawn_failed",
+              "worker_crash",
+              "canceled",
+              "unknown",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "job_id": {
+            "type": "integer"
+          },
+          "last_error": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "latest_attempt_no": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "remediation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "state": {
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "failed",
+              "dead",
+              "canceled"
+            ],
+            "type": "string"
+          },
+          "streams": {
+            "additionalProperties": false,
+            "properties": {
+              "stderr": {
+                "additionalProperties": false,
+                "properties": {
+                  "missing": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  },
+                  "tail": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "missing",
+                  "path",
+                  "size_bytes",
+                  "tail",
+                  "truncated"
+                ],
+                "type": "object"
+              },
+              "stdout": {
+                "additionalProperties": false,
+                "properties": {
+                  "missing": {
+                    "type": "boolean"
+                  },
+                  "path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "size_bytes": {
+                    "type": "integer"
+                  },
+                  "tail": {
+                    "type": "string"
+                  },
+                  "truncated": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "missing",
+                  "path",
+                  "size_bytes",
+                  "tail",
+                  "truncated"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "stderr",
+              "stdout"
+            ],
+            "type": "object"
+          },
+          "succeeded": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "terminal": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "attempts",
+          "attempts_total",
+          "duration_seconds",
+          "exit_code",
+          "failure_reason",
+          "job_id",
+          "last_error",
+          "latest_attempt_no",
+          "remediation",
+          "state",
+          "streams",
+          "succeeded",
+          "terminal"
+        ],
+        "type": "object"
+      },
+      "positionals": [
+        {
+          "choices": null,
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "MISSING_REQUIRED",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "name": "id",
+          "nargs": "1",
+          "repeatable": false,
+          "required": true,
+          "type": "integer",
+          "unbounded": false
+        }
+      ],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb feedback",
+      "stdin": "none",
+      "summary": "one-call verdict on a job: terminal, succeeded, why it failed, output tails, and the next command to run",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
+    },
     "list": {
       "args": [],
       "data_schema": "{count: int, jobs: [{id, argv, state, attempts, crashes, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, cwd, last_exit_code, last_error, idempotency_key, tags, note}]}",
@@ -5829,6 +6226,7 @@
             "config-validate",
             "doctor",
             "events",
+            "feedback",
             "list",
             "output",
             "prune",
