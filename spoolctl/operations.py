@@ -97,6 +97,21 @@ class OutputOperationResult:
 
 
 @dataclass(frozen=True)
+class ShowInput:
+    db_path: str | None
+    job_id: int
+    base_dir: str | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class ShowOperationResult:
+    data: dict[str, Any]
+    job: store.Job
+    attempts: list[store.Attempt]
+    events: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
 class AddInput:
     # base_dir selects the project config discovery base. cwd is the submitted
     # job's working directory and intentionally remains separate.
@@ -226,6 +241,81 @@ def output_operation(input: OutputInput) -> OutputOperationResult:
         },
         stream_bytes=stream_bytes,
         warnings=[],
+    )
+
+
+def current_job_failure_reason(job: store.Job, attempts: list[store.Attempt]) -> str | None:
+    if job.state in {"done", "queued", "running"}:
+        return None
+    for attempt in sorted(attempts, key=lambda a: a.attempt_no, reverse=True):
+        if attempt.state != "succeeded" and attempt.failure_reason is not None:
+            return attempt.failure_reason
+    return None
+
+
+def show_operation(input: ShowInput) -> ShowOperationResult:
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
+    try:
+        job = store.get_job(conn, input.job_id)
+        if job is None:
+            raise CliError(
+                "NOT_FOUND",
+                f"no job with id {input.job_id}",
+                "run: spoolctl list  (to see job ids)",
+            )
+        attempts = store.get_attempts(conn, input.job_id)
+        events = store.get_events(conn, input.job_id)
+    finally:
+        conn.close()
+    job_data = {
+        "argv": job.argv,
+        "attempts": job.attempts,
+        "created_at": job.created_at,
+        "finished_at": job.finished_at,
+        "heartbeat_at": job.heartbeat_at,
+        "id": job.id,
+        "idempotency_key": job.idempotency_key,
+        "last_error": job.last_error,
+        "last_exit_code": job.last_exit_code,
+        "last_failure_reason": current_job_failure_reason(job, attempts),
+        "locked_at": job.locked_at,
+        "locked_by": job.locked_by,
+        "locked_pid": job.locked_pid,
+        "max_retries": job.max_retries,
+        "crashes": job.crashes,
+        "cwd": job.cwd,
+        "env": job.env or {},
+        "max_crashes": job.max_crashes,
+        "next_run_at": job.next_run_at,
+        "note": job.note,
+        "priority": job.priority,
+        "queue": job.queue,
+        "started_at": job.started_at,
+        "state": job.state,
+        "tags": job.tags or {},
+        "timeout_seconds": job.timeout_seconds,
+    }
+    attempt_rows = [
+        {
+            "attempt_no": a.attempt_no,
+            "error": a.error,
+            "exit_code": a.exit_code,
+            "failure_reason": a.failure_reason,
+            "finished_at": a.finished_at,
+            "started_at": a.started_at,
+            "state": a.state,
+            "stderr_path": a.stderr_path,
+            "stdout_path": a.stdout_path,
+            "worker_id": a.worker_id,
+            "worker_pid": a.worker_pid,
+        }
+        for a in attempts
+    ]
+    return ShowOperationResult(
+        data={"attempts": attempt_rows, "events": events, "job": job_data},
+        job=job,
+        attempts=attempts,
+        events=events,
     )
 
 

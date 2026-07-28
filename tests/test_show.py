@@ -10,6 +10,12 @@ import unittest
 from contextlib import redirect_stderr, redirect_stdout
 
 from spoolctl import cli, store
+from spoolctl.errors import CliError
+from spoolctl.operations import (
+    ShowInput,
+    current_job_failure_reason,
+    show_operation,
+)
 from spoolctl.models import (
     REASON_PROCESS_EXIT,
     REASON_SPAWN_FAILED,
@@ -198,6 +204,61 @@ class TestShowGrammar(ShowTestCase):
         code, out, _ = run_cli("show", "--db", self.db, "--json")
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(out)["errors"][0]["code"], "MISSING_REQUIRED")
+
+
+class TestShowOperation(ShowTestCase):
+    """Direct operation entry point: typed input, no argparse, no process exit."""
+
+    def show(self, job_id: int):
+        return show_operation(
+            ShowInput(db_path=self.db, job_id=job_id, base_dir=self.tmp.name)
+        )
+
+    def test_operation_payload_matches_cli_data(self):
+        job_id = self.make_failed_retried_succeeded()
+        result = self.show(job_id)
+        code, out, _ = run_cli("show", str(job_id), "--db", self.db, "--json")
+        self.assertEqual(code, 0)
+        self.assertEqual(result.data, json.loads(out)["data"])
+
+    def test_operation_returns_store_rows_for_rendering(self):
+        job_id = self.make_failed_retried_succeeded()
+        result = self.show(job_id)
+        self.assertEqual(result.job.id, job_id)
+        self.assertEqual([a.attempt_no for a in result.attempts], [1, 2])
+        self.assertEqual(result.events[0]["event"], "added")
+
+    def test_unknown_job_raises_not_found_without_process_exit(self):
+        store.connect(self.db).close()
+        with self.assertRaises(CliError) as ctx:
+            self.show(999)
+        self.assertEqual(ctx.exception.code, "NOT_FOUND")
+
+    def test_input_requires_keyword_only_base_dir(self):
+        with self.assertRaises(TypeError):
+            ShowInput(self.db, 1)
+
+    def test_current_job_failure_reason_walks_attempts_newest_first(self):
+        conn = store.connect(self.db)
+        out_root = store.output_root(self.db)
+        job_id = store.add_job(conn, ["false"], 300, 1, 10.0)
+        _, a1 = store.claim_next(conn, "w1", 42, 11.0, out_root)
+        store.record_failure(conn, job_id, a1.id, "w1", 42, "timed_out", None, "timed out", 12.0)
+        _, a2 = store.claim_next(conn, "w2", 43, 10_000.0, out_root)
+        store.record_failure(conn, job_id, a2.id, "w2", 43, "failed", 1, "exit 1", 10_001.0)
+        job = store.get_job(conn, job_id)
+        attempts = store.get_attempts(conn, job_id)
+        conn.close()
+        self.assertEqual(job.state, "dead")
+        self.assertEqual(current_job_failure_reason(job, attempts), REASON_PROCESS_EXIT)
+
+    def test_current_job_failure_reason_is_none_for_non_failure_states(self):
+        conn = store.connect(self.db)
+        job_id = store.add_job(conn, ["echo", "hi"], 300, 0, 10.0)
+        job = store.get_job(conn, job_id)
+        conn.close()
+        self.assertEqual(job.state, "queued")
+        self.assertIsNone(current_job_failure_reason(job, []))
 
 
 if __name__ == "__main__":
