@@ -41,6 +41,9 @@ from spoolctl.models import (
     EXIT_CONFLICT,
     EXIT_SAFETY,
     EXIT_TRANSIENT,
+    FEEDBACK_TAIL_BYTES,
+    FEEDBACK_TAIL_MAX,
+    REASON_CANCELED,
     SCHEMA_VERSION,
     TAG_FILTER_SCAN_LIMIT,
     TOOL_VERSION,
@@ -213,6 +216,20 @@ class RetryInput:
     force: bool
     now: float
     base_dir: str | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class FeedbackInput:
+    db_path: str | None
+    job_id: int
+    tail_bytes: int = FEEDBACK_TAIL_BYTES
+    base_dir: str | None = field(kw_only=True)
+
+
+@dataclass(frozen=True)
+class FeedbackOperationResult:
+    data: dict[str, Any]
+    warnings: list[dict[str, str]]
 
 
 @dataclass(frozen=True)
@@ -679,6 +696,167 @@ def current_job_failure_reason(job: store.Job, attempts: list[store.Attempt]) ->
         if attempt.state != "succeeded" and attempt.failure_reason is not None:
             return attempt.failure_reason
     return None
+
+
+def _decode_tail(blob: bytes, tail_bytes: int) -> tuple[str, bool]:
+    """Return (tail_text, truncated) for the LAST tail_bytes of blob.
+
+    When the byte cut lands mid-character, drop ONLY the continuation bytes
+    the cut orphaned — at most three, and never past the first lead byte.
+    Dropping bytes until the decode is clean would conflate a character split
+    by the cut with genuinely invalid bytes in the job's output, silently
+    discarding real output from a stream carrying binary junk. Invalid bytes
+    survive as replacement characters, matching output_operation's preview.
+    """
+    truncated = len(blob) > tail_bytes
+    chunk = blob[-tail_bytes:] if tail_bytes else b""
+    if truncated:
+        start = 0
+        while start < 3 and start < len(chunk) and chunk[start] & 0b1100_0000 == 0b1000_0000:
+            start += 1
+        chunk = chunk[start:]
+    return chunk.decode("utf-8", errors="replace"), truncated
+
+
+def _feedback_stream(path: str | None, tail_bytes: int) -> dict[str, Any]:
+    """One stream entry, always with all five keys.
+
+    path is null only when no attempt ever produced this stream; a non-null
+    path with missing:true means the file was captured and is now gone.
+    """
+    if path is None:
+        return {"tail": "", "size_bytes": 0, "truncated": False,
+                "missing": True, "path": None}
+    try:
+        with open(path, "rb") as handle:
+            blob = handle.read()
+    except OSError:
+        return {"tail": "", "size_bytes": 0, "truncated": False,
+                "missing": True, "path": path}
+    tail, truncated = _decode_tail(blob, tail_bytes)
+    return {"tail": tail, "size_bytes": len(blob), "truncated": truncated,
+            "missing": False, "path": path}
+
+
+def _latest_failure_reason(attempts: list[store.Attempt]) -> str | None:
+    for attempt in sorted(attempts, key=lambda a: a.attempt_no, reverse=True):
+        if attempt.state != "succeeded" and attempt.failure_reason is not None:
+            return attempt.failure_reason
+    return None
+
+
+def feedback_operation(input: FeedbackInput) -> FeedbackOperationResult:
+    """One canonical answer to 'what happened to this job?'.
+
+    terminal comes from models._WAIT_TERMINAL and nowhere else, so feedback
+    can never ship a second definition of settled that contradicts wait.
+    succeeded is tri-state: a non-terminal job has neither succeeded nor
+    failed, and saying false would be a lie a consumer eventually acts on.
+    """
+    if input.tail_bytes < 1 or input.tail_bytes > FEEDBACK_TAIL_MAX:
+        raise CliError(
+            "INVALID_INPUT",
+            f"tail bytes must be between 1 and {FEEDBACK_TAIL_MAX}",
+            f"try: spoolctl feedback {input.job_id} --tail-bytes {FEEDBACK_TAIL_BYTES}",
+        )
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
+    try:
+        job = store.get_job(conn, input.job_id)
+        if job is None:
+            raise CliError(
+                "NOT_FOUND",
+                f"no job with id {input.job_id}",
+                "run: spoolctl list  (to see job ids)",
+            )
+        attempts = store.get_attempts(conn, input.job_id)
+    finally:
+        conn.close()
+
+    state = job.state
+    terminal = state in _WAIT_TERMINAL
+    succeeded = {"done": True, "dead": False, "canceled": False}.get(state)
+
+    # attempts and attempts_total are different numbers and neither derives
+    # from the other: store.retry_job resets the retry budget to 0 while every
+    # historical attempt row survives and attempt numbers keep climbing.
+    attempts_total = len(attempts)
+    latest = attempts[-1] if attempts else None
+
+    if state == "done":
+        exit_code: int | None = 0
+        failure_reason: str | None = None
+    elif state == "dead":
+        exit_code = latest.exit_code if latest is not None else None
+        failure_reason = _latest_failure_reason(attempts)
+    elif state == "canceled":
+        exit_code = None
+        failure_reason = REASON_CANCELED if attempts else None
+    elif state == "running":
+        # A reclaimed job still carries its previous attempt's exit code on
+        # the job row; reporting it would say a running job has exited.
+        exit_code = None
+        failure_reason = None
+    elif job.attempts > 0:
+        # queued in retry backoff, or the defensive `failed` row: the job row
+        # still holds the live prior failure.
+        exit_code = job.last_exit_code
+        failure_reason = _latest_failure_reason(attempts)
+    else:
+        # Fresh, or manually retried: retry_job cleared the job row's failure
+        # fields, and that clearing IS the signal that it no longer counts.
+        exit_code = None
+        failure_reason = None
+
+    if state in {"done", "canceled"}:
+        remediation: str | None = None
+    elif state == "dead":
+        remediation = f"spoolctl output {job.id}"
+    elif state == "running":
+        remediation = f"spoolctl wait {job.id}"
+    elif job.attempts > 0:
+        remediation = f"spoolctl show {job.id}"
+    else:
+        remediation = "spoolctl work --drain"
+
+    if job.started_at is not None and job.finished_at is not None:
+        duration_seconds: float | None = job.finished_at - job.started_at
+    else:
+        duration_seconds = None
+
+    streams = {
+        "stdout": _feedback_stream(
+            latest.stdout_path if latest else None, input.tail_bytes),
+        "stderr": _feedback_stream(
+            latest.stderr_path if latest else None, input.tail_bytes),
+    }
+
+    # Gated on attempts_total, never on state or job.attempts: a manually
+    # retried job is queued with attempts == 0 and real historical output.
+    warnings = []
+    if attempts_total == 0:
+        warnings.append({
+            "code": "NO_ATTEMPTS_YET",
+            "message": f"job {job.id} has not been executed yet",
+        })
+
+    return FeedbackOperationResult(
+        data={
+            "attempts": job.attempts,
+            "attempts_total": attempts_total,
+            "duration_seconds": duration_seconds,
+            "exit_code": exit_code,
+            "failure_reason": failure_reason,
+            "job_id": job.id,
+            "last_error": job.last_error,
+            "latest_attempt_no": latest.attempt_no if latest else None,
+            "remediation": remediation,
+            "state": state,
+            "streams": streams,
+            "succeeded": succeeded,
+            "terminal": terminal,
+        },
+        warnings=warnings,
+    )
 
 
 def show_operation(input: ShowInput) -> ShowOperationResult:

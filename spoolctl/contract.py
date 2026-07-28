@@ -23,6 +23,8 @@ from spoolctl.models import (
     EXIT_INPUT,
     EXIT_SAFETY,
     FAILURE_REASONS,
+    FEEDBACK_TAIL_BYTES,
+    FEEDBACK_TAIL_MAX,
     HEARTBEAT_INTERVAL,
     JOB_EVENT_TYPES,
     JOB_STATES,
@@ -345,6 +347,13 @@ LIMITS = {
         "type": "string",
         "minimum": 0,
         "maximum": MAX_ENV_VALUE_CHARS,
+        "unbounded": False,
+    },
+    "feedback_tail_bytes": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": FEEDBACK_TAIL_MAX,
+        "default": FEEDBACK_TAIL_BYTES,
         "unbounded": False,
     },
     "id": {

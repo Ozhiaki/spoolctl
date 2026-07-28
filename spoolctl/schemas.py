@@ -181,6 +181,36 @@ STREAM_SCHEMA = obj({
     "size_bytes": {"type": "integer"},
 })
 
+FEEDBACK_STREAM_SCHEMA = obj({
+    "missing": {"type": "boolean"},
+    "path": NULLABLE_STRING,
+    "size_bytes": {"type": "integer"},
+    "tail": {"type": "string"},
+    "truncated": {"type": "boolean"},
+})
+
+# terminal is always present and always boolean; succeeded is tri-state, null
+# for every non-terminal state. A caller checks terminal first, then
+# succeeded, and never parses prose.
+FEEDBACK_SCHEMA = obj({
+    "attempts": {"type": "integer"},
+    "attempts_total": {"type": "integer"},
+    "duration_seconds": NULLABLE_NUMBER,
+    "exit_code": NULLABLE_INTEGER,
+    "failure_reason": FAILURE_REASON_SCHEMA,
+    "job_id": {"type": "integer"},
+    "last_error": NULLABLE_STRING,
+    "latest_attempt_no": NULLABLE_INTEGER,
+    "remediation": NULLABLE_STRING,
+    "state": {"type": "string", "enum": list(JOB_STATES)},
+    "streams": obj({
+        "stdout": FEEDBACK_STREAM_SCHEMA,
+        "stderr": FEEDBACK_STREAM_SCHEMA,
+    }),
+    "succeeded": {"type": ["boolean", "null"]},
+    "terminal": {"type": "boolean"},
+})
+
 DIFFERENCE_SCHEMA = obj({
     "existing": {},
     "submitted": {},

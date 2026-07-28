@@ -13,6 +13,7 @@
 | `env_key_length` | string | 1 | 128 | no |
 | `env_value_length` | string | 0 | 4096 | no |
 | `event_limit` | integer | 0 | 10000 | no |
+| `feedback_tail_bytes` | integer | 1 | 65536 | no |
 | `id` | integer | 1 | 9223372036854775807 | no |
 | `idempotency_key_length` | string | 1 | 256 | no |
 | `limit` | integer | 0 | 1000 | no |

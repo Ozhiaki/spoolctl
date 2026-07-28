@@ -431,6 +431,13 @@
       "type": "integer",
       "unbounded": false
     },
+    "feedback_tail_bytes": {
+      "default": 2048,
+      "maximum": 65536,
+      "minimum": 1,
+      "type": "integer",
+      "unbounded": false
+    },
     "id": {
       "maximum": 9223372036854775807,
       "minimum": 1,

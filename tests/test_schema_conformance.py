@@ -12,7 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from spoolctl import cli
+from spoolctl import operations
 from spoolctl import schemas
+from spoolctl import store
 
 GOLDEN_DIR = Path(__file__).resolve().parent / "golden"
 SUPPORTED = {
@@ -221,6 +223,49 @@ class TestLiveConformance(unittest.TestCase):
             "prune", "prune", "--older-than", "0", "--dry-run", "--db", self.db, "--json"
         )
         self.assert_verb("capabilities", "capabilities", "--json")
+
+
+class TestFeedbackSchemaConformance(unittest.TestCase):
+    """FEEDBACK_SCHEMA is proved against real payloads before the CLI verb
+    that advertises it exists, so the contract cannot ship already wrong."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.db = os.path.join(self.tmp.name, "queue.db")
+
+    def feedback(self, job_id: int) -> dict:
+        return operations.feedback_operation(
+            operations.FeedbackInput(
+                db_path=self.db, job_id=job_id, base_dir=self.tmp.name
+            )
+        ).data
+
+    def test_payloads_across_the_state_matrix_validate(self):
+        conn = store.connect(self.db)
+        out_root = store.output_root(self.db)
+        ids = {}
+        ids["queued"] = store.add_job(conn, ["true"], 300, 0, 10.0)
+
+        ids["done"] = store.add_job(conn, ["true"], 300, 0, 10.0)
+        _, attempt = store.claim_next(conn, "w1", 42, 11.0, out_root)
+        store.record_success(conn, ids["done"], attempt.id, "w1", 42, 12.0)
+
+        ids["dead"] = store.add_job(conn, ["false"], 300, 0, 10.0)
+        _, attempt = store.claim_next(conn, "w1", 42, 13.0, out_root)
+        store.record_failure(conn, ids["dead"], attempt.id, "w1", 42,
+                             "failed", 1, "exit 1", 14.0)
+
+        ids["running"] = store.add_job(conn, ["sleep", "1"], 300, 0, 10.0)
+        store.claim_next(conn, "w1", 42, 15.0, out_root)
+
+        ids["canceled"] = store.add_job(conn, ["true"], 300, 0, 10.0)
+        store.cancel_job(conn, ids["canceled"], False, 16.0)
+        conn.close()
+
+        for state, job_id in ids.items():
+            with self.subTest(state):
+                validate(self.feedback(job_id), schemas.FEEDBACK_SCHEMA, state)
 
 
 if __name__ == "__main__":
