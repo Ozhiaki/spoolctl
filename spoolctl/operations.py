@@ -1,4 +1,23 @@
-"""Reusable status, output, add, and wait operations for non-CLI adapters."""
+"""Reusable verb bodies for non-CLI adapters.
+
+Each operation takes a frozen input dataclass, opens the database, does the
+work, assembles the JSON data payload, and raises CliError for contract
+failures. Consent belongs to the adapter, effect belongs here: flags like
+--yes, --force, and --running never reach an operation, only the decision
+they produced.
+
+Two verbs are deliberately not lifted:
+
+- `work` is a process, not a request. It forks children, installs signal
+  handlers, owns a heartbeat thread, and kills its own process group. Its
+  reusable core already lives in worker.py; wrapping the loop in an
+  operation would move process lifetime into a layer that has no business
+  owning it.
+- `events --follow` is an open-ended stream against a terminal, not a call
+  with a payload. Its one-shot and --wait modes are lifted
+  (`events_operation`); the follow loop stays in the adapter, where the
+  output sink and interrupt handling live.
+"""
 
 from __future__ import annotations
 

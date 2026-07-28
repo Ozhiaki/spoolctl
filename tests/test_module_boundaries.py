@@ -39,6 +39,13 @@ FORBIDDEN_REFERENCES = {
     "spoolctl.worker": set(),
 }
 
+# Modules that must stay free of the CLI's own machinery. operations.py is the
+# reusable verb layer: an argparse import there means an adapter concern leaked
+# past the boundary.
+FORBIDDEN_STDLIB_IMPORTS = {
+    "spoolctl.operations": {"argparse"},
+}
+
 
 def module_path(module: str) -> Path:
     return PACKAGE / (module.removeprefix("spoolctl.") + ".py")
@@ -56,6 +63,16 @@ def spoolctl_imports(tree: ast.AST) -> set[str]:
                 found.update(f"spoolctl.{alias.name}" for alias in node.names)
             elif node.module and node.module.startswith("spoolctl."):
                 found.add(node.module)
+    return found
+
+
+def stdlib_imports(tree: ast.AST) -> set[str]:
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            found.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            found.add(node.module.split(".")[0])
     return found
 
 
@@ -92,6 +109,15 @@ class TestModuleBoundaries(unittest.TestCase):
                 if any(fragment in text for fragment in forbidden)
             ]
             self.assertFalse(offenders, f"{module} has forbidden string refs: {offenders}")
+
+    def test_forbidden_stdlib_imports(self):
+        for module, forbidden in FORBIDDEN_STDLIB_IMPORTS.items():
+            path = module_path(module)
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            offenders = stdlib_imports(tree) & forbidden
+            self.assertFalse(
+                offenders, f"{module} has forbidden imports: {sorted(offenders)}"
+            )
 
     def test_boundary_table_keys_resolve_to_modules(self):
         for table in (FORBIDDEN_IMPORTS, FORBIDDEN_REFERENCES):
