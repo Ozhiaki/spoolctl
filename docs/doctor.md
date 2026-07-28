@@ -1,6 +1,6 @@
 # Doctor
 
-`doctor` is a bounded readiness diagnostic for agents and MCP launchers. It checks whether spoolctl can operate against the configured database without actually opening or mutating it in production mode.
+`doctor` is a bounded readiness diagnostic for agents and automated launchers. It checks whether spoolctl can operate against the configured database without actually opening or mutating it in production mode.
 
 ## The seven checks
 
@@ -60,7 +60,7 @@ The `data` object contains:
 | `checks` | Array of check results, each with `name`, `status`, and optional `detail`/`blocked_by`. |
 | `versions` | `tool_version`, `contract_version`, `schema_version`. |
 
-## Usage in MCP launchers
+## Usage in automated launchers
 
 Doctor is the recommended pre-flight check for any automated consumer. The pattern:
 

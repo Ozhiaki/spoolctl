@@ -2,9 +2,25 @@
 
 All notable user-visible changes to spoolctl are documented here.
 
-> **Status: pre-release.** The CLI surface may still move before a public
-> package release, but the documented interface and guarantees are tested in
-> this repository.
+> **Status: published, pre-1.0.** The CLI surface can still move between minor
+> versions, but the documented interface and guarantees are tested in this
+> repository.
+
+## v0.4.11 — Packaging Blessed
+
+spoolctl is installable from PyPI. No behavior change to any verb;
+`CONTRACT_VERSION` remains `2`, `SCHEMA_VERSION` remains `6`, and runtime
+dependencies remain empty.
+
+- Packaging is blessed. `pip install spoolctl` / `uv tool install spoolctl` are
+  the supported installation paths; the README no longer disclaims them.
+- Removed references to a planned MCP server mode from the published contract
+  and documentation. The `contract_policy` string in `capabilities --json` now
+  describes the v0.4.7 additions as readiness diagnostics for automated
+  consumers, and the `doctor` documentation describes automated launchers
+  generally. MCP server mode was evaluated and will not be built; the readiness
+  and config surfaces it motivated stand on their own and are unchanged.
+- No verb, flag, schema, exit code, or database change.
 
 ## v0.4.10 — The `feedback` Verb and the Operation Layer
 

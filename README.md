@@ -15,11 +15,11 @@ No broker. No server. No dependencies.
 
 </div>
 
-> **Status: pre-release.** spoolctl v0.4.10 is implemented with contract version
-> `2`, local migrations, schemas, generated conformance probes, readiness
+> **Status: published, pre-1.0.** spoolctl v0.4.11 is on PyPI with contract
+> version `2`, local migrations, schemas, generated conformance probes, readiness
 > diagnostics, concurrency tests, and [documentation](docs/README.md). The CLI
-> surface may still move before a public package release, but the documented
-> interface and guarantees are tested in this repository.
+> surface can still move between minor versions, but the documented interface and
+> guarantees are tested in this repository.
 
 ---
 
@@ -187,13 +187,19 @@ readiness diagnostics, and the full architecture.
 
 ## Installation
 
-Packaging is not blessed yet. From a checkout, run `python -m spoolctl`; when packaging
-ships, the intended installation paths are:
-
 ```console
 $ uv tool install spoolctl        # or: pip install spoolctl
-$ curl -fsSLO https://spoolctl.dev/spoolctl.py   # single file, stdlib only — it just runs
 ```
+
+Zero runtime dependencies, Python 3.10+. Or run from a checkout with
+`python -m spoolctl`. For the single-file build, run
+`python3 scripts/build_single_file.py` from a checkout — it writes a standalone
+`dist/spoolctl.py` that runs anywhere a Python 3 interpreter exists, with nothing
+else to install.
+
+Versions are pre-1.0: the CLI contract is tested and documented, but it can still
+move between minor versions. `spoolctl capabilities --json` reports the contract
+version a given build implements.
 
 ## Limitations
 

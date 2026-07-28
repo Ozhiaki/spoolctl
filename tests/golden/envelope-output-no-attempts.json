@@ -12,7 +12,7 @@
     "ts_iso": "PINNED"
   },
   "ok": true,
-  "tool_version": "0.4.10",
+  "tool_version": "0.4.11",
   "warnings": [
     {
       "code": "NO_ATTEMPTS_YET",

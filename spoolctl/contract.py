@@ -995,7 +995,8 @@ CONTRACT_POLICY = (
     " rejecting inert or abbreviated flags, enforcing active idempotency"
     " execution-payload conflicts, making malformed inputs total and"
     " structured, declaring envelope, frames, raw, and text modes, and adding"
-    " read-only project config plus readiness diagnostics for MCP preparation."
+    " read-only project config plus readiness diagnostics for automated"
+    " consumers."
     " No contract_version 1 compatibility shim is provided before public release."
 )
 
