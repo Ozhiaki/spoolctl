@@ -4,6 +4,7 @@
 
 ![Status](https://img.shields.io/badge/status-pre--release-orange)
 [![CI](https://github.com/Ozhiaki/spoolctl/actions/workflows/ci.yml/badge.svg)](https://github.com/Ozhiaki/spoolctl/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/spoolctl.svg)](https://pypi.org/project/spoolctl/)
 ![Python](https://img.shields.io/badge/python-3.10%2B%20·%20stdlib%20only-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20·%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-Apache--2.0-green)
@@ -21,7 +22,32 @@ No broker. No server. No dependencies.
 > surface can still move between minor versions, but the documented interface and
 > guarantees are tested in this repository.
 
+```console
+$ uv tool install spoolctl        # or: pip install spoolctl
+```
+
 ---
+
+## TL;DR
+
+**The Problem:** Local shell queues are usually built for a human at a terminal.
+If the worker dies, a job fails, or an agent loses its session, the human becomes
+the recovery system.
+
+**The Solution:** spoolctl stores shell jobs in one SQLite file and lets any
+worker process claim, run, retry, recover, and report them without a daemon or
+broker.
+
+### Why Use spoolctl?
+
+| Capability | What It Gives You |
+|---|---|
+| Crash recovery | A SIGKILLed worker's job is reclaimed by another worker after positive death confirmation. |
+| No daemon | The SQLite database is the coordinator; workers are peer processes. |
+| Retries and dead-letter | Nonzero exits, timeouts, spawn failures, and reaped crashes get durable state. |
+| Agent-native output | `--json`, `brief`, `schema`, `capabilities`, `robot-docs`, and `feedback` are designed for automated callers. |
+| Resource lanes | `--queue` and `--slots` isolate scarce resources such as a GPU. |
+| Zero runtime dependencies | Python 3.10+ standard library only. |
 
 ## The Problem
 
@@ -63,7 +89,7 @@ arbitrary shell commands, with less infrastructure than either shelf:
 - **Zero install surface.** Python 3 standard library only. It's infrastructure you can
   install by writing one file into a sandbox.
 
-## Interface Preview
+## Quick Example
 
 *Pre-release: this is the committed CLI surface.*
 
@@ -109,6 +135,30 @@ $ spoolctl config-validate --json # validate .spoolctl/config.json without openi
 $ spoolctl doctor --json          # bounded readiness check for launchers
 $ spoolctl robot-docs guide --json # longer agent workflow guide
 $ spoolctl events --follow --json --max-events 1 # NDJSON data/control frames
+```
+
+## Quick Start
+
+From a checkout:
+
+```bash
+QS=$(mktemp -d)
+python3 -m spoolctl add --db "$QS/queue.db" -- echo "hello from spoolctl"
+python3 -m spoolctl work --db "$QS/queue.db" --drain
+python3 -m spoolctl output --db "$QS/queue.db" 1
+python3 -m spoolctl feedback --db "$QS/queue.db" --json 1
+rm -rf "$QS"
+```
+
+Installed as a tool:
+
+```bash
+QS=$(mktemp -d)
+spoolctl add --db "$QS/queue.db" --key demo -- echo "hello from spoolctl"
+spoolctl work --db "$QS/queue.db" --drain
+spoolctl wait --db "$QS/queue.db" 1
+spoolctl output --db "$QS/queue.db" 1
+rm -rf "$QS"
 ```
 
 ## Documentation
@@ -187,19 +237,156 @@ readiness diagnostics, and the full architecture.
 
 ## Installation
 
+### Package Install
+
 ```console
 $ uv tool install spoolctl        # or: pip install spoolctl
 ```
 
+### From a Checkout
+
 Zero runtime dependencies, Python 3.10+. Or run from a checkout with
-`python -m spoolctl`. For the single-file build, run
-`python3 scripts/build_single_file.py` from a checkout — it writes a standalone
-`dist/spoolctl.py` that runs anywhere a Python 3 interpreter exists, with nothing
-else to install.
+`python3 -m spoolctl`.
+
+### Single-File Build
+
+```console
+$ python3 scripts/build_single_file.py
+$ python3 dist/spoolctl.py --help
+```
+
+The build writes a standalone `dist/spoolctl.py` that runs anywhere a Python 3
+interpreter exists, with nothing else to install.
 
 Versions are pre-1.0: the CLI contract is tested and documented, but it can still
 move between minor versions. `spoolctl capabilities --json` reports the contract
 version a given build implements.
+
+## Commands
+
+| Verb | Purpose |
+|---|---|
+| `add` | Enqueue a command, with optional timeout, schedule, queue, tags, env, cwd, and idempotency key. |
+| `work` | Claim and run jobs. Use `--drain` for batch mode or `--queue` / `--slots` for lanes. |
+| `wait` | Block until jobs settle; exits `6` if any awaited job does not succeed. |
+| `status` | Show queue counts, scheduled count, per-queue counts, and recent dead jobs. |
+| `list` | Enumerate jobs with state, queue, priority, and tag filters. |
+| `show` | Show one job, including attempts, events, tags, note, cwd, env, and failure reason. |
+| `output` | Read captured stdout/stderr for the latest or selected attempt. |
+| `feedback` | Get one job verdict: terminal, succeeded, exit code, failure reason, remediation, and output tails. |
+| `retry` | Requeue a dead, failed, or forced running job with a fresh retry budget. |
+| `cancel` | Cancel queued work or stop a running process group with confirmation. |
+| `prune` | Delete old terminal jobs and output, with `--dry-run` or `--yes`. |
+| `events` | Read, long-poll, or follow the durable event ledger. |
+| `config-show` | Explain the effective database path and config source. |
+| `config-validate` | Validate `.spoolctl/config.json` without opening the database. |
+| `doctor` | Check local readiness without mutating queue state. |
+| `brief` | Print a compact agent-facing usage reference. |
+| `schema` | Export JSON Schema for envelopes, verb payloads, and streams. |
+| `capabilities` | Export the machine-readable contract. |
+| `robot-docs guide` | Print longer agent workflow guidance. |
+
+### Command Examples
+
+| Verb | Example |
+|---|---|
+| `add` | `spoolctl add --timeout 600 -- python fetch.py` |
+| `work` | `spoolctl work --drain` |
+| `wait` | `spoolctl wait 1 2 3` |
+| `status` | `spoolctl status --json` |
+| `list` | `spoolctl list --state queued --queue gpu --json` |
+| `show` | `spoolctl show 7 --json` |
+| `output` | `spoolctl output 7 --stream stderr` |
+| `feedback` | `spoolctl feedback 7 --json` |
+| `retry` | `spoolctl retry 7` |
+| `cancel` | `spoolctl cancel 7` |
+| `prune` | `spoolctl prune --older-than 30d --dry-run` |
+| `events` | `spoolctl events --follow --json --max-events 10` |
+| `config-show` | `spoolctl config-show --json` |
+| `config-validate` | `spoolctl config-validate --json` |
+| `doctor` | `spoolctl doctor --json` |
+| `brief` | `spoolctl brief` |
+| `schema` | `spoolctl schema --json --verb feedback` |
+| `capabilities` | `spoolctl capabilities --json` |
+| `robot-docs guide` | `spoolctl robot-docs guide --json` |
+
+Full flag and output details are generated in [docs/verbs.md](docs/verbs.md).
+
+## Configuration
+
+The database path resolves in this order:
+
+1. `--db PATH`
+2. `SPOOLCTL_DB`
+3. `.spoolctl/config.json`
+4. `./.spoolctl/queue.db`
+
+Example project config:
+
+```json
+{
+  "db_path": "queue.db"
+}
+```
+
+Check what a command will use:
+
+```bash
+spoolctl config-show --json
+spoolctl config-validate --json
+spoolctl doctor --json
+```
+
+Relative `db_path` values are resolved relative to the config file's directory.
+
+## Troubleshooting
+
+### `UNKNOWN_COMMAND`
+
+The verb is not part of the current contract.
+
+```bash
+spoolctl capabilities --json
+spoolctl brief
+```
+
+### `UNKNOWN_FLAG`
+
+Flag abbreviations are disabled. Use the complete flag name shown in help.
+
+```bash
+spoolctl add --help
+spoolctl work --help
+```
+
+### `SAFETY_BLOCK`
+
+The command would delete data or interrupt a running process. Add the explicit
+confirmation flag after you inspect the target.
+
+```bash
+spoolctl prune --older-than 30d --dry-run
+spoolctl prune --older-than 30d --yes
+spoolctl cancel --running --yes 7
+```
+
+### `LOCKED`
+
+SQLite could not get the write lock within the configured busy timeout. Retry the
+same command after a short delay.
+
+```bash
+spoolctl status --json
+```
+
+### `doctor` exits `3` but reports `ok:true`
+
+The diagnostic command ran correctly, but the queue is not ready. JSON consumers
+should read `data.ready`.
+
+```bash
+spoolctl doctor --json
+```
 
 ## Limitations
 
@@ -239,6 +426,20 @@ whole queue is one inspectable file.
 **Why Python stdlib only?**
 Zero-dependency single-file Python is the most installable software artifact that exists:
 every macOS and Linux box can run it, and an agent can "install" it by writing a file.
+
+**Is my data safe?**
+spoolctl has no network surface and no telemetry. It does store commands,
+metadata, and captured output in plaintext in the queue directory, so protect the
+database and output files with filesystem permissions.
+
+**Does spoolctl run jobs exactly once?**
+No. It is at-least-once by design. If a worker dies after the command has already
+performed side effects but before the result is recorded, another worker can run
+the command again.
+
+**Why does `failed` appear in status if it is reserved?**
+`failed` remains in the contract for schema compatibility, but normal job-owned
+failures go back to `queued` while retry budget remains and then become `dead`.
 
 ## About Contributions
 
