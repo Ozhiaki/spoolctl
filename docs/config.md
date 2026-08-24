@@ -1,3 +1,10 @@
+---
+title: Config
+description: Configure the spoolctl database path and project settings.
+bucket: guides
+order: 50
+---
+
 # Config
 
 ## Database path resolution

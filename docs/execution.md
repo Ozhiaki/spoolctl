@@ -1,3 +1,10 @@
+---
+title: Execution
+description: Learn how spoolctl executes commands, timeouts, and process groups.
+bucket: guides
+order: 40
+---
+
 # Execution
 
 ## Command form
@@ -48,7 +55,7 @@ Semantics:
 - NUL bytes are rejected in both keys and values.
 - `add` and `list` expose env key *names* only. `show` is the explicit plaintext surface that displays values. This is a deliberate privacy boundary: listing a queue does not reveal secret values, but anyone with `show` access sees them.
 
-Env values are stored in the database in plaintext. Do not pass secrets via `--env`; use the process environment or a secret store instead. See [Security](security.md).
+Env values are stored in the database in plaintext. Do not pass secrets via `--env`; use the process environment or a secret store instead. See [Security](/docs/security/).
 
 ## Timeouts
 
@@ -61,7 +68,7 @@ When a job exceeds its timeout:
 3. If still alive, SIGKILL is sent to the process group.
 4. The attempt is recorded as `timed_out` with failure reason `timeout`.
 
-The process-group kill is made possible by `start_new_session=True` on the child process. See [Guarantees](guarantees.md) for the limitation when a child calls `setsid()`.
+The process-group kill is made possible by `start_new_session=True` on the child process. See [Guarantees](/docs/guarantees/) for the limitation when a child calls `setsid()`.
 
 ## Retry budgets
 
@@ -77,4 +84,4 @@ Governs worker crashes. Each time a worker dies and the job is reaped, the crash
 
 The two budgets are independent. A job with `--max-retries 3 --max-crashes 2` can fail up to 3 times from its own errors and be reaped up to 2 times from worker crashes, for a total of up to 8 execution attempts.
 
-Backoff applies to both paths: `min(60, 2 * 2^(attempts-1))` seconds. See [Guarantees](guarantees.md) for the full formula.
+Backoff applies to both paths: `min(60, 2 * 2^(attempts-1))` seconds. See [Guarantees](/docs/guarantees/) for the full formula.

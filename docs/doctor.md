@@ -1,3 +1,10 @@
+---
+title: Doctor
+description: Check that spoolctl is ready to run and interpret its exit contract.
+bucket: guides
+order: 60
+---
+
 # Doctor
 
 `doctor` is a bounded readiness diagnostic for agents and automated launchers. It checks whether spoolctl can operate against the configured database without actually opening or mutating it in production mode.

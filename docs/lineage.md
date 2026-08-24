@@ -1,3 +1,10 @@
+---
+title: Lineage
+description: Learn how spoolctl relates to the Ozhiaki tool family.
+bucket: project
+order: 50
+---
+
 # Lineage
 
 spoolctl is part of the Ozhiaki family of CLI tools:

@@ -1,3 +1,10 @@
+---
+title: Install
+description: Install spoolctl from source or as a single Python file.
+bucket: guides
+order: 10
+---
+
 # Install
 
 spoolctl requires Python 3.10 or later on macOS or Linux. Windows is not supported; SQLite WAL mode and process-group semantics behave differently on Windows and the test suite does not cover it.

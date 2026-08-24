@@ -1,3 +1,10 @@
+---
+title: Project Overview
+description: Learn what spoolctl is and where its source code lives.
+bucket: project
+order: 5
+---
+
 # Project Overview
 
 spoolctl is a local job queue with retries, exponential backoff, and crash recovery, built for operators (human or automated) who won't be watching when things fail. It is a single-machine, stdlib-only Python tool whose coordinator is a SQLite database file, not a daemon.

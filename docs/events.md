@@ -1,3 +1,10 @@
+---
+title: Events
+description: Stream and inspect the spoolctl append-only event ledger.
+bucket: guides
+order: 70
+---
+
 # Events
 
 The `job_events` table is an append-only ledger of every state transition. Subscribers are readers of the SQLite file; there is no daemon, no broker, and no push mechanism.

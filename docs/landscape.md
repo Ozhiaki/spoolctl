@@ -1,3 +1,10 @@
+---
+title: Landscape
+description: See where spoolctl fits in the local automation toolchain.
+bucket: project
+order: 20
+---
+
 # Landscape
 
 Where spoolctl fits in the spectrum of tools that run commands.

@@ -1,3 +1,10 @@
+---
+title: Guarantees
+description: Learn the spoolctl safety, recovery, and delivery guarantees.
+bucket: concepts
+order: 20
+---
+
 # Guarantees
 
 spoolctl makes specific reliability claims, each backed by a mechanism, a test, and an honestly stated failure mode.
@@ -82,4 +89,4 @@ All workers must see the same database file on the same local disk. There is no 
 
 `SPOOLCTL_TEST_HEARTBEAT_INTERVAL` and `SPOOLCTL_TEST_REAP_THRESHOLD` are environment variables that override the heartbeat interval and reap threshold. They exist so the test suite can compress a 30-second reap cycle into a fast test. They are test knobs, not production tuning.
 
-Both are published in `capabilities --json` because they are part of the observable contract. See [Limits Reference](reference/limits.md) for their bounds.
+Both are published in `capabilities --json` because they are part of the observable contract. See [Limits Reference](/docs/limits/) for their bounds.

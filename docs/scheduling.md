@@ -1,3 +1,10 @@
+---
+title: Scheduling
+description: Schedule spoolctl jobs with delays, priorities, queues, and drain mode.
+bucket: guides
+order: 30
+---
+
 # Scheduling
 
 ## Delayed submission
@@ -9,7 +16,7 @@ Jobs can be delayed at submit time:
 
 `--after` and `--at` are mutually exclusive.
 
-A delayed job enters state `queued` with a future `next_run_at`. It is not a separate state; `scheduled` is a derived count (see [Concepts](concepts.md)).
+A delayed job enters state `queued` with a future `next_run_at`. It is not a separate state; `scheduled` is a derived count (see [Concepts](/docs/concepts/)).
 
 ## Priorities
 

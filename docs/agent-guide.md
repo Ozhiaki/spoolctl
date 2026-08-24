@@ -1,3 +1,10 @@
+---
+title: Agent Guide
+description: Use spoolctl safely from automated and agent-driven workflows.
+bucket: guides
+order: 80
+---
+
 # Agent Guide
 
 This page is for agents, scripts, and automated consumers that integrate with spoolctl programmatically.
@@ -17,13 +24,13 @@ These are the contract's public surface. Any behavior not documented in them is 
 
 ## Check readiness
 
-Before operating on a queue, run [doctor](doctor.md):
+Before operating on a queue, run [doctor](/docs/doctor/):
 
 ```bash
 python3 -m spoolctl doctor --db ./queue.db --json
 ```
 
-Key off `data.ready`, not `errors`. See [Doctor](doctor.md) for the full exit contract.
+Key off `data.ready`, not `errors`. See [Doctor](/docs/doctor/) for the full exit contract.
 
 ## Submit-many-then-wait
 

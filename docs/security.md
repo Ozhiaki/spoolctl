@@ -1,3 +1,10 @@
+---
+title: Security
+description: Review the spoolctl security model for a tool that runs commands.
+bucket: project
+order: 40
+---
+
 # Security
 
 spoolctl's entire function is executing arbitrary shell commands. This page documents the security model and its boundaries.

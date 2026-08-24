@@ -1,12 +1,19 @@
+---
+title: FAQ
+description: Read direct answers to common questions about spoolctl.
+bucket: project
+order: 30
+---
+
 # FAQ
 
 **Is this exactly-once?**
 
-No, and nothing running arbitrary shell commands can be. At-least-once with absolute mutual exclusion (never two live workers on one job) is the honest maximum, and it's what spoolctl guarantees. See [Guarantees](guarantees.md).
+No, and nothing running arbitrary shell commands can be. At-least-once with absolute mutual exclusion (never two live workers on one job) is the honest maximum, and it's what spoolctl guarantees. See [Guarantees](/docs/guarantees/).
 
 **Why not just use pueue?**
 
-If you're a human watching your queue, do. pueue's daemon is also its weakness for unattended use: it's a single coordinator with no automatic retry, no backoff, and no dead-letter state. spoolctl is for work that has to survive nobody watching. See [Comparison](comparison.md).
+If you're a human watching your queue, do. pueue's daemon is also its weakness for unattended use: it's a single coordinator with no automatic retry, no backoff, and no dead-letter state. spoolctl is for work that has to survive nobody watching. See [Comparison](/docs/comparison/).
 
 **Why not Celery / RQ / huey?**
 
@@ -14,7 +21,7 @@ Those queue *functions in your application*. spoolctl queues *commands on your m
 
 **Why not cron or systemd timers?**
 
-cron and systemd timers are schedulers, not queues. They answer "run this at 2 AM" but have no concept of job state, retry on failure, concurrent claiming, or crash recovery. A common pattern is using cron to submit jobs to spoolctl. See [Comparison](comparison.md).
+cron and systemd timers are schedulers, not queues. They answer "run this at 2 AM" but have no concept of job state, retry on failure, concurrent claiming, or crash recovery. A common pattern is using cron to submit jobs to spoolctl. See [Comparison](/docs/comparison/).
 
 **What does "agent-native" mean concretely?**
 

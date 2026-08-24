@@ -1,3 +1,10 @@
+---
+title: Quickstart
+description: Run a job and see spoolctl recover it after a worker crash.
+bucket: guides
+order: 20
+---
+
 # Quickstart
 
 Five minutes from zero to crash recovery. Every command below is runnable verbatim from a checkout.
@@ -107,7 +114,7 @@ Start a new worker. It will detect the dead worker via heartbeat staleness and P
 python3 -m spoolctl work --db $QS/queue.db &
 ```
 
-After roughly 30 seconds (the reap threshold -- see [Guarantees](guarantees.md) for why this delay exists and what it protects against), the new worker reaps and re-executes:
+After roughly 30 seconds (the reap threshold -- see [Guarantees](/docs/guarantees/) for why this delay exists and what it protects against), the new worker reaps and re-executes:
 
 ```
 spoolctl: reaped job 4 (worker pid <PID> died); now queued
@@ -123,6 +130,6 @@ rm -rf $QS
 
 ## Next steps
 
-- [Concepts](concepts.md) for the object model and state machine
-- [Guarantees](guarantees.md) for the full reliability story
-- [Agent Guide](agent-guide.md) for building scripts and agents on top of spoolctl
+- [Concepts](/docs/concepts/) for the object model and state machine
+- [Guarantees](/docs/guarantees/) for the full reliability story
+- [Agent Guide](/docs/agent-guide/) for building scripts and agents on top of spoolctl

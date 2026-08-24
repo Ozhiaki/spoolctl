@@ -1,3 +1,10 @@
+---
+title: Comparison
+description: Compare spoolctl with other local command queue tools.
+bucket: project
+order: 10
+---
+
 # Comparison
 
 ## Summary table

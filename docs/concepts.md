@@ -1,3 +1,10 @@
+---
+title: Concepts
+description: Learn the spoolctl job, attempt, queue, and state model.
+bucket: concepts
+order: 10
+---
+
 # Concepts
 
 ## Jobs
@@ -40,7 +47,7 @@ A queued job with `next_run_at` in the future is reported as "scheduled" in stat
 
 ## Event Ledger
 
-Every state transition writes to the `job_events` table: an append-only ledger of `(job_id, event_type, timestamp, worker_id, detail)` rows. The ledger is the daemonless event stream; see [Events](events.md) for how to consume it.
+Every state transition writes to the `job_events` table: an append-only ledger of `(job_id, event_type, timestamp, worker_id, detail)` rows. The ledger is the daemonless event stream; see [Events](/docs/events/) for how to consume it.
 
 Event types: `added`, `claimed`, `succeeded`, `failed`, `timed_out`, `reaped`, `dead`, `retried`, `canceled`.
 
@@ -75,4 +82,4 @@ When an attempt ends in failure, the reason is recorded:
 | `canceled` | Cancel or force-retry. |
 | `unknown` | Historical backfill for pre-v6 failures. |
 
-See [Guarantees](guarantees.md) for how these interact with retry budgets.
+See [Guarantees](/docs/guarantees/) for how these interact with retry budgets.

@@ -1,3 +1,10 @@
+---
+title: JSON Contract
+description: Use the spoolctl JSON envelope and schema in programs and agents.
+bucket: guides
+order: 90
+---
+
 # JSON Contract
 
 ## Envelope structure
@@ -29,7 +36,7 @@ spoolctl has four output modes. The mode is determined by flags and context:
 
 `envelope` is the stable machine interface. `text` is for humans and is not part of the contract.
 
-`frames` mode skips envelope emission entirely. The stream consists of data frames (event objects) and control frames (`{"control": {"type": ..., "reason": ...}}`). See [Events](events.md).
+`frames` mode skips envelope emission entirely. The stream consists of data frames (event objects) and control frames (`{"control": {"type": ..., "reason": ...}}`). See [Events](/docs/events/).
 
 `raw` mode writes captured output bytes directly to stdout with no framing. It is mutually exclusive with `--json`.
 
@@ -67,7 +74,7 @@ Warning objects in `warnings[]`:
 }
 ```
 
-See [Error Reference](errors.md) for the full code registry.
+See [Error Reference](/docs/errors/) for the full code registry.
 
 ## `CONTRACT_VERSION` policy
 
@@ -79,4 +86,4 @@ Consumers that depend on specific contract behavior should check `meta.contract_
 
 ## Consuming `schema --json`
 
-`schema --json` provides the structural schema for envelopes and per-verb data payloads. Use it to validate responses programmatically or to generate client bindings. See [Agent Guide](agent-guide.md).
+`schema --json` provides the structural schema for envelopes and per-verb data payloads. Use it to validate responses programmatically or to generate client bindings. See [Agent Guide](/docs/agent-guide/).

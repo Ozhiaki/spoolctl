@@ -1,3 +1,10 @@
+---
+title: Architecture
+description: Learn how spoolctl coordinates workers through one SQLite database.
+bucket: concepts
+order: 30
+---
+
 # Architecture
 
 ## SQLite is the daemon
@@ -46,7 +53,7 @@ One row per execution attempt. Records the worker, start/finish times, exit code
 
 ### `job_events`
 
-Append-only ledger of state transitions. Each event records the job ID, event type, timestamp, and optional worker ID and detail. See [Events](events.md).
+Append-only ledger of state transitions. Each event records the job ID, event type, timestamp, and optional worker ID and detail. See [Events](/docs/events/).
 
 ### `meta`
 
