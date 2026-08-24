@@ -312,6 +312,11 @@ class TestGuardedRecording(ConcurrencyTestCase):
             try:
                 os.killpg(child_pid, 0)
                 return False
+            except PermissionError:
+                # Some macOS runners deny a process-group probe after the
+                # worker has ended the group. The final stale-result checks
+                # below still prove the required database behavior.
+                return True
             except ProcessLookupError:
                 return True
         self.wait_for(attempt_over, timeout=30, message="attempt to end")
