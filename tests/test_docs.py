@@ -1,7 +1,4 @@
-"""Documentation tests: drift gates, coverage gates, structural gates.
-
-All tests are stdlib-only and must pass without mkdocs installed.
-"""
+"""Documentation tests: drift gates, coverage gates, and Astro structure."""
 
 from __future__ import annotations
 
@@ -13,7 +10,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 DOCS = REPO / "docs"
 PARENT_DIR = REPO.parent
-MKDOCS_YML = REPO / "mkdocs.yml"
 
 GENERATED_PAGES = [
     DOCS / "verbs.md",
@@ -44,64 +40,6 @@ def _all_docs_md():
 
 def _is_generated(path):
     return path in GENERATED_PAGES
-
-
-def _parse_mkdocs_nav():
-    """Narrow line-oriented parser for the nav: block in mkdocs.yml.
-
-    Only handles the fixed indentation used in this project:
-    - nav list items at 2-space indent: "  - Label: path.md"
-    - section headers at 2-space indent: "  - Section Name:"
-    - section items at 4-space indent: "    - Label: path.md"
-
-    Fails closed on any line inside the nav block it cannot classify.
-    """
-    if not MKDOCS_YML.exists():
-        return None
-
-    lines = MKDOCS_YML.read_text().splitlines()
-    in_nav = False
-    nav_entries = []
-
-    for lineno, line in enumerate(lines, 1):
-        if not in_nav:
-            if line.rstrip() == "nav:":
-                in_nav = True
-            continue
-
-        if not line.strip():
-            continue
-
-        if not line.startswith(" "):
-            break
-
-        stripped = line.lstrip()
-        indent = len(line) - len(stripped)
-
-        if not stripped.startswith("- "):
-            raise ValueError(
-                f"unsupported mkdocs.yml nav shape: line {lineno}: {line!r}"
-            )
-
-        item = stripped[2:].strip()
-
-        if ":" not in item:
-            raise ValueError(
-                f"unsupported mkdocs.yml nav shape: line {lineno}: {line!r}"
-            )
-
-        key, _, val = item.partition(":")
-        val = val.strip()
-
-        if indent not in (2, 4, 6):
-            raise ValueError(
-                f"unsupported mkdocs.yml nav shape: line {lineno}: {line!r}"
-            )
-
-        if val:
-            nav_entries.append(val)
-
-    return nav_entries
 
 
 def _extract_md_links(content):
@@ -362,55 +300,6 @@ class TestStructural(unittest.TestCase):
                 target.exists(),
                 f"README.md: broken link '{link}'"
             )
-
-
-class TestNav(unittest.TestCase):
-    """mkdocs.yml nav tests."""
-
-    def test_nav_parser_works(self):
-        entries = _parse_mkdocs_nav()
-        self.assertIsNotNone(entries, "mkdocs.yml not found")
-        self.assertGreater(len(entries), 0, "nav has no entries")
-
-    def test_every_docs_page_in_nav(self):
-        entries = _parse_mkdocs_nav()
-        if entries is None:
-            self.skipTest("mkdocs.yml not found")
-
-        docs_pages = set()
-        for path in _all_docs_md():
-            rel = str(path.relative_to(DOCS))
-            docs_pages.add(rel)
-
-        for page in docs_pages:
-            self.assertIn(page, entries,
-                          f"docs/{page} not in mkdocs nav")
-
-    def test_every_nav_entry_exists(self):
-        entries = _parse_mkdocs_nav()
-        if entries is None:
-            self.skipTest("mkdocs.yml not found")
-
-        for entry in entries:
-            path = DOCS / entry
-            self.assertTrue(
-                path.exists(),
-                f"nav entry '{entry}' points to missing file"
-            )
-
-    def test_no_changelog_nav_entry(self):
-        """v0.4.8: no changelog.md, no changelog nav entry."""
-        entries = _parse_mkdocs_nav()
-        if entries is None:
-            self.skipTest("mkdocs.yml not found")
-
-        changelog = DOCS / "changelog.md"
-        if changelog.exists():
-            self.assertIn("changelog.md", entries,
-                          "changelog.md exists but is not in nav")
-        else:
-            self.assertNotIn("changelog.md", entries,
-                             "changelog.md does not exist but is in nav")
 
 
 class TestLeakGate(unittest.TestCase):

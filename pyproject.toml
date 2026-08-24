@@ -21,9 +21,6 @@ classifiers = [
 ]
 dependencies = []
 
-[project.optional-dependencies]
-docs = ["mkdocs-material>=9"]
-
 [project.urls]
 Homepage = "https://github.com/Ozhiaki/spoolctl"
 Repository = "https://github.com/Ozhiaki/spoolctl"
