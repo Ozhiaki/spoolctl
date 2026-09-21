@@ -47,6 +47,7 @@ runner gets SIGKILL, and nobody is watching?**
 | [RQ](https://github.com/rq/rq) | Application task queue | Crash recovery of abandoned jobs, retries, registries | Jobs are Python functions. Needs Redis. | [Compare](/docs/comparisons/spoolctl-vs-rq/) |
 | at, batch | Time-based command scheduler | Shell commands, delayed start, durable spool files, base-system install | Runs a job once. No retry, no timeout, no concurrency limit, no JSON. Output is mailed and deleted. | [Compare](/docs/comparisons/spoolctl-vs-at/) |
 | systemd-run | Service-manager command runner | Shell commands, opt-in restart, per-job timeout, transient timers, journal output | Not a queue: one transient unit per call. Runtime only, lost on reboot. Linux and systemd only. | [Compare](/docs/comparisons/spoolctl-vs-systemd-run/) |
+| [Slurm](https://github.com/SchedMD/slurm) | Cluster batch scheduler | Durable recoverable queue, requeue on failure, per-job time limit, dependencies, arrays, JSON | Overlaps most on features. A cluster system: control daemon, node daemons, auth service, config. Linux, root. | [Compare](/docs/comparisons/spoolctl-vs-slurm/) |
 | [litequeue](https://github.com/litements/litequeue) | SQLite message queue | Persistent SQLite queue with claims | A message queue. It stores messages; it runs no commands. | Context only |
 | cron, systemd timers | Scheduler | Starts commands on a schedule | No job state, retry, or claim. A common pattern: cron submits jobs to spoolctl. | Context only |
 
