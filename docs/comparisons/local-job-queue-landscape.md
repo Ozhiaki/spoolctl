@@ -45,6 +45,7 @@ runner gets SIGKILL, and nobody is watching?**
 | [GNU parallel](https://www.gnu.org/software/parallel/) | Parallel batch runner | Retries, per-job timeout, job log, resume, SQL worker mode | Retries are immediate, with no backoff. Its manual says more than one SQL worker may run a job more than once. | [Compare](/docs/comparisons/spoolctl-vs-gnu-parallel/) |
 | [huey](https://github.com/coleifer/huey) | Application task queue | SQLite backend, retries with backoff, priorities, delays | Jobs are Python functions. A task interrupted by SIGKILL is lost. | [Compare](/docs/comparisons/spoolctl-vs-huey/) |
 | [RQ](https://github.com/rq/rq) | Application task queue | Crash recovery of abandoned jobs, retries, registries | Jobs are Python functions. Needs Redis. | [Compare](/docs/comparisons/spoolctl-vs-rq/) |
+| at, batch | Time-based command scheduler | Shell commands, delayed start, durable spool files, base-system install | Runs a job once. No retry, no timeout, no concurrency limit, no JSON. Output is mailed and deleted. | [Compare](/docs/comparisons/spoolctl-vs-at/) |
 | [litequeue](https://github.com/litements/litequeue) | SQLite message queue | Persistent SQLite queue with claims | A message queue. It stores messages; it runs no commands. | Context only |
 | cron, systemd timers | Scheduler | Starts commands on a schedule | No job state, retry, or claim. A common pattern: cron submits jobs to spoolctl. | Context only |
 
