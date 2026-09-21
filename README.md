@@ -51,13 +51,13 @@ broker.
 
 ## The Problem
 
-Every local job-queue tool assumes a human is watching. pueue, task-spooler, and nq give
+Most local job-queue tools assume a human is watching. pueue, task-spooler, and nq give
 you a CLI for queueing shell commands — but if the process running your job is SIGKILLed,
-the job is just gone. No retry, no backoff, no dead-letter state. *You* were the reliability
-layer: you watched the terminal, you reran the failure.
+the job does not run again. None of them retries a failed job on its own. *You* were the
+reliability layer: you watched the terminal, you reran the failure.
 
-The tools that do have real reliability semantics — Celery, RQ, huey, and the wave of
-SQLite/Postgres-backed job queues — are libraries. Jobs are functions in your codebase,
+The tools with automatic retry — Celery, RQ, huey, and the wave of SQLite/Postgres-backed
+job queues — are libraries. Jobs are functions in your codebase,
 workers belong to an application runtime, and there's a broker or at least a `pip install`
 between you and a queue.
 
@@ -191,9 +191,10 @@ agent guide, JSON contract, verb/error/state reference, and more.
 |  | spoolctl | pueue | task-spooler | nq | queue libraries¹ |
 |---|---|---|---|---|---|
 | Jobs are shell commands | ✓ | ✓ | ✓ | ✓ | ✗ (jobs are code) |
-| No daemon required | ✓ | ✗ (`pueued`) | ✗ | ✓ | n/a (embedded) |
-| Concurrent independent workers | ✓ | within one daemon | ✗ | ✗ | ✓ |
-| Job survives SIGKILL of its runner | ✓ | ✗ | ✗ | ✗ | ✓ |
+| No daemon required | ✓ | ✗ (`pueued`) | ✗ | ✓ | ✗ (consumer + broker/storage) |
+| Parallel jobs | ✓ (independent workers) | within one daemon | within one server | ✗ | ✓ |
+| Queue state survives coordinator death | ✓ | ✓ | ✗ | ✗ (reboot) | ✓ |
+| Running job reruns after runner SIGKILL | ✓ | ✗ | ✗ | ✗ | varies (RQ ✓, huey ✗) |
 | Automatic retry + backoff | ✓ | ✗ | ✗ | ✗ | ✓ |
 | Dead-letter state | ✓ | ✗ | ✗ | ✗ | varies |
 | Per-job timeout, process-group kill | ✓ | ✗ | ✗ | ✗ | varies |
@@ -206,6 +207,9 @@ are libraries embedded in an application runtime, not standalone tools.
 pueue is a great tool if you are a human supervising long-running commands — it has a
 richer interactive surface (pause/resume, dependencies, TUI-grade status) and it should
 keep that market. spoolctl exists for the operator who won't be there when the job fails.
+
+Detailed, source-pinned pages compare spoolctl with pueue, task-spooler, nq, GNU parallel,
+huey, and RQ: see [Comparison](docs/comparison.md).
 
 ## How It Works
 
@@ -410,9 +414,9 @@ Read these before adopting. They are design decisions, not roadmap gaps:
 ## FAQ
 
 **Why not just use pueue?**
-If you're a human watching your queue, do. pueue's daemon is also its weakness for
-unattended use: it's a single coordinator with no automatic retry, no backoff, and no
-dead-letter state. spoolctl is for work that has to survive nobody watching.
+If you're a human watching your queue, do. pueue is built for that. After a daemon crash
+it restores its queue, but it marks running tasks `Killed` and pauses groups until a human
+resumes them. It has no automatic retry and no backoff. spoolctl is for work that has to survive nobody watching.
 
 **Why not Celery / RQ / huey?**
 Those queue *functions in your application*. spoolctl queues *commands on your machine*.

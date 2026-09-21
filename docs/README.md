@@ -60,6 +60,7 @@
 ### Positioning
 
 - [Comparison](/docs/comparison/) -- spoolctl vs pueue, task-spooler, nq, and others
+- [Local job queue landscape](/docs/comparisons/local-job-queue-landscape/) -- detailed, source-pinned pages for pueue, task-spooler, nq, GNU parallel, huey, and RQ
 - [Landscape](/docs/landscape/) -- where spoolctl fits in the tooling layers
 - [FAQ](/docs/faq/) -- common questions and honest answers
 
