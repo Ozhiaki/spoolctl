@@ -16,12 +16,20 @@ from unittest import mock
 from spoolctl import store, worker
 
 
+# A marker that cannot appear in an interpreter path. The repo .venv path
+# contains "spoolctl", so the production marker ("spoolctl") makes every
+# sys.executable process look like a worker. Patch the marker to this
+# sentinel for the liveness tests so detection turns only on the argv token
+# we add, not on where Python happens to live.
+FAKE_MARKER = "spoolctl-worker-liveness-sentinel-4d9e1"
+
+
 def spawn_fake_worker(*, looks_like_spoolctl: bool) -> subprocess.Popen:
     # ps -o command= shows full argv, so an extra argv token is enough to
     # make (or not make) the process look like a spoolctl worker.
     argv = [sys.executable, "-c", "import time; time.sleep(120)"]
     if looks_like_spoolctl:
-        argv.append("spoolctl-worker")
+        argv.append(FAKE_MARKER)
     return subprocess.Popen(argv)
 
 
@@ -51,6 +59,7 @@ class ReaperTestCase(unittest.TestCase):
         return reaped, err.getvalue()
 
 
+@mock.patch.object(worker, "WORKER_CMDLINE_MARKER", FAKE_MARKER)
 class TestLiveness(unittest.TestCase):
     def test_gone_pid_is_dead(self):
         proc = spawn_fake_worker(looks_like_spoolctl=False)
@@ -99,6 +108,7 @@ class TestLiveness(unittest.TestCase):
             self.assertFalse(worker.is_worker_pid_dead(12345))
 
 
+@mock.patch.object(worker, "WORKER_CMDLINE_MARKER", FAKE_MARKER)
 class TestReapPass(ReaperTestCase):
     def test_dead_worker_job_reaped_and_requeued(self):
         proc = spawn_fake_worker(looks_like_spoolctl=True)
