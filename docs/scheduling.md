@@ -51,6 +51,17 @@ python3 -m spoolctl work --queue cpu &
 
 The GPU worker claims at most 2 concurrent GPU training jobs, highest priority first. The CPU worker handles preprocessing independently.
 
+### Holding a lane (draining it)
+
+`hold --queue gpu` holds a lane: from then on no worker claims a new job from it, while the jobs already running there finish normally; nothing is killed. Queued jobs wait, and other lanes are unaffected. The hold is stored in the database, so it survives restarts, until `hold --queue gpu --release` lets workers claim from the lane again. Both are idempotent: `data.changed` says whether the call changed anything, and `data.running` / `data.queued` how many jobs are still running and waiting in the lane. `status --json` lists held lanes in `data.holds`.
+
+Use it to take a resource out of service gracefully (maintenance, a host going away): hold its lane, wait for `running` to reach 0, then work on it. A `work --drain` worker on a held lane exits once the lane's running jobs finish, since nothing will claim its queued jobs until release.
+
+```bash
+python3 -m spoolctl hold --queue gpu --json            # running jobs finish; none start
+python3 -m spoolctl hold --queue gpu --release --json  # claim again
+```
+
 ## Drain semantics
 
 When a worker has no more claimable jobs, it checks whether the queue is "settled" before stopping:
@@ -59,6 +70,7 @@ When a worker has no more claimable jobs, it checks whether the queue is "settle
 - Queued jobs that are currently eligible hold drain open.
 - Queued retry/reap backoff rows (attempts > 0, future `next_run_at`) hold drain open.
 - Queued user-delayed rows (attempts = 0, future `next_run_at`) do **not** hold drain open.
+- Queued rows of a held lane (`hold --queue`) do **not** hold drain open: nothing claims them until the lane is released.
 
 The distinction matters: a worker that has finished all current work will stop even if user-delayed jobs are scheduled for later. Those jobs will be served when a worker is running at their eligible time.
 

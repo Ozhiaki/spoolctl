@@ -279,6 +279,7 @@ version a given build implements.
 | `output` | Read captured stdout/stderr for the latest or selected attempt. |
 | `feedback` | Get one job verdict: terminal, succeeded, exit code, failure reason, remediation, and output tails. |
 | `retry` | Requeue a dead, failed, or forced running job with a fresh retry budget. |
+| `hold` | Hold a lane (drain it): its running jobs finish, no new job starts until `--release`. |
 | `cancel` | Cancel queued work or stop a running process group with confirmation. |
 | `prune` | Delete old terminal jobs and output, with `--dry-run` or `--yes`. |
 | `events` | Read, long-poll, or follow the durable event ledger. |
@@ -303,6 +304,7 @@ version a given build implements.
 | `output` | `spoolctl output 7 --stream stderr` |
 | `feedback` | `spoolctl feedback 7 --json` |
 | `retry` | `spoolctl retry 7` |
+| `hold` | `spoolctl hold --queue gpu` |
 | `cancel` | `spoolctl cancel 7` |
 | `prune` | `spoolctl prune --older-than 30d --dry-run` |
 | `events` | `spoolctl events --follow --json --max-events 10` |

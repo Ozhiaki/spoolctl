@@ -171,6 +171,7 @@
         "doctor",
         "events",
         "feedback",
+        "hold",
         "list",
         "output",
         "prune",
@@ -644,6 +645,17 @@
       "--after",
       "--at epoch seconds"
     ],
+    "hold": {
+      "claimed_false": "work --once --json {claimed:false} on a held lane",
+      "durable": true,
+      "effect": "a held lane starts no new job; its running jobs finish",
+      "status": "status --json data.holds lists held lanes",
+      "verbs": [
+        "hold --queue NAME",
+        "hold --queue NAME --release"
+      ],
+      "work_drain": "work --drain on a held lane exits once its running jobs finish"
+    },
     "priority": {
       "default": 0,
       "max": 2147483647,
@@ -4775,6 +4787,200 @@
         "mode": "text"
       }
     },
+    "hold": {
+      "args": [],
+      "data_schema": "{queue, held: bool, held_at: number|null, changed: bool, running: int, queued: int}",
+      "description": "hold a lane (drain it): its running jobs finish, no new job starts in it; --release lets workers claim from it again; idempotent either way",
+      "destructive": false,
+      "examples": [
+        [
+          "spoolctl",
+          "hold",
+          "--json",
+          "--queue",
+          "default"
+        ]
+      ],
+      "exit_codes": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "flags": [
+        {
+          "aliases": [
+            "--db"
+          ],
+          "choices": null,
+          "default": null,
+          "flag": "--db",
+          "malformed_expectations": {
+            "bad_path": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 4096,
+          "minimum": 1,
+          "name": "--db",
+          "repeatable": false,
+          "required": false,
+          "type": "path",
+          "unbounded": false,
+          "value_required": true
+        },
+        {
+          "aliases": [
+            "--json"
+          ],
+          "choices": null,
+          "default": false,
+          "flag": "--json",
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--json",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
+        },
+        {
+          "aliases": [
+            "--queue"
+          ],
+          "charset": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+          "choices": null,
+          "default": "default",
+          "flag": "--queue",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 64,
+          "minimum": 1,
+          "name": "--queue",
+          "repeatable": false,
+          "required": false,
+          "type": "queue",
+          "unbounded": false,
+          "value_required": true
+        },
+        {
+          "aliases": [
+            "--release"
+          ],
+          "choices": null,
+          "default": false,
+          "flag": "--release",
+          "malformed_expectations": {},
+          "maximum": null,
+          "minimum": null,
+          "name": "--release",
+          "repeatable": false,
+          "required": false,
+          "type": "boolean",
+          "unbounded": false,
+          "value_required": false
+        }
+      ],
+      "idempotent": true,
+      "json": {
+        "flag": "--json",
+        "mode": "envelope",
+        "schema_ref": "spoolctl schema --json --verb hold"
+      },
+      "mutates": true,
+      "mutually_exclusive": [],
+      "output_modes": [
+        "envelope",
+        "text"
+      ],
+      "output_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "held": {
+            "type": "boolean"
+          },
+          "held_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "queue": {
+            "type": "string"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "running": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changed",
+          "held",
+          "held_at",
+          "queue",
+          "queued",
+          "running"
+        ],
+        "type": "object"
+      },
+      "positionals": [],
+      "probe_hints": {
+        "categories": [
+          "unknown_flag",
+          "missing_value",
+          "bad_type",
+          "missing_positional",
+          "mutually_exclusive",
+          "env_var",
+          "output_mode_success"
+        ],
+        "json_failure_verdict": {
+          "ok": false,
+          "stderr": "non-empty mirror",
+          "stdout": "parseable envelope",
+          "traceback_allowed": false
+        },
+        "timeout_seconds": 5
+      },
+      "schema_ref": "spoolctl schema --json --verb hold",
+      "stdin": "none",
+      "summary": "hold a lane (drain it): its running jobs finish, no new job starts in it; --release lets workers claim from it again; idempotent either way",
+      "text": {
+        "contract": "human-readable stdout on success; diagnostics on stderr for errors",
+        "mode": "text"
+      }
+    },
     "list": {
       "args": [],
       "data_schema": "{count: int, jobs: [{id, argv, state, attempts, crashes, max_retries, timeout_seconds, created_at, started_at, finished_at, next_run_at, priority, queue, cwd, last_exit_code, last_error, idempotency_key, tags, note}]}",
@@ -6227,6 +6433,7 @@
             "doctor",
             "events",
             "feedback",
+            "hold",
             "list",
             "output",
             "prune",
@@ -6806,8 +7013,8 @@
     },
     "status": {
       "args": [],
-      "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, scheduled: int, queues: {<queue>: {counts, scheduled}}, recent_dead: [{id, command, attempts, crashes, last_error, finished_at, stdout_path, stderr_path}]}",
-      "description": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0",
+      "data_schema": "{counts: {canceled,dead,done,failed,queued,running}, holds: [{queue, held_at}], scheduled: int, queues: {<queue>: {counts, scheduled}}, recent_dead: [{id, command, attempts, crashes, last_error, finished_at, stdout_path, stderr_path}]}",
+      "description": "queue counts, scheduled sub-counts, per-lane counts, held lanes, and recent dead jobs; always exit 0",
       "destructive": false,
       "examples": [
         [
@@ -6955,6 +7162,25 @@
             ],
             "type": "object"
           },
+          "holds": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "held_at": {
+                  "type": "number"
+                },
+                "queue": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "held_at",
+                "queue"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "queues": {
             "additionalProperties": {
               "additionalProperties": false,
@@ -7064,6 +7290,7 @@
         },
         "required": [
           "counts",
+          "holds",
           "queues",
           "recent_dead",
           "scheduled"
@@ -7091,7 +7318,7 @@
       },
       "schema_ref": "spoolctl schema --json --verb status",
       "stdin": "none",
-      "summary": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0",
+      "summary": "queue counts, scheduled sub-counts, per-lane counts, held lanes, and recent dead jobs; always exit 0",
       "text": {
         "contract": "human-readable stdout on success; diagnostics on stderr for errors",
         "mode": "text"

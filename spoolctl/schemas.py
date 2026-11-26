@@ -423,6 +423,7 @@ VERB_SCHEMAS = {
     }),
     "status": obj({
         "counts": obj({state: {"type": "integer"} for state in sorted(JOB_STATES)}),
+        "holds": array_of(obj({"held_at": {"type": "number"}, "queue": {"type": "string"}})),
         "scheduled": {"type": "integer"},
         "queues": {
             "type": "object",
@@ -449,6 +450,14 @@ VERB_SCHEMAS = {
         "job": SHOW_JOB_SCHEMA,
     }),
     "retry": obj({"job_id": {"type": "integer"}, "state": {"type": "string", "const": "queued"}}),
+    "hold": obj({
+        "changed": {"type": "boolean"},
+        "held": {"type": "boolean"},
+        "held_at": NULLABLE_NUMBER,
+        "queue": {"type": "string"},
+        "queued": {"type": "integer"},
+        "running": {"type": "integer"},
+    }),
     "cancel": obj({
         "job_id": {"type": "integer"},
         "state": {"type": "string", "const": "canceled"},

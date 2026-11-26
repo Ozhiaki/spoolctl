@@ -139,6 +139,11 @@ CREATE TABLE IF NOT EXISTS job_events (
 );
 
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS lane_holds (
+  queue   TEXT PRIMARY KEY,
+  held_at REAL NOT NULL
+);
 """
 
 
@@ -215,6 +220,8 @@ def _ensure_schema(conn: sqlite3.Connection) -> None:
                 _migrate_v4_to_v5(conn)
             elif found == 5:
                 _migrate_v5_to_v6(conn)
+            elif found == 6:
+                _migrate_v6_to_v7(conn)
             else:
                 raise sqlite3.DatabaseError(f"unsupported schema version {found}")
         return
@@ -389,6 +396,33 @@ def _migrate_v5_to_v6(conn: sqlite3.Connection) -> bool:
             ),
         )
         conn.execute("UPDATE meta SET value='6' WHERE key='schema_version'")
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return True
+
+
+def _migrate_v6_to_v7(conn: sqlite3.Connection) -> bool:
+    """Add lane holds (schema 6 -> 7).
+
+    A held lane starts no new jobs; its running jobs finish. The version bump
+    is what makes an older spoolctl refuse this database rather than ignore a
+    hold and start jobs in a held lane.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        found = int(conn.execute(
+            "SELECT value FROM meta WHERE key='schema_version'"
+        ).fetchone()["value"])
+        if found >= 7:
+            conn.execute("COMMIT")
+            return False
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS lane_holds"
+            " (queue TEXT PRIMARY KEY, held_at REAL NOT NULL)"
+        )
+        conn.execute("UPDATE meta SET value='7' WHERE key='schema_version'")
         conn.execute("COMMIT")
     except BaseException:
         conn.execute("ROLLBACK")
@@ -673,6 +707,11 @@ def claim_next(
     """
     conn.execute("BEGIN IMMEDIATE")
     try:
+        # A held lane starts nothing new; checked under the same write lock
+        # as the claim, so a hold and a claim can't interleave.
+        if conn.execute("SELECT 1 FROM lane_holds WHERE queue=?", (lane,)).fetchone():
+            conn.execute("COMMIT")
+            return None
         if slots is not None:
             running = conn.execute(
                 "SELECT COUNT(*) AS n FROM jobs WHERE state='running' AND queue=?",
@@ -1167,16 +1206,62 @@ def unsettled_count(conn: sqlite3.Connection, lane: str = "default", now: float 
 
     Running rows in the lane always count. Queued rows count when due, or when
     they are retry/reap backoff rows (`attempts > 0`). Brand-new user-delayed
-    rows (`attempts = 0`, future `next_run_at`) do not hold drain open.
+    rows (`attempts = 0`, future `next_run_at`) do not hold drain open, and
+    neither do queued rows of a held lane: nothing claims them until release.
     """
     if now is None:
         now = time.time()
     return conn.execute(
         "SELECT COUNT(*) AS n FROM jobs"
         " WHERE queue=? AND (state='running'"
-        " OR (state='queued' AND (next_run_at <= ? OR attempts > 0)))",
+        " OR (state='queued' AND (next_run_at <= ? OR attempts > 0)"
+        " AND NOT EXISTS (SELECT 1 FROM lane_holds h WHERE h.queue=jobs.queue)))",
         (lane, now),
     ).fetchone()["n"]
+
+
+def hold_lane(conn: sqlite3.Connection, lane: str, now: float) -> tuple[float, bool]:
+    """Hold a lane: claims stop, running jobs finish. Idempotent.
+
+    Returns (held_at, already_held); a repeated hold keeps the first held_at.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    try:
+        row = conn.execute("SELECT held_at FROM lane_holds WHERE queue=?", (lane,)).fetchone()
+        if row is None:
+            conn.execute("INSERT INTO lane_holds (queue, held_at) VALUES (?, ?)", (lane, now))
+            held_at, already = now, False
+        else:
+            held_at, already = row["held_at"], True
+        conn.execute("COMMIT")
+    except BaseException:
+        conn.execute("ROLLBACK")
+        raise
+    return held_at, already
+
+
+def release_lane(conn: sqlite3.Connection, lane: str) -> bool:
+    """Release a held lane; returns whether it was held. Idempotent."""
+    cur = conn.execute("DELETE FROM lane_holds WHERE queue=?", (lane,))
+    return cur.rowcount > 0
+
+
+def lane_holds(conn: sqlite3.Connection) -> list[dict]:
+    """Every held lane, by name: [{queue, held_at}]."""
+    return [
+        {"queue": r["queue"], "held_at": r["held_at"]}
+        for r in conn.execute("SELECT queue, held_at FROM lane_holds ORDER BY queue")
+    ]
+
+
+def lane_counts(conn: sqlite3.Connection, lane: str) -> tuple[int, int]:
+    """(running, queued) jobs in a lane."""
+    row = conn.execute(
+        "SELECT SUM(state='running') AS running, SUM(state='queued') AS queued"
+        " FROM jobs WHERE queue=?",
+        (lane,),
+    ).fetchone()
+    return int(row["running"] or 0), int(row["queued"] or 0)
 
 
 def state_counts(conn: sqlite3.Connection) -> dict[str, int]:

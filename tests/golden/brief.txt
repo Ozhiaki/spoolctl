@@ -1,5 +1,5 @@
 spoolctl quick brief
-Verbs: add, brief, cancel, capabilities, config-show, config-validate, doctor, events, feedback, list, output, prune, retry, robot-docs, schema, show, status, wait, work.
+Verbs: add, brief, cancel, capabilities, config-show, config-validate, doctor, events, feedback, hold, list, output, prune, retry, robot-docs, schema, show, status, wait, work.
 Jobs move through: canceled, dead, done, failed, queued, running.
 JSON mode: every normal verb accepts --json and returns {ok, tool_version, data, meta, warnings, commands, errors}.
 SPOOLCTL_DB: queue database path (precedence: --db flag, SPOOLCTL_DB, .spoolctl/config.json db_path, ./.spoolctl/queue.db). --db overrides it.
@@ -16,4 +16,4 @@ schema --json exports the envelope, verb data, and raw stream JSON Schemas. capa
 robot-docs guide is the longer agent workflow handbook; --json adds structured sections and a token estimate.
 Exit codes: 0=success (including empty results), 1=user-input-error, 2=safety-block (refused; a --force form may exist), 3=tool-environment-error, 4=transient-failure (retry after a short delay), 5=conflict (state changed underneath), 6=job-outcome-failure (an awaited job ended non-success).
 Use retry for dead/failed jobs, cancel for queued/running withdrawal, prune for old terminal jobs, status for counts/recent dead jobs. Destructive forms need confirmation: prune --yes or --dry-run, cancel --running --yes, retry --force for running jobs.
-~695 tokens (budget 700).
+~697 tokens (budget 700).

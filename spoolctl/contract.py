@@ -74,9 +74,10 @@ VERB_SUMMARIES = {
                        " last_exit_code, last_error}}}",
     },
     "status": {
-        "summary": "queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0",
+        "summary": "queue counts, scheduled sub-counts, per-lane counts, held lanes,"
+                   " and recent dead jobs; always exit 0",
         "data_schema": "{counts: {canceled,dead,done,failed,queued,running},"
-                       " scheduled: int, queues: {<queue>: {counts, scheduled}},"
+                       " holds: [{queue, held_at}], scheduled: int, queues: {<queue>: {counts, scheduled}},"
                        " recent_dead: [{id, command, attempts, crashes, last_error,"
                        " finished_at, stdout_path, stderr_path}]}",
     },
@@ -112,6 +113,13 @@ VERB_SUMMARIES = {
         "summary": "cancel a queued job; --running also stops a running one"
                    " (killed by its owning worker within a heartbeat)",
         "data_schema": "{job_id: int, state: 'canceled', was_running: bool}",
+    },
+    "hold": {
+        "summary": "hold a lane (drain it): its running jobs finish, no new"
+                   " job starts in it; --release lets workers claim from it"
+                   " again; idempotent either way",
+        "data_schema": "{queue, held: bool, held_at: number|null, changed:"
+                       " bool, running: int, queued: int}",
     },
     "prune": {
         "summary": "delete terminal jobs older than a duration, files first"
@@ -204,6 +212,7 @@ DB_VERBS = [
     "doctor",
     "events",
     "feedback",
+    "hold",
     "list",
     "output",
     "prune",
@@ -623,6 +632,7 @@ VERB_TRAITS = {
     "robot-docs": {"mutates": False, "destructive": False, "idempotent": True},
     "events": {"mutates": False, "destructive": False, "idempotent": True},
     "feedback": {"mutates": False, "destructive": False, "idempotent": True},
+    "hold": {"mutates": True, "destructive": False, "idempotent": True},
     "list": {"mutates": False, "destructive": False, "idempotent": True},
     "output": {"mutates": False, "destructive": False, "idempotent": True},
     "prune": {"mutates": True, "destructive": True, "idempotent": False},
@@ -662,6 +672,7 @@ VERB_EXAMPLES = {
     "robot-docs": [["spoolctl", "robot-docs", "guide", "--json"]],
     "events": [["spoolctl", "events", "--json", "--limit", "10"]],
     "feedback": [["spoolctl", "feedback", "--json", "1"]],
+    "hold": [["spoolctl", "hold", "--json", "--queue", "default"]],
     "list": [["spoolctl", "list", "--json", "--limit", "10"]],
     "output": [["spoolctl", "output", "--json", "1", "--stream", "stdout"]],
     "prune": [["spoolctl", "prune", "--json", "--older-than", "30d", "--dry-run"]],
@@ -1017,6 +1028,14 @@ SCHEDULING_CAPABILITIES = {
         "default": "default",
         "grammar": "1-64 chars matching ^[A-Za-z0-9][A-Za-z0-9._-]*$",
         "single_lane_worker": True,
+    },
+    "hold": {
+        "verbs": ["hold --queue NAME", "hold --queue NAME --release"],
+        "effect": "a held lane starts no new job; its running jobs finish",
+        "durable": True,
+        "claimed_false": "work --once --json {claimed:false} on a held lane",
+        "work_drain": "work --drain on a held lane exits once its running jobs finish",
+        "status": "status --json data.holds lists held lanes",
     },
     "slots": {
         "claimed_false": (
