@@ -6,6 +6,16 @@ All notable user-visible changes to spoolctl are documented here.
 > versions, but the documented interface and guarantees are tested in this
 > repository.
 
+## Unreleased
+
+- `spoolctl work --kill-grace SECONDS` sets how long a job's process group gets
+  between SIGTERM and SIGKILL when the worker stops it (a timeout, `cancel
+  --running`, or lost ownership). The default stays 5 seconds; a job whose
+  cleanup takes longer (tearing down a VM, flushing state) can now finish it.
+  Additive: one new `work` flag and its limit (`kill_grace_seconds`), and a
+  `stop` entry in the execution capabilities. `CONTRACT_VERSION` remains `2`,
+  `SCHEMA_VERSION` remains `6`.
+
 ## v0.4.11 — Packaging Blessed
 
 spoolctl is installable from PyPI. No behavior change to any verb;

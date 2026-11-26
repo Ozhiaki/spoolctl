@@ -289,6 +289,17 @@
       "max_retries": "bounds job-owned failure requeues only",
       "wait_drain": "with unbounded crashes, a deterministically crashing job can keep wait blocking and work --drain unsettled until canceled or bounded",
       "worker_crashes": "confirmed-dead worker reaps; count stored in crashes"
+    },
+    "stop": {
+      "applies_to": [
+        "timeout",
+        "cancel --running",
+        "lost ownership"
+      ],
+      "default_grace_seconds": 5.0,
+      "flag": "work --kill-grace SECONDS",
+      "scope": "per worker: every job that worker stops",
+      "sequence": "SIGTERM the job's process group, wait up to the grace for it to exit (its own cleanup), then SIGKILL the group"
     }
   },
   "exit_codes": {
@@ -450,6 +461,14 @@
       "maximum": 256,
       "minimum": 1,
       "type": "string",
+      "unbounded": false
+    },
+    "kill_grace_seconds": {
+      "default": 5.0,
+      "grammar": "finite float > 0",
+      "maximum": 86400.0,
+      "minimum": 0,
+      "type": "float",
       "unbounded": false
     },
     "limit": {
@@ -7386,7 +7405,7 @@
     "work": {
       "args": [],
       "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?, job_state?}; --drain: {drained: bool, executed: int}; loop mode writes nothing to stdout; claimed:false means no job runnable by this worker right now, including a full slot ceiling",
-      "description": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane",
+      "description": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane; --kill-grace sets the SIGTERM-to-SIGKILL grace for jobs it stops",
       "destructive": false,
       "examples": [
         [
@@ -7469,6 +7488,41 @@
           "type": "boolean",
           "unbounded": false,
           "value_required": false
+        },
+        {
+          "aliases": [
+            "--kill-grace"
+          ],
+          "choices": null,
+          "default": 5.0,
+          "flag": "--kill-grace",
+          "grammar": "finite float > 0",
+          "malformed_expectations": {
+            "bad_type": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "missing_value": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "out_of_range": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            },
+            "value_is_another_flag": {
+              "code": "INVALID_INPUT",
+              "exit_code": 1
+            }
+          },
+          "maximum": 86400.0,
+          "minimum": 0,
+          "name": "--kill-grace",
+          "repeatable": false,
+          "required": false,
+          "type": "float",
+          "unbounded": false,
+          "value_required": true
         },
         {
           "aliases": [
@@ -7736,7 +7790,7 @@
       },
       "schema_ref": "spoolctl schema --json --verb work",
       "stdin": "none",
-      "summary": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane",
+      "summary": "run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane; --kill-grace sets the SIGTERM-to-SIGKILL grace for jobs it stops",
       "text": {
         "contract": "human-readable stdout on success; diagnostics on stderr for errors",
         "mode": "text"

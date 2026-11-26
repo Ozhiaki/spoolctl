@@ -92,6 +92,36 @@ class TestFailureAndTimeout(ExecTestCase):
         self.assertIn("timed out after 1s", err)
         self.assertLess(elapsed, 3.5, "kill must land shortly after the deadline")
 
+    def _cleanup_job(self, done_file):
+        # Traps SIGTERM, then needs ~1.5 s to clean up before it exits; the
+        # file says whether the cleanup finished.
+        script = (
+            "import signal, sys, time\n"
+            "def stop(*_):\n"
+            "    time.sleep(1.5)\n"
+            f"    open({done_file!r}, 'w').write('done')\n"
+            "    sys.exit(0)\n"
+            "signal.signal(signal.SIGTERM, stop)\n"
+            "time.sleep(100)\n"
+        )
+        return self.claim([sys.executable, "-c", script], timeout=1)
+
+    def test_kill_grace_lets_a_job_finish_its_cleanup(self):
+        done = os.path.join(self.tmp.name, "cleanup-done")
+        job, attempt = self._cleanup_job(done)
+        kind, _, _, reason = worker.execute_attempt(job, attempt, kill_grace=5)
+        self.assertEqual((kind, reason), ("timed_out", REASON_TIMEOUT))
+        self.assertTrue(os.path.exists(done), "the job was killed before its cleanup finished")
+
+    def test_short_kill_grace_still_kills(self):
+        done = os.path.join(self.tmp.name, "cleanup-done")
+        job, attempt = self._cleanup_job(done)
+        t0 = time.monotonic()
+        kind, _, _, _ = worker.execute_attempt(job, attempt, kill_grace=0.3)
+        self.assertEqual(kind, "timed_out")
+        self.assertLess(time.monotonic() - t0, 3.5, "SIGKILL must follow a short grace")
+        self.assertFalse(os.path.exists(done), "the cleanup outlived a 0.3 s grace")
+
     def test_grandchild_dies_with_process_group(self):
         pid_file = os.path.join(self.tmp.name, "grandchild.pid")
         job, attempt = self.claim(
