@@ -551,5 +551,48 @@ class TestIdempotencyKeyConcurrency(ConcurrencyTestCase):
         self.assertEqual([r["id"] for r in rows], [1])
 
 
+def _open_fresh_dbs(barrier, dbs, results):
+    """Open each of dbs (none exists yet) at the same moment as the other
+    processes, after the barrier; record any failure."""
+    for db in dbs:
+        barrier.wait()
+        try:
+            store.connect(db).close()
+        except Exception as exc:  # noqa: BLE001 - the test reports any
+            results.put(f"{db}: {exc!r}")
+    results.put(None)
+
+
+class ConcurrentFirstOpenTest(unittest.TestCase):
+    """Workers started together (launchd or systemd bringing a whole lane up
+    at boot) all open a queue database that doesn't exist yet. Switching a
+    new database to WAL can return SQLITE_BUSY at once, without invoking the
+    busy handler, when another connection is switching it too; each of them
+    must still open it."""
+
+    def test_simultaneous_first_opens_of_a_new_database_all_succeed(self):
+        import multiprocessing
+
+        procs_n, rounds = 9, 30
+        with tempfile.TemporaryDirectory() as tmp:
+            dbs = [os.path.join(tmp, f"q{i}.db") for i in range(rounds)]
+            ctx = multiprocessing.get_context("spawn")
+            barrier, results = ctx.Barrier(procs_n), ctx.Queue()
+            procs = [ctx.Process(target=_open_fresh_dbs, args=(barrier, dbs, results))
+                     for _ in range(procs_n)]
+            for p in procs:
+                p.start()
+            failures, done = [], 0
+            while done < procs_n:
+                r = results.get(timeout=120)
+                if r is None:
+                    done += 1
+                else:
+                    failures.append(r)
+            for p in procs:
+                p.join(timeout=30)
+            self.assertEqual(failures, [], f"{len(failures)} of {procs_n * rounds} first opens failed")
+
+
 if __name__ == "__main__":
     unittest.main()
