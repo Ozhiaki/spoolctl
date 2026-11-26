@@ -148,14 +148,15 @@ class Heartbeat:
         self._thread.join(timeout=heartbeat_interval() + 5)
 
 
-def _kill_group(proc: subprocess.Popen) -> None:
-    """SIGTERM the child's process group, grace, then SIGKILL; reap the child."""
+def _kill_group(proc: subprocess.Popen, grace: float = KILL_GRACE_SECONDS) -> None:
+    """SIGTERM the child's process group, wait up to grace seconds for it to
+    exit (its own cleanup), then SIGKILL; reap the child."""
     try:
         os.killpg(proc.pid, signal.SIGTERM)
     except ProcessLookupError:
         pass
     try:
-        proc.wait(timeout=KILL_GRACE_SECONDS)
+        proc.wait(timeout=grace)
         return
     except subprocess.TimeoutExpired:
         pass
@@ -170,6 +171,7 @@ def execute_attempt(
     job: Job,
     attempt: Attempt,
     on_spawn=None,
+    kill_grace: float = KILL_GRACE_SECONDS,
 ) -> tuple[str, int | None, str | None, str | None]:
     """Run one claimed attempt to completion or timeout.
 
@@ -198,7 +200,7 @@ def execute_attempt(
         try:
             exit_code = proc.wait(timeout=job.timeout_seconds)
         except subprocess.TimeoutExpired:
-            _kill_group(proc)
+            _kill_group(proc, kill_grace)
             return "timed_out", None, f"timed out after {job.timeout_seconds}s", REASON_TIMEOUT
     if exit_code == 0:
         return "succeeded", 0, None, None
@@ -216,8 +218,12 @@ def process_one(
     lane: str = "default",
     slots: int | None = None,
     on_spawn=None,
+    kill_grace: float = KILL_GRACE_SECONDS,
 ) -> dict | None:
     """One claim cycle: reap pass, claim, execute, record.
+
+    kill_grace is how long a job's process group gets between SIGTERM and
+    SIGKILL when this worker stops it (timeout, cancel, lost ownership).
 
     Returns a summary dict for the executed job, or None when nothing was
     eligible. Never holds a DB transaction while the child runs.
@@ -247,10 +253,11 @@ def process_one(
                 f"spoolctl: job {job.id} ownership lost; killing its process group",
                 file=sys.stderr,
             )
-            _kill_group(proc)
+            _kill_group(proc, kill_grace)
 
     with Heartbeat(db_path, job.id, worker_id, os.getpid(), on_lost=_on_lost):
-        kind, exit_code, error, failure_reason = execute_attempt(job, attempt, on_spawn=_on_spawn)
+        kind, exit_code, error, failure_reason = execute_attempt(
+            job, attempt, on_spawn=_on_spawn, kill_grace=kill_grace)
     now = time.time()
     if kind == "succeeded":
         new_state = store.record_success(
@@ -286,6 +293,7 @@ def work_loop(
     drain: bool = False,
     lane: str = "default",
     slots: int | None = None,
+    kill_grace: float = KILL_GRACE_SECONDS,
 ) -> dict:
     """Run jobs until SIGINT/SIGTERM — or, when draining, until the queue
     settles (zero queued or running rows at a moment nothing was claimable;
@@ -326,7 +334,8 @@ def work_loop(
     try:
         while not stop.is_set():
             summary = process_one(
-                conn, db_path, worker_id, lane=lane, slots=slots, on_spawn=on_spawn
+                conn, db_path, worker_id, lane=lane, slots=slots, on_spawn=on_spawn,
+                kill_grace=kill_grace,
             )
             current["proc"] = None
             if summary is not None:

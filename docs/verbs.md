@@ -572,7 +572,7 @@ spoolctl wait --json 1
 
 ## `work`
 
-run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane
+run jobs until stopped; --once runs at most one; --drain runs until the queue settles; --queue serves one lane; --slots optionally bounds running jobs in that lane; --kill-grace sets the SIGTERM-to-SIGKILL grace for jobs it stops
 
 ### Flags
 
@@ -581,6 +581,7 @@ run jobs until stopped; --once runs at most one; --drain runs until the queue se
 | `--db` | path | none | min: 1 max: 4096 |
 | `--drain` | boolean | false |  |
 | `--json` | boolean | false |  |
+| `--kill-grace` | float | 5.0 | min: 0 max: 86400.0 |
 | `--once` | boolean | false |  |
 | `--poll-interval` | float | none | min: 0 max: 3600.0 |
 | `--queue` | queue | default | min: 1 max: 64 |

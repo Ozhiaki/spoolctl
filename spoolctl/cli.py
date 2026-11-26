@@ -45,6 +45,7 @@ from spoolctl.models import (
     EXIT_TRANSIENT,
     FEEDBACK_TAIL_BYTES,
     FEEDBACK_TAIL_MAX,
+    KILL_GRACE_SECONDS,
     LIST_LIMIT_MAX,
     MAX_POLL_INTERVAL_SECONDS,
     MAX_WAIT_SECONDS,
@@ -267,6 +268,9 @@ def build_parser() -> _Parser:
                       help="serve one lane; default 'default'")
     work.add_argument("--slots", type=_int_token, default=None, metavar="N",
                       help="optional fleet-wide running-job ceiling for the served lane")
+    work.add_argument("--kill-grace", type=_float_token, default=None, metavar="SECONDS",
+                      help="seconds a job gets between SIGTERM and SIGKILL when this"
+                           " worker stops it (timeout, cancel); default 5")
 
     wait = sub.add_parser("wait", parents=[common_db],
                           help="block until jobs settle; exit 6 if any failed",
@@ -649,6 +653,10 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
         _parse_int_bound(args.slots, flag="--slots", minimum=1)
         if args.slots is not None else None
     )
+    kill_grace = (
+        _parse_positive_float(args.kill_grace, flag="--kill-grace", maximum=MAX_WAIT_SECONDS)
+        if args.kill_grace is not None else KILL_GRACE_SECONDS
+    )
     from spoolctl import worker
 
     worker_id = _parse_worker_id(args.worker_id) or worker.default_worker_id()
@@ -656,7 +664,8 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
     if args.once:
         conn = store.connect(db_path)
         try:
-            summary = worker.process_one(conn, db_path, worker_id, lane=lane, slots=slots)
+            summary = worker.process_one(conn, db_path, worker_id, lane=lane, slots=slots,
+                                         kill_grace=kill_grace)
         finally:
             conn.close()
         if summary is None:
@@ -669,7 +678,7 @@ def cmd_work(args: argparse.Namespace) -> VerbResult:
         return VerbResult(data=data, human=human)
     poll = poll_interval if poll_interval is not None else DEFAULT_POLL_INTERVAL
     outcome = worker.work_loop(db_path, worker_id, poll, drain=args.drain,
-                               lane=lane, slots=slots)
+                               lane=lane, slots=slots, kill_grace=kill_grace)
     if args.drain:
         executed = outcome["executed"]
         human = (

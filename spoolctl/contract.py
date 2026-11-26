@@ -28,6 +28,7 @@ from spoolctl.models import (
     HEARTBEAT_INTERVAL,
     JOB_EVENT_TYPES,
     JOB_STATES,
+    KILL_GRACE_SECONDS,
     LIST_LIMIT_MAX,
     MAX_DURATION_SECONDS,
     MAX_ENV_KEY_CHARS,
@@ -60,7 +61,8 @@ VERB_SUMMARIES = {
     "work": {
         "summary": "run jobs until stopped; --once runs at most one;"
                    " --drain runs until the queue settles; --queue serves one"
-                   " lane; --slots optionally bounds running jobs in that lane",
+                   " lane; --slots optionally bounds running jobs in that lane;"
+                   " --kill-grace sets the SIGTERM-to-SIGKILL grace for jobs it stops",
         "data_schema": "--once: {claimed: bool, job_id?, attempt_no?, result?,"
                        " job_state?}; --drain: {drained: bool, executed: int};"
                        " loop mode writes nothing to stdout; claimed:false means"
@@ -462,6 +464,14 @@ LIMITS = {
         "unbounded": False,
         "grammar": "finite signed decimal epoch seconds or ISO-8601 timestamp",
     },
+    "kill_grace_seconds": {
+        "type": "float",
+        "minimum": 0,
+        "maximum": MAX_WAIT_SECONDS,
+        "unbounded": False,
+        "grammar": "finite float > 0",
+        "default": KILL_GRACE_SECONDS,
+    },
     "worker_slots": {
         "type": "integer",
         "minimum": 1,
@@ -521,6 +531,7 @@ FLAG_CONTRACTS = {
     },
     "--older-than": {"type": "duration", **LIMITS["duration_seconds"]},
     "--poll-interval": {"type": "float", **LIMITS["poll_interval_seconds"]},
+    "--kill-grace": {"type": "float", **LIMITS["kill_grace_seconds"]},
     "--priority": {"type": "integer", **LIMITS["priority"]},
     "--priority-min": {"type": "integer", **LIMITS["priority"]},
     "--queue": {"type": "queue", **LIMITS["queue_name"]},
@@ -1060,6 +1071,14 @@ EXECUTION_CAPABILITIES = {
         "values_in_add_or_list": False,
         "values_in_show": True,
         "grammar": "split on first '='; key non-empty; NUL rejected in key and value; repeated keys last-win",
+    },
+    "stop": {
+        "flag": "work --kill-grace SECONDS",
+        "default_grace_seconds": KILL_GRACE_SECONDS,
+        "sequence": "SIGTERM the job's process group, wait up to the grace for it"
+                    " to exit (its own cleanup), then SIGKILL the group",
+        "applies_to": ["timeout", "cancel --running", "lost ownership"],
+        "scope": "per worker: every job that worker stops",
     },
     "retry_model": {
         "attempts": "recorded unsuccessful executions: job-owned failures plus worker crashes",

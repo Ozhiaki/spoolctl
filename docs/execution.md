@@ -64,9 +64,15 @@ Env values are stored in the database in plaintext. Do not pass secrets via `--e
 When a job exceeds its timeout:
 
 1. SIGTERM is sent to the job's process group (including any child processes).
-2. The worker waits up to 5 seconds for graceful shutdown.
+2. The worker waits up to its kill grace for graceful shutdown: 5 seconds by
+   default, or what the worker was started with (`spoolctl work --kill-grace
+   SECONDS`), so a job that needs time to clean up gets it.
 3. If still alive, SIGKILL is sent to the process group.
 4. The attempt is recorded as `timed_out` with failure reason `timeout`.
+
+The same grace applies whenever the worker stops a job: on a timeout, and when
+the job is canceled while running (`cancel --running`) or otherwise loses its
+lock.
 
 The process-group kill is made possible by `start_new_session=True` on the child process. See [Guarantees](/docs/guarantees/) for the limitation when a child calls `setsid()`.
 

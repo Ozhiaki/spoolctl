@@ -65,7 +65,7 @@ When a job exhausts its retry budget, it transitions to `dead` and is not retrie
 
 **Claim:** A job that exceeds its timeout is terminated, including all child processes.
 
-**Mechanism:** Jobs are spawned with `start_new_session=True`, making the child a process-group leader. On timeout: SIGTERM the process group → wait up to 5 seconds → SIGKILL the process group → wait unconditionally. The group kill reaches grandchildren that the child forked.
+**Mechanism:** Jobs are spawned with `start_new_session=True`, making the child a process-group leader. On timeout (and on `cancel --running`): SIGTERM the process group → wait up to the worker's kill grace (5 seconds by default; `work --kill-grace SECONDS`) → SIGKILL the process group → wait unconditionally. The group kill reaches grandchildren that the child forked.
 
 **Test:** `tests/test_execute.py` verifies timeout enforcement and process-group cleanup.
 

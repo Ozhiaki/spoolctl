@@ -23,6 +23,7 @@ order: 70
 | `feedback_tail_bytes` | integer | 1 | 65536 | no |
 | `id` | integer | 1 | 9223372036854775807 | no |
 | `idempotency_key_length` | string | 1 | 256 | no |
+| `kill_grace_seconds` | float | 0 | 86400.0 | no |
 | `limit` | integer | 0 | 1000 | no |
 | `note_length` | string | 0 | 10000 | no |
 | `poll_interval_seconds` | float | 0 | 3600.0 | no |

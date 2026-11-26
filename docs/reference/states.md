@@ -152,3 +152,15 @@ order: 40
 
   **worker_crashes:** `confirmed-dead worker reaps; count stored in crashes`
 
+**stop:**
+
+  **applies_to:** `timeout`, `cancel --running`, `lost ownership`
+
+  **default_grace_seconds:** `5.0`
+
+  **flag:** `work --kill-grace SECONDS`
+
+  **scope:** `per worker: every job that worker stops`
+
+  **sequence:** `SIGTERM the job's process group, wait up to the grace for it to exit (its own cleanup), then SIGKILL the group`
+
