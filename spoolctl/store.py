@@ -182,12 +182,37 @@ def connect(db_path: str) -> sqlite3.Connection:
         os.makedirs(parent, exist_ok=True)
     conn = sqlite3.connect(db_path, timeout=BUSY_TIMEOUT_MS / 1000, isolation_level=None)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
+    _set_wal(conn)
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     conn.execute("PRAGMA foreign_keys=ON")
     _ensure_schema(conn)
     return conn
+
+
+def _set_wal(conn: sqlite3.Connection) -> None:
+    """Switch the database to WAL, retrying while it is busy.
+
+    Switching a database that isn't in WAL yet (a new one) needs an exclusive
+    lock, and SQLite returns SQLITE_BUSY at once, without invoking the busy
+    handler, when waiting could deadlock: another connection switching it at
+    the same time, as workers started together all do on a new queue. The
+    busy timeout doesn't cover that, so the switch is retried, with backoff,
+    for as long as the busy timeout would have waited. On a database already
+    in WAL the switch is a no-op that takes no such lock.
+    """
+    deadline = time.monotonic() + BUSY_TIMEOUT_MS / 1000
+    delay = 0.005
+    while True:
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            busy = "locked" in str(exc) or "busy" in str(exc)
+            if not busy or time.monotonic() >= deadline:
+                raise
+        time.sleep(delay)
+        delay = min(delay * 2, 0.1)
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:

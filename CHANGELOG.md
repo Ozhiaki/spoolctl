@@ -6,6 +6,16 @@ All notable user-visible changes to spoolctl are documented here.
 > versions, but the documented interface and guarantees are tested in this
 > repository.
 
+## Unreleased
+
+- Workers started together on a queue database that doesn't exist yet (a
+  service manager bringing a lane up at boot) no longer fail with "queue
+  database is busy". Switching a new database to WAL can return SQLITE_BUSY
+  at once, without waiting out the busy timeout, when another connection is
+  switching it too; the switch is now retried with backoff for as long as the
+  busy timeout. No interface change: `CONTRACT_VERSION` remains `2`,
+  `SCHEMA_VERSION` remains `6`.
+
 ## v0.4.11 — Packaging Blessed
 
 spoolctl is installable from PyPI. No behavior change to any verb;
