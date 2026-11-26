@@ -62,6 +62,20 @@ order: 40
 
 **finite_numeric_inputs:** `--after`, `--at epoch seconds`
 
+**hold:**
+
+  **claimed_false:** `work --once --json {claimed:false} on a held lane`
+
+  **durable:** `True`
+
+  **effect:** `a held lane starts no new job; its running jobs finish`
+
+  **status:** `status --json data.holds lists held lanes`
+
+  **verbs:** `hold --queue NAME`, `hold --queue NAME --release`
+
+  **work_drain:** `work --drain on a held lane exits once its running jobs finish`
+
 **priority:**
 
   **default:** `0`

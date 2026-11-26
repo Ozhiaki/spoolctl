@@ -294,6 +294,33 @@ one-call verdict on a job: terminal, succeeded, why it failed, output tails, and
 spoolctl feedback --json 1
 ```
 
+## `hold`
+
+hold a lane (drain it): its running jobs finish, no new job starts in it; --release lets workers claim from it again; idempotent either way
+
+### Flags
+
+| Flag | Type | Default | Description |
+|---|---|---|---|
+| `--db` | path | none | min: 1 max: 4096 |
+| `--json` | boolean | false |  |
+| `--queue` | queue | default | min: 1 max: 64 |
+| `--release` | boolean | false |  |
+
+**Output modes:** `envelope`, `text`
+
+**Exit codes:** 0, 1, 2, 3, 4, 5, 6
+
+**Traits:** mutates, idempotent
+
+**JSON data schema:** {queue, held: bool, held_at: number|null, changed: bool, running: int, queued: int}
+
+### Example
+
+```bash
+spoolctl hold --json --queue default
+```
+
 ## `list`
 
 enumerate jobs, newest first, optionally filtered by state/tag/queue/priority
@@ -464,7 +491,7 @@ export JSON Schemas for the envelope, verb data payloads, and streams
 | Flag | Type | Default | Description |
 |---|---|---|---|
 | `--json` | boolean | false |  |
-| `--verb` | enum: `add`, `brief`, `cancel`, `capabilities`, `config-show`, `config-validate`, `doctor`, `events`, `feedback`, `list`, `output`, `prune`, `retry`, `robot-docs`, `schema`, `show`, `status`, `wait`, `work` | none |  |
+| `--verb` | enum: `add`, `brief`, `cancel`, `capabilities`, `config-show`, `config-validate`, `doctor`, `events`, `feedback`, `hold`, `list`, `output`, `prune`, `retry`, `robot-docs`, `schema`, `show`, `status`, `wait`, `work` | none |  |
 
 **Output modes:** `envelope`, `text`
 
@@ -513,7 +540,7 @@ spoolctl show --json 1
 
 ## `status`
 
-queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; always exit 0
+queue counts, scheduled sub-counts, per-lane counts, held lanes, and recent dead jobs; always exit 0
 
 ### Flags
 
@@ -529,7 +556,7 @@ queue counts, scheduled sub-counts, per-lane counts, and recent dead jobs; alway
 
 **Traits:** idempotent
 
-**JSON data schema:** {counts: {canceled,dead,done,failed,queued,running}, scheduled: int, queues: {<queue>: {counts, scheduled}}, recent_dead: [{id, command, attempts, crashes, last_error, finished_at, stdout_path, stderr_path}]}
+**JSON data schema:** {counts: {canceled,dead,done,failed,queued,running}, holds: [{queue, held_at}], scheduled: int, queues: {<queue>: {counts, scheduled}}, recent_dead: [{id, command, attempts, crashes, last_error, finished_at, stdout_path, stderr_path}]}
 
 ### Example
 

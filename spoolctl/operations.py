@@ -95,13 +95,52 @@ def status_operation(input: StatusInput) -> dict[str, Any]:
     try:
         counts, scheduled, queues = store.status_counts(conn, input.now())
         dead = store.recent_dead(conn, input.limit)
+        holds = store.lane_holds(conn)
     finally:
         conn.close()
     return {
         "counts": counts,
+        "holds": holds,
         "scheduled": scheduled,
         "queues": queues,
         "recent_dead": dead,
+    }
+
+
+@dataclass(frozen=True)
+class HoldInput:
+    """release is the already-decided effect: hold the lane, or release it."""
+
+    db_path: str | None
+    lane: str
+    release: bool
+    now: float
+    base_dir: str | None = field(kw_only=True)
+
+
+def hold_operation(input: HoldInput) -> dict[str, Any]:
+    """Hold a lane (a drain: running jobs finish, none start) or release it.
+
+    Idempotent either way; changed says whether this call changed anything.
+    """
+    conn = _connect_db(input.db_path, base_dir=input.base_dir)
+    try:
+        if input.release:
+            changed = store.release_lane(conn, input.lane)
+            held_at = None
+        else:
+            held_at, already = store.hold_lane(conn, input.lane, input.now)
+            changed = not already
+        running, queued = store.lane_counts(conn, input.lane)
+    finally:
+        conn.close()
+    return {
+        "changed": changed,
+        "held": not input.release,
+        "held_at": held_at,
+        "queue": input.lane,
+        "queued": queued,
+        "running": running,
     }
 
 

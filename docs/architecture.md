@@ -59,6 +59,10 @@ Append-only ledger of state transitions. Each event records the job ID, event ty
 
 Single-row key-value table holding `schema_version`.
 
+### `lane_holds`
+
+One row per held lane (`queue`, `held_at`). The claim checks it under the same `BEGIN IMMEDIATE` as the claim itself, so a hold and a claim never interleave: once `hold` returns, no new job starts in that lane.
+
 ## Schema version history
 
 | Version | Changes |
@@ -69,6 +73,7 @@ Single-row key-value table holding `schema_version`.
 | v4 | Added `priority`, `queue` to `jobs`. Rebuilt `idx_jobs_claimable` as `(state, queue, priority DESC, next_run_at ASC, id ASC)`. |
 | v5 | Added `cwd`, `env_json`, `crashes`, `max_crashes` to `jobs`. Backfilled `crashes` from existing `abandoned` attempts with `error='worker died'`. |
 | v6 | Added `failure_reason` to `attempts`. Backfilled from existing attempt state and error: `timed_out` → `timeout`, `abandoned` + `worker died` → `worker_crash`, `canceled` → `canceled`, `failed` → `unknown`. The `unknown` backfill is conservative: historical `failed` rows have no reliable way to distinguish `process_exit` from `spawn_failed` without parsing human-readable error text, which the migration deliberately refuses to do. |
+| v7 | Added the `lane_holds` table (`hold --queue`). No data changes; the version bump makes an older spoolctl refuse the database rather than ignore a hold and start jobs in a held lane. |
 
 Migrations run automatically on database open, one version step at a time. Each step uses `BEGIN IMMEDIATE` and re-reads the version inside the transaction so a losing racer (two processes opening the same database simultaneously) no-ops instead of double-applying.
 

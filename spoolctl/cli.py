@@ -62,6 +62,7 @@ from spoolctl.operations import (
     DoctorInput,
     EventsInput,
     FeedbackInput,
+    HoldInput,
     ListInput,
     OutputInput,
     PruneInput,
@@ -76,6 +77,7 @@ from spoolctl.operations import (
     doctor_operation,
     events_operation,
     feedback_operation,
+    hold_operation,
     list_operation,
     output_operation,
     prune_operation,
@@ -312,6 +314,14 @@ def build_parser() -> _Parser:
     cancel.add_argument("-y", "--yes", action="store_true",
                         help="confirm interruption when used with --running")
 
+    hold = sub.add_parser("hold", parents=[common_db],
+                          help="drain a lane: running jobs finish, none start",
+                          allow_abbrev=False)
+    hold.add_argument("--queue", default="default", metavar="NAME",
+                      help="the lane to hold; default 'default'")
+    hold.add_argument("--release", action="store_true",
+                      help="release the held lane: workers claim from it again")
+
     prune = sub.add_parser("prune", parents=[common_db],
                            help="delete old terminal jobs and their output files",
                            allow_abbrev=False)
@@ -398,7 +408,7 @@ def build_parser() -> _Parser:
     _SUBPARSERS.clear()
     _SUBPARSERS.update(
         {"add": add, "work": work, "wait": wait, "status": status, "list": list_,
-         "show": show, "retry": retry, "cancel": cancel, "prune": prune,
+         "show": show, "retry": retry, "cancel": cancel, "hold": hold, "prune": prune,
          "output": output, "feedback": feedback, "events": events,
          "config-show": config_show,
          "config-validate": config_validate, "doctor": doctor, "brief": brief, "schema": schema,
@@ -718,10 +728,26 @@ def cmd_status(args: argparse.Namespace) -> VerbResult:
                 f"  #{d['id']} attempts={d['attempts']}"
                 f"{crash_text} error={d['last_error'] or '-'} cmd: {d['command']}"
             )
+    if data["holds"]:
+        lines.append("held lanes: " + ", ".join(h["queue"] for h in data["holds"]))
     return VerbResult(
         data=data,
         human="\n".join(lines),
     )
+
+
+def cmd_hold(args: argparse.Namespace) -> VerbResult:
+    lane = _parse_queue(args.queue)
+    data = hold_operation(HoldInput(db_path=args.db, lane=lane, release=args.release,
+                                    now=time.time(), base_dir=os.getcwd()))
+    if args.release:
+        human = (f"Lane {lane} released" if data["changed"] else f"Lane {lane} was not held")
+    else:
+        state = "held" if data["changed"] else "already held"
+        human = (f"Lane {lane} {state}: {data['running']} running job(s) will finish;"
+                 f" {data['queued']} queued job(s) wait for:"
+                 f" spoolctl hold --queue {lane} --release")
+    return VerbResult(data=data, human=human)
 
 
 def cmd_list(args: argparse.Namespace) -> VerbResult:
@@ -1349,6 +1375,7 @@ HANDLERS: dict[str, Callable[[argparse.Namespace], VerbResult]] = {
     "doctor": cmd_doctor,
     "events": cmd_events,
     "feedback": cmd_feedback,
+    "hold": cmd_hold,
     "list": cmd_list,
     "output": cmd_output,
     "prune": cmd_prune,

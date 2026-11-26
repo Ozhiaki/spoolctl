@@ -53,7 +53,7 @@ Event types: `added`, `claimed`, `succeeded`, `failed`, `timed_out`, `reaped`, `
 
 ## Queues (Lanes)
 
-Jobs are assigned to a named queue (default: `default`). Workers can target a specific queue with `work --queue <name>`. The `--slots N` flag on `work` sets a per-lane ceiling: the worker will not claim a new job in that queue if N jobs are already running there. This is the fleet-wide concurrency control mechanism.
+Jobs are assigned to a named queue (default: `default`). Workers can target a specific queue with `work --queue <name>`. The `--slots N` flag on `work` sets a per-lane ceiling: the worker will not claim a new job in that queue if N jobs are already running there. This is the fleet-wide concurrency control mechanism. `hold --queue <name>` holds a lane: its running jobs finish and no new job starts in it until `hold --queue <name> --release`.
 
 ## Priorities
 

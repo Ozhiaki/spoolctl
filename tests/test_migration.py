@@ -292,7 +292,7 @@ class MigrationTestCase(unittest.TestCase):
 
 
 class TestMigrationFixtures(MigrationTestCase):
-    def test_populated_v1_db_chains_to_v6_intact(self):
+    def test_populated_v1_db_chains_to_v7_intact(self):
         make_populated_v1_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -303,7 +303,7 @@ class TestMigrationFixtures(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 6)
+        self.assertEqual(int(row["value"]), 7)
         self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
                          with_v5_migration_job_defaults(jobs_before))
         self.assertEqual([tuple(r) for r in dump(conn, "attempts")],
@@ -314,7 +314,7 @@ class TestMigrationFixtures(MigrationTestCase):
         assert_v6_attempts_shape(self, conn)
         conn.close()
 
-    def test_populated_v2_db_migrates_to_v6_intact(self):
+    def test_populated_v2_db_migrates_to_v7_intact(self):
         make_populated_v2_db(self.db)
         before = sqlite3.connect(self.db)
         jobs_before = dump(before, "jobs")
@@ -325,7 +325,7 @@ class TestMigrationFixtures(MigrationTestCase):
         conn = store.connect(self.db)
 
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 6)
+        self.assertEqual(int(row["value"]), 7)
         self.assertEqual([tuple(r) for r in dump(conn, "jobs")],
                          with_v5_migration_job_defaults(jobs_before))
         self.assertEqual([tuple(r) for r in dump(conn, "attempts")],
@@ -393,7 +393,7 @@ class TestMigrationFixtures(MigrationTestCase):
 
         conn = store.connect(self.db)
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-        self.assertEqual(int(row["value"]), 6)
+        self.assertEqual(int(row["value"]), 7)
         self.assertEqual(conn.execute("SELECT COUNT(*) AS n FROM jobs").fetchone()["n"], 5)
         assert_v5_jobs_shape(self, conn)
         assert_v6_attempts_shape(self, conn)
@@ -436,7 +436,7 @@ class TestMigrationFixtures(MigrationTestCase):
         migrated = store.connect(self.db)
         try:
             row = migrated.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
-            self.assertEqual(int(row["value"]), 6)
+            self.assertEqual(int(row["value"]), 7)
             self.assertEqual(store.get_job(migrated, 1).state, "done")
         finally:
             migrated.close()
@@ -541,7 +541,7 @@ class TestMigrationRace(MigrationTestCase):
             out, err = proc.communicate(timeout=30)
             self.assertEqual(proc.returncode, 0, err)
             outs.append(out.strip())
-        self.assertEqual(outs, ["6 6", "6 6"])  # both saw intact data at v6
+        self.assertEqual(outs, ["6 7", "6 7"])  # both saw intact data at v7
         migrated_count = sum(os.path.exists(m) for m in markers)
         self.assertEqual(migrated_count, 1, "exactly one process must migrate")
         conn = store.connect(self.db)
@@ -552,15 +552,16 @@ class TestMigrationRace(MigrationTestCase):
 
 
 class TestOneWayDoor(MigrationTestCase):
-    def test_v5_binary_rejects_v6_file(self):
-        # An older binary sees schema_version=6 > its SCHEMA_VERSION=5 and
-        # refuses via SchemaTooNewError; simulated by the version gate itself
-        # (test_store covers the general found > SCHEMA_VERSION case).
-        conn = store.connect(self.db)  # fresh v6 db
+    def test_v6_binary_rejects_v7_file(self):
+        # An older binary sees schema_version=7 > its SCHEMA_VERSION=6 and
+        # refuses via SchemaTooNewError, rather than ignore lane holds;
+        # simulated by the version gate itself (test_store covers the general
+        # found > SCHEMA_VERSION case).
+        conn = store.connect(self.db)  # fresh v7 db
         row = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
         conn.close()
-        self.assertEqual(int(row["value"]), 6)
-        self.assertGreater(int(row["value"]), 5)
+        self.assertEqual(int(row["value"]), 7)
+        self.assertGreater(int(row["value"]), 6)
 
 
 if __name__ == "__main__":

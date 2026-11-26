@@ -128,6 +128,7 @@ def base_for(verb: str, db: str) -> list[str] | None:
         "cancel": ["cancel", "1", "--json", "--db", db],
         "events": ["events", "--json", "--db", db],
         "feedback": ["feedback", "1", "--json", "--db", db],
+        "hold": ["hold", "--queue", "default", "--json", "--db", db],
         "config-show": ["config-show", "--json", "--db", db],
         "config-validate": ["config-validate", "--json"],
         "doctor": ["doctor", "--json", "--db", db],

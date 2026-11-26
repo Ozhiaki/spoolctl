@@ -2366,6 +2366,41 @@
         ],
         "type": "object"
       },
+      "hold": {
+        "additionalProperties": false,
+        "properties": {
+          "changed": {
+            "type": "boolean"
+          },
+          "held": {
+            "type": "boolean"
+          },
+          "held_at": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "queue": {
+            "type": "string"
+          },
+          "queued": {
+            "type": "integer"
+          },
+          "running": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "changed",
+          "held",
+          "held_at",
+          "queue",
+          "queued",
+          "running"
+        ],
+        "type": "object"
+      },
       "list": {
         "additionalProperties": false,
         "properties": {
@@ -3049,6 +3084,25 @@
             ],
             "type": "object"
           },
+          "holds": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "held_at": {
+                  "type": "number"
+                },
+                "queue": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "held_at",
+                "queue"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
           "queues": {
             "additionalProperties": {
               "additionalProperties": false,
@@ -3158,6 +3212,7 @@
         },
         "required": [
           "counts",
+          "holds",
           "queues",
           "recent_dead",
           "scheduled"

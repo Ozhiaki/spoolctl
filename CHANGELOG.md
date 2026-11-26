@@ -6,6 +6,22 @@ All notable user-visible changes to spoolctl are documented here.
 > versions, but the documented interface and guarantees are tested in this
 > repository.
 
+## Unreleased
+
+- `spoolctl hold --queue NAME` holds a lane (drains it): from then on no
+  worker claims a new job from it, while its running jobs finish normally;
+  nothing is killed. `hold --queue NAME --release` lets workers claim from it
+  again. The hold is stored in the database and survives restarts; both
+  directions are idempotent and report `changed`, plus how many jobs are
+  still `running` and `queued` in the lane. `status --json` lists held lanes
+  in `data.holds`, and `work --drain` on a held lane exits once its running
+  jobs finish.
+- `SCHEMA_VERSION` is now `7`: a `lane_holds` table, created by an automatic
+  v6 -> v7 migration with no data changes. The bump makes an older spoolctl
+  refuse the database rather than ignore a hold. `CONTRACT_VERSION` remains
+  `2`; additive: one new verb, a `holds` field in `status`, and a `hold` entry
+  in the scheduling capabilities.
+
 ## v0.4.11 — Packaging Blessed
 
 spoolctl is installable from PyPI. No behavior change to any verb;

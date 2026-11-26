@@ -9,6 +9,7 @@
       "queued": 0,
       "running": 0
     },
+    "holds": [],
     "queues": {},
     "recent_dead": [],
     "scheduled": 0

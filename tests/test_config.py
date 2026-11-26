@@ -335,7 +335,7 @@ class TestCliDbVerbConfigDiscovery(ConfigTestCase):
         elif verb == "doctor":
             conn = store.connect(self.configured_db)
             conn.close()
-        elif verb == "add":
+        elif verb in {"add", "hold"}:
             pass
         elif verb == "cancel":
             run_cli("add", "--db", self.configured_db, "--json", "--", "sleep", "1")
@@ -372,6 +372,7 @@ class TestCliDbVerbConfigDiscovery(ConfigTestCase):
             "retry": ["retry", "1", "--json"],
             "show": ["show", "1", "--json"],
             "status": ["status", "--json"],
+            "hold": ["hold", "--queue", "default", "--json"],
             "wait": ["wait", "1", "--json"],
             "work": ["work", "--once", "--json"],
         }

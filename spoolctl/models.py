@@ -11,10 +11,10 @@ from dataclasses import dataclass
 
 TOOL_VERSION = "0.4.11"
 CONTRACT_VERSION = "2"
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 
 DEFAULT_DB_RELPATH = ".spoolctl/queue.db"
-VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "prune",
+VERBS = ("add", "work", "wait", "status", "list", "show", "retry", "cancel", "hold", "prune",
          "output", "feedback", "events", "config-show", "config-validate", "doctor",
          "brief", "schema", "capabilities", "robot-docs")
 SQLITE_INT64_MIN = -(2 ** 63)
